@@ -1,0 +1,13 @@
+{
+  "name": "powershell-autofix",
+  "description": "PreToolUse hook that auto-appends `| Out-String` to PowerShell commands that would otherwise return silently because their output relies on PowerShell's implicit formatter (see anthropics/claude-code#59609).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agents-plugins",
+  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "license": "MIT",
+  "keywords": ["powershell", "hooks", "pretooluse", "windows", "claude-code"]
+}

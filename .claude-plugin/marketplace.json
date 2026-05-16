@@ -21,6 +21,10 @@
     {
       "name": "developing-solidworks",
       "source": "./plugins/developing-solidworks"
+    },
+    {
+      "name": "powershell-autofix",
+      "source": "./plugins/powershell-autofix"
     }
   ]
 }

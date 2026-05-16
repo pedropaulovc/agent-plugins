@@ -11,3 +11,8 @@
   python3 plugins/personal/hooks/build-hooks.py
   ```
   This cross-compiles the `unrelated-issue-detector` Rust binary for Linux and Windows.
+- When bumping the **powershell-autofix** plugin version, also rebuild its hook binary:
+  ```
+  python3 plugins/powershell-autofix/hooks/build-hooks.py
+  ```
+  Cross-compiles the `powershell-autofix` Rust binary for Linux and Windows.
