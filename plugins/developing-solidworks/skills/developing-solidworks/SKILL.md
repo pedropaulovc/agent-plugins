@@ -1,273 +1,277 @@
 ---
 name: developing-solidworks
-description: ANYTHING related to SolidWorks. Writes, modifies, and debugs C# code that interacts with SolidWorks. Use when working with .cs or .csproj files that (will) reference SolidWorks SDK, SolidWorks.Interop assemblies, COM interop with SolidWorks.
+description: Write, modify, and debug code that drives the SolidWorks desktop application via its COM API — primarily C# / .NET (SolidWorks.Interop.sldworks, swconst, swcommands), but also any other COM-capable language (C++, VBA, Python via pywin32/comtypes, PowerShell, VB.NET). Use whenever the user is working on .cs/.csproj files that reference the SolidWorks SDK, writing a VBA macro or pywin32 script that drives SolidWorks, mentions SolidWorks automation or add-ins, asks how to call a SolidWorks API like ISldWorks/IModelDoc2/IFeatureManager, or hits errors involving sw* enums, COM interfaces, STA threading, or .NET Framework / Interop assemblies. The skill bundles the full API reference (types, enums), code examples, and a learnings log under its directory and tells Claude how to navigate them. Do NOT use for SolidWorks end-user UI questions, licensing, or non-API CAD work.
+paths: ["**/*.cs", "**/*.csproj", "**/*.sln"]
 ---
 
 # Developing SolidWorks C# Code
 
-## Documentation-First Workflow
+## Why this skill exists
 
-**CRITICAL**: Base knowledge of SolidWorks API is inconsistent. Always consult documentation [Types](./types/), [Enums](./enums/), [Docs](./docs/), [Examples](./examples/), [Learnings](./learnings/). You ABSOLUTELY MUST run your code before claiming success. Don't bother with `dotnet build`, use `dotnet run` immediately after code changes. JUST COMPILING IS NOT ENOUGH.
+The SolidWorks COM API is large, inconsistently named, weakly typed, and poorly covered by LLM training data. Guessing method names, parameter orders, or return types almost always produces code that compiles but fails at runtime. This skill ships the official API reference, working examples, and accumulated debugging notes alongside it. **Consult them before writing code, not after a failure.**
 
-### Workflow checklist
+## First-time setup: download the API docs
 
-Copy and track progress through complex SolidWorks tasks:
+**Before doing anything else, check whether `./types/` and `./enums/` are populated.** If either is empty or missing, the reference material this skill depends on has not been downloaded yet and every code suggestion below will be a guess.
 
-```
-SolidWorks Development Progress:
-- [ ] Step 1: Review API documentation for required methods
-- [ ] Step 2: Write code with named parameters
-- [ ] Step 3: Add error handling and null checks
-- [ ] Step 4: Verify functionality via `dotnet run`
-- [ ] Step 5: Add cleanup and resource disposal
-```
-
-### Required steps before writing code
-
-1. **Use grep to explore the docs**: The grep-optimized documentation structure makes it easy to find specific methods quickly or extract member documentation programmatically
-
-2. **Read documentation**: Available in the skill folder:
-   - API Reference in `./types/` and `./enums/` (method signatures, parameters, enum values)
-   - Programming Guide in `./docs/` (best practices, patterns)
-   - Code Examples in `./examples/` (proven implementations)
-   - Troubleshooting Guide in `./learnings/` (documented solutions to common problems)
-
-3. **If documentation is unavailable**: Run `/download-solidworks-docs` command to download the API documentation, then continue. If the command fails, ABORT and notify user
-
-4. **Verify approach**: Confirm alignment with current SDK conventions
-
-### Grep Use Cases
-
-All paths below are relative to this SKILL.md file (the skill's root directory). When the skill is installed as a plugin, resolve them under the plugin's skill directory.
-
-**Find specific methods quickly**
 ```bash
-# Find CreateArc method documentation
-grep -r "CreateArc" ./types/IModelDoc2/
-
-# Get just that method's file
-cat ./types/IModelDoc2/CreateArc2.md
+ls ./types/ ./enums/ 2>/dev/null | head
 ```
 
-**Extract member documentation programmatically**
+If empty or missing, run the slash command:
+
+```
+/download-solidworks-docs
+```
+
+Wait for it to finish, then re-check. **If the command fails, stop and tell the user — do not proceed with guessed API calls.** Only continue to the workflow below once `./types/` and `./enums/` contain content.
+
+## The non-negotiable rule: run, don't just build
+
+`dotnet build` only proves the code compiles against the Interop assemblies. It does not prove the COM calls succeed, that selections resolved, that the active document is the right type, or that a feature was actually created. The API frequently returns `null` or `false` on failure rather than throwing.
+
+**You MUST execute `dotnet run` (or equivalent runner) and confirm the SolidWorks side-effect occurred before claiming a task is done.** A clean build is not success.
+
+## Bundled reference material
+
+All paths below are relative to this `SKILL.md` (the skill directory). They are real and load-bearing — do not invent alternatives.
+
+| Folder            | What's in it                                                              | When to read                                                  |
+| ----------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `./types/`        | Per-interface folders (e.g. `IModelDoc2/`) with one `.md` per method/prop | Looking up a method signature, parameters, or return type     |
+| `./enums/`        | Per-enum folders with `_overview.md` and one `.md` per value             | Resolving `sw*_e` values to pass as `int` parameters          |
+| `./docs/`         | Programming Guide topics                                                  | Conceptual questions, patterns, end-to-end workflows          |
+| `./examples/`     | Proven, runnable code snippets                                            | Need a working template to adapt                              |
+| `./learnings/`    | Postmortems on real failures (symptom -> root cause -> fix)               | **First stop when something breaks unexpectedly**             |
+| `./index/`        | `by_category.md`, `statistics.md` cross-cuts                              | Browsing by category, or you don't know which interface to use |
+| `./scripts/`      | Helper utilities                                                          | See "Locating SDK assemblies" below                           |
+
+If `./types/` or `./enums/` ever looks empty mid-session, jump back to **First-time setup** above.
+
+## How to navigate the docs with grep
+
+The doc layout is grep-optimised. Use it directly instead of reading whole folders.
+
 ```bash
-# Get all methods in IModelDoc2
+# Find a method on a specific interface
+grep -rl "CreateArc" ./types/IModelDoc2/
+cat  ./types/IModelDoc2/CreateArc2.md
+
+# List all members of an interface (excluding the overview file)
 ls ./types/IModelDoc2/*.md | grep -v "_overview"
 
-# Extract all method signatures
-grep "^**Signature**:" ./types/IModelDoc2/*.md
-```
+# Pull every method signature
+grep "^\*\*Signature\*\*:" ./types/IModelDoc2/*.md
 
-**Search by metadata**
-```bash
-# Find all members in "Application Interfaces" category
+# Search by frontmatter metadata
 grep -r "category: Application Interfaces" ./types/
+grep -r "kind: method"                       ./types/
 
-# Find all methods (not properties)
-grep -r "kind: method" ./types/
-```
-
-**Find and use enums** (each enum is a directory with _overview.md and individual value files):
-```bash
-# Find enum directory
+# Resolve an enum value
 ls ./enums/ | grep -i "endconditions"
-
-# Read enum overview
 cat ./enums/swEndConditions_e/_overview.md
-
-# Find specific enum value
 grep -r "swEndCondBlind" ./enums/
 cat ./enums/swEndConditions_e/swEndCondBlind.md
 
-# Find enum usage in examples
+# See where an enum is actually used
 grep -r "swEndConditions_e" ./examples/
-```
 
-**Navigate by category**
-```bash
-# View all types in a category
-cat ./index/by_category.md | grep -A 20 "Application Interfaces"
-
-# View statistics
+# Browse by category, or check coverage stats
+cat ./index/by_category.md
 cat ./index/statistics.md
 ```
 
-## Troubleshooting Guide
+## Required workflow
 
-**IMPORTANT**: When encountering errors or unexpected behavior, consult `./learnings/` first. This directory contains documented solutions to real issues encountered during development, including:
-- Problem symptoms and error messages
-- Root cause analysis
-- Working solutions with code examples
-- Best practices to avoid the issue
+1. **Identify the interfaces and methods involved.** Use `./index/by_category.md` if unsure where to start, then `grep` inside `./types/`.
+2. **Read the per-method `.md` file.** Confirm parameter names, types, return type, and whether `null`/`false` indicates failure.
+3. **Check `./examples/` for a similar pattern** before writing from scratch.
+4. **Write the code** following the patterns in the next section.
+5. **Run it with `dotnet run`** and verify the SolidWorks side effect actually happened.
+6. **If anything is off, check `./learnings/` before debugging from first principles.** Add a new learning file there if you solve something that wasn't documented.
 
-When encountering new issues not covered in learnings, document the problem, investigation, and solution in a new file with appropriate frontmatter.
+## Locating SDK assemblies (.NET only)
 
-## SolidWorks-Specific Patterns
+The SolidWorks SDK only targets .NET Framework. The Interop assemblies live next to a SolidWorks install, not in NuGet. Run [`./scripts/find_api_redist.py`](./scripts/find_api_redist.py) to locate the folder containing `SolidWorks.Interop.*.dll` for the installed version.
 
-### SDK library references
-The SolidWorks SDK works with .NET Framework only. Find latest SDK libraries via [find_api_redist.py](./scripts/find_api_redist.py). It will return the main folder with all SolidWorks.Interop.* assemblies.
+Skip this section if you're calling SolidWorks from a non-.NET language — see below.
 
-### Code quality requirements
+## Bindings other than C#
 
-**Named parameters** (required for methods with many parameters):
+The SolidWorks API is a COM server, callable from any COM-capable language (C++, VBA, Python via `pywin32`/`comtypes`, PowerShell, VB.NET, etc.). The bundled `./types/` and `./enums/` docs come from the .NET Interop type library, but interface, method, parameter, and enum names match the underlying COM IDL one-to-one — so everything in this skill applies. Only the boilerplate around the calls changes.
+
+### Instantiating the application
+
+Use a COM ProgID instead of `new SldWorks.SldWorks()`. Plain ProgID picks whatever version is registered; suffix with the version code to pin (`SldWorks.Application.31` = SW 2023).
+
+| Language    | Code                                                              |
+| ----------- | ----------------------------------------------------------------- |
+| Python      | `swApp = win32com.client.Dispatch("SldWorks.Application")`        |
+| VBA         | `Set swApp = CreateObject("SldWorks.Application")`                |
+| PowerShell  | `$swApp = New-Object -ComObject SldWorks.Application`             |
+| C++         | `CoCreateInstance(CLSID_SldWorks, …)` after `#import` the typelib |
+
+### Apartment threading
+
+SolidWorks is an STA COM server. Threads that call it must be initialised STA, or calls will appear to work for a moment then deadlock or throw cryptic `RPC_E_*` errors.
+
+- C++: `CoInitializeEx(NULL, COINIT_APARTMENTTHREADED)`.
+- Python: `pythoncom.CoInitialize()` per thread; avoid worker threads where possible.
+- .NET: WinForms/WPF main thread is STA by default; console apps need `[STAThread]` on `Main`.
+
+### Reference counting
+
+- Raw C++: standard COM — `Release()` every interface pointer you receive.
+- .NET Interop: GC handles most cases; use `Marshal.ReleaseComObject` only when SolidWorks visibly holds onto an object you've dropped (e.g. before re-opening the same document).
+- `pywin32`: automatic; assign `None` for deterministic release.
+
+### Early vs late binding
+
+Early binding (`#import` in C++, `makepy` in Python, References dialog in VBA) gives you IntelliSense and named enum constants (`swEndConditions_e.swEndCondBlind`). Late binding via `IDispatch` (the default with `CreateObject`/`Dispatch`) works without setup but loses constant names — you'll pass magic numbers. Look the value up in `./enums/` and leave a comment.
+
+### Verifying success
+
+The "run, don't just build" rule generalises: parser/compiler success is never runtime success. Whatever your loop is — `python script.py`, F5 in VBA, build+launch a C++ exe — execute it and confirm the SolidWorks side effect actually happened.
+
+## Code patterns to follow
+
+These exist because the API design forces them. The "why" comes after each rule.
+
+### Use named parameters
+
+Many SolidWorks methods take 10-30 positional parameters of `bool`/`int`/`double`. Positional calls are unreadable and bug-prone — a flipped `bool` silently changes behaviour.
+
 ```csharp
-// Good - Clear what each value represents
-  IFeature extrudeFeature = swFeatureMgr.FeatureExtrusion3(
-      Sd: true,                                          // Single direction
-      Flip: false,                                       // Don't flip side to cut
-      Dir: false,                                        // Don't flip extrusion direction
-      //...
-  );
+// Good - intent is obvious, mistakes are visible at the call site
+IFeature extrude = swFeatureMgr.FeatureExtrusion3(
+    Sd:   true,                                       // single direction
+    Flip: false,                                      // don't flip cut side
+    Dir:  false,                                      // don't flip extrusion direction
+    Dir1: (int)swEndConditions_e.swEndCondBlind,
+    D1:   0.1,                                        // metres
+    // ...
+);
 
-// Avoid - Unclear what values mean
-IFeature extrudeFeature = swFeatureMgr.FeatureExtrusion3(true, false, false, (int)swEndConditions_e.swEndCondBlind, (int)swEndConditions_e.swEndCondBlind, 0.1, 0, false, false, false, false, 0, 0, false,
-   false, false, false, false, false, true, (int)swStartConditions_e.swStartSketchPlane, 0, false);
+// Avoid - what does the 7th `false` mean?
+IFeature extrude = swFeatureMgr.FeatureExtrusion3(
+    true, false, false, (int)swEndConditions_e.swEndCondBlind,
+    (int)swEndConditions_e.swEndCondBlind, 0.1, 0, false, false, false,
+    false, 0, 0, false, false, false, false, false, false, true,
+    (int)swStartConditions_e.swStartSketchPlane, 0, false);
 ```
 
-**Error handling** (SolidWorks API frequently returns null):
+### Null-check returned interfaces
+
+Most accessors return `null` on failure (no active doc, wrong doc type, selection lost, etc.) rather than throwing.
+
 ```csharp
 IModelDoc2 doc = swApp.ActiveDoc as IModelDoc2;
 if (doc == null)
-{
     throw new InvalidOperationException("No active document");
-}
 ```
 
-**Return value checks** (many methods return bool for success):
+### Check `bool` return values
+
+Many mutating methods return `bool` for success. Ignoring it is the most common source of "the script ran but nothing happened".
+
 ```csharp
-bool success = doc.Extension.SelectByID2(
-    Name: "Face1",
-    Type: "FACE",
+bool ok = doc.Extension.SelectByID2(
+    Name: "Face1", Type: "FACE",
     X: 0, Y: 0, Z: 0,
-    Append: false,
-    Mark: 0,
-    Callout: null,
-    SelectOption: 0
-);
+    Append: false, Mark: 0,
+    Callout: null, SelectOption: 0);
 
-if (!success)
-{
-    throw new Exception("Selection failed");
-}
+if (!ok) throw new Exception("Selection failed");
 ```
 
-**Type casting** (consult documentation for exact return types, cast appropriately):
+### Cast deliberately
+
+`int` <-> enum casts and COM interface casts are unavoidable. Check the doc for the exact return type before casting; chained casts are normal.
+
 ```csharp
-// Enum casting - cast to int for API input, cast from int for readable output
-Dir1: (int)swEndConditions_e.swEndCondBlind                          // API parameter
-var status = (swSketchCheckFeatureStatus_e)sketch.CheckFeatureUse(); // Return value
+// int <-> enum
+Dir1: (int)swEndConditions_e.swEndCondBlind;                  // input
+var status = (swSketchCheckFeatureStatus_e)sketch.CheckFeatureUse(); // output
 
-// Interface casting - check docs for return type, chain casts as needed
-ISketch sketch = (ISketch)((IFeature)doc.SelectionManager.GetSelectedObject6(1, -1)).GetSpecificFeature2();
-
-// Always verify return types in documentation before casting
+// Chained interface casts — confirm each return type in ./types/
+ISketch sketch = (ISketch)((IFeature)doc.SelectionManager
+                              .GetSelectedObject6(1, -1))
+                              .GetSpecificFeature2();
 ```
 
-**Run code before claiming success** (you MUST run your new code using `dotnet run` or similar. Just building it is NOT enough)
+### Don't hardcode template paths
 
-### Common patterns
+Templates differ per machine and locale. Ask SolidWorks for the user's configured default.
 
-**Part creation**: Use `GetUserPreferenceStringValue` to avoid hardcoding template paths.
 ```csharp
 swModel = (ModelDoc2)swApp.NewDocument(
-      TemplateName: swApp.GetUserPreferenceStringValue((int)swUserPreferenceStringValue_e.swDefaultTemplatePart),
-      PaperSize: 0,
-      Width: 0,
-      Height: 0);
+    TemplateName: swApp.GetUserPreferenceStringValue(
+        (int)swUserPreferenceStringValue_e.swDefaultTemplatePart),
+    PaperSize: 0, Width: 0, Height: 0);
 ```
 
-**Document state**: Check before operations
+### Validate document state before operating on it
+
 ```csharp
 if (doc.GetType() != (int)swDocumentTypes_e.swDocPART)
-{
-    throw new InvalidOperationException("Operation requires part document");
-}
+    throw new InvalidOperationException("Operation requires a part document");
 ```
 
-## Code Verification Checklist
+## When to stop and ask
 
-Before delivering code:
-```
-Code Quality:
-- [ ] Consulted API documentation (types/, enums/, docs/, examples/, learnings/)
-- [ ] Used latest SDK library references
-- [ ] Applied documented API patterns
-- [ ] Used named parameters
-- [ ] Added null checks and error handling
-- [ ] Included SolidWorks-specific comments
-- [ ] Handled units correctly
-- [ ] Code is complete and runnable
-- [ ] Code was validated at least once via `dotnet run` or `dotnet test`
-```
+- The requested operation may not exist in the API (check `./index/` and `./types/` first).
+- Two genuinely different approaches exist and the choice changes the design.
+- The behaviour depends on a SolidWorks version, configuration, or add-in the user hasn't specified.
+- `./types/` and `./docs/` contradict each other on a load-bearing detail.
 
-## When to Ask for Clarification
+## End-to-end example: create a part with an extrusion
 
-- Requested functionality may not be possible with SolidWorks API
-- Multiple significantly different approaches exist
-- Task requires specific SolidWorks version or configuration details
-- Documentation is ambiguous or contradictory
-
-## Quick Examples
-
-### Creating a part with extrusion
-
-1. Consult API documentation for `CreateExtrudeFeatureSolid2` (search in `./types/`)
-2. Write code:
+A reference for the shape of a typical script — connect, create a doc, sketch, select, extrude, verify.
 
 ```csharp
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
-// Get application and create new part
 ISldWorks swApp = new SldWorks.SldWorks();
-IModelDoc2 doc = swApp.NewDocument(
-      TemplateName: swApp.GetUserPreferenceStringValue((int)swUserPreferenceStringValue_e.swDefaultTemplatePart),
-      PaperSize: 0,
-      Width: 0,
-      Height: 0);
 
+IModelDoc2 doc = swApp.NewDocument(
+    TemplateName: swApp.GetUserPreferenceStringValue(
+        (int)swUserPreferenceStringValue_e.swDefaultTemplatePart),
+    PaperSize: 0, Width: 0, Height: 0);
 if (doc == null) throw new Exception("Failed to create document");
 
-// Create sketch on front plane
+// Sketch a 50 mm x 50 mm centred rectangle on the front plane
 doc.Extension.SelectByID2(
-    Name: "Front Plane",
-    Type: "PLANE",
+    Name: "Front Plane", Type: "PLANE",
     X: 0, Y: 0, Z: 0,
-    Append: false,
-    Mark: 0,
-    Callout: null,
-    SelectOption: 0
-);
+    Append: false, Mark: 0,
+    Callout: null, SelectOption: 0);
 doc.SketchManager.InsertSketch(true);
 doc.SketchManager.CreateCenterRectangle(0, 0, 0, 0.05, 0.05, 0);
 doc.SketchManager.InsertSketch(true);
 
-// Create extrude
+// Extrude 100 mm in one direction
 doc.Extension.SelectByID2(
-    Name: "Sketch1",
-    Type: "SKETCH",
+    Name: "Sketch1", Type: "SKETCH",
     X: 0, Y: 0, Z: 0,
-    Append: false,
-    Mark: 0,
-    Callout: null,
-    SelectOption: 0
-);
+    Append: false, Mark: 0,
+    Callout: null, SelectOption: 0);
+
 IFeature feature = doc.FeatureManager.FeatureExtrusion2(
-    Sd: true,                                          // Single direction
-    Flip: false,                                       // Don't flip side to cut
-    Dir: false,                                        // Don't flip extrusion direction
-    Dir2: (int)swEndConditions_e.swEndCondBlind,      // End condition for direction 2
-    Dir1: (int)swEndConditions_e.swEndCondBlind,      // End condition for direction 1
-    D1: 0.1,                                           // Depth in meters
-    D2: 0,                                             // Depth for direction 2
-    Dchk1: false,                                      // Draft outward direction 1
-    Dchk2: false,                                      // Draft outward direction 2
-    Ddir1: false,                                      // Draft direction 1
-    Ddir2: false,                                      // Draft direction 2
-    Dang1: 0,                                          // Draft angle direction 1
-    Dang2: 0,                                          // Draft angle direction 2
-    Offstatus: false                                   // Offset from surface
-);
+    Sd:        true,
+    Flip:      false,
+    Dir:       false,
+    Dir2:      (int)swEndConditions_e.swEndCondBlind,
+    Dir1:      (int)swEndConditions_e.swEndCondBlind,
+    D1:        0.1,    // metres
+    D2:        0,
+    Dchk1:     false,
+    Dchk2:     false,
+    Ddir1:     false,
+    Ddir2:     false,
+    Dang1:     0,
+    Dang2:     0,
+    Offstatus: false);
 
 if (feature == null) throw new Exception("Extrusion failed");
 ```
