@@ -1,0 +1,12 @@
+# SolidWorks API documentation folders
+docs/
+enums/
+examples/
+index/
+types/
+
+# SolidWorks Interop assemblies
+*.zip
+
+# Generated README
+README.md

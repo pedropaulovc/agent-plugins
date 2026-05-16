@@ -17,6 +17,10 @@
     {
       "name": "gstack-entrepreneur",
       "source": "./plugins/gstack-entrepreneur"
+    },
+    {
+      "name": "developing-solidworks",
+      "source": "./plugins/developing-solidworks"
     }
   ]
 }

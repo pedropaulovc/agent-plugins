@@ -28,6 +28,10 @@ Personal productivity plugins for daily development workflows.
 
 Fork of [Superpowers](https://github.com/obra/superpowers) - A complete software development workflow for your coding agents, built on top of a set of composable "skills" and some initial instructions that make sure your agent uses them.
 
+### developing-solidworks (v0.1.0)
+
+C# + SolidWorks API skill: documentation-first workflow, code-quality patterns for COM interop, learnings from real bugs (`FeatureCut4` returning null, extrusion failures, faulty geometry), and a `/download-solidworks-docs` command that fetches the offline API doc bundle into the skill folder. Extracted from [pedropaulovc/harmonic-analyzer](https://github.com/pedropaulovc/harmonic-analyzer).
+
 ## License
 
 MIT
