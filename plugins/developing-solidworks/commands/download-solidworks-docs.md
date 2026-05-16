@@ -32,9 +32,15 @@ if (-not (Test-Path $targetDir)) {
     New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 }
 
-# Unpack using 7-Zip
+# Unpack — prefer 7-Zip, fall back to Expand-Archive
 Write-Output "Unpacking to: $targetDir"
-& "C:\Program Files\7-Zip\7z.exe" x $tempPath -o"$targetDir" -y
+$sevenZip = "C:\Program Files\7-Zip\7z.exe"
+if (Test-Path $sevenZip) {
+    & $sevenZip x $tempPath -o"$targetDir" -y
+} else {
+    Write-Warning "7-Zip not found at $sevenZip — falling back to Expand-Archive (significantly slower for large archives)."
+    Expand-Archive -Path $tempPath -DestinationPath $targetDir -Force
+}
 
 # Clean up
 Remove-Item $tempPath
