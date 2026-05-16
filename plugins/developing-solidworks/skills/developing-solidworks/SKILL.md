@@ -18,13 +18,19 @@ The SolidWorks COM API is large, inconsistently named, weakly typed, and poorly 
 ls ./types/ ./enums/ 2>/dev/null | head
 ```
 
-If empty or missing, run the slash command:
+**If empty or missing, you (the agent) MUST invoke the bundled download skill yourself before doing anything else. Do not hand this off to the user. Do not ask for permission. Do not skip it and continue with guessed API calls.**
+
+Invoke it via the Skill tool:
 
 ```
-/download-solidworks-docs
+Skill(skill="developing-solidworks:download-solidworks-docs")
 ```
 
-Wait for it to finish, then re-check. **If the command fails, stop and tell the user — do not proceed with guessed API calls.** Only continue to the workflow below once `./types/` and `./enums/` contain content.
+The corresponding slash command `/download-solidworks-docs` is for *humans* to run manually when working without an agent — agents must use the Skill tool form above so the docs land in this skill's directory automatically.
+
+After invocation, re-check `./types/` and `./enums/`. If they're still empty, the download failed: surface the failure to the user with the exact error message and **stop**. Do not fall back to API calls reasoned from memory — the SolidWorks API surface is ~9,000 methods with weak naming conventions and many silent-failure modes, and "I'll figure it out from nearby code" is the documented failure mode this skill exists to prevent.
+
+Only continue to the workflow below once `./types/` and `./enums/` contain content.
 
 ## The non-negotiable rule: run, don't just build
 
