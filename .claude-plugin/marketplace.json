@@ -25,6 +25,10 @@
     {
       "name": "powershell-autofix",
       "source": "./plugins/powershell-autofix"
+    },
+    {
+      "name": "no-fetch",
+      "source": "./plugins/no-fetch"
     }
   ]
 }
