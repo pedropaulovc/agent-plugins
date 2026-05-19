@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build script: cross-compiles the unrelated-issue-detector Rust binary for
+Build script: cross-compiles the mediocrity-detector Rust binary for
 Linux x86_64 and Windows x86_64, then copies the outputs to hooks/bin/.
 
 Run after any change to the Rust source or when bumping the plugin version.
@@ -27,19 +27,12 @@ BIN_DIR = os.path.join(HOOKS_DIR, 'bin')
 
 IS_WINDOWS = platform.system() == 'Windows'
 
-# Cross-compilation strategy:
-#   On Windows: zigbuild for Linux, native build for Windows
-#   On Linux:   native build for Linux, xwin for Windows
 PLATFORM_TARGETS = [
     {'triple': 'x86_64-unknown-linux-gnu', 'ext': '', 'cmd': 'zigbuild' if IS_WINDOWS else 'build'},
     {'triple': 'x86_64-pc-windows-msvc', 'ext': '.exe', 'cmd': 'build' if IS_WINDOWS else 'xwin build'},
 ]
 
-CRATES = [
-    'unrelated-issue-detector',
-    'windows-bash-guard',
-    'mediocrity-detector',
-]
+CRATES = ['mediocrity-detector']
 
 
 def build_target(crate_dir: str, triple: str, cmd: str = 'build') -> None:
@@ -57,7 +50,6 @@ def copy_binary(crate_dir: str, crate_name: str, triple: str, ext: str) -> None:
     os.makedirs(BIN_DIR, exist_ok=True)
     shutil.copy2(src, dst)
     os.chmod(dst, os.stat(dst).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    # Ensure git tracks the binary as executable so `git pull` preserves +x
     if not ext:
         subprocess.run(['git', 'update-index', '--chmod=+x', dst], check=False)
     print(f"Copied {src} -> {dst}")

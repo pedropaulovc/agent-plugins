@@ -1,0 +1,13 @@
+{
+  "name": "windows-bash-guard",
+  "description": "PreToolUse hook that auto-fixes Windows+bash path pitfalls (backslash paths, /dev/stdin) before execution",
+  "version": "0.1.0",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agents-plugins",
+  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "license": "MIT",
+  "keywords": ["hook", "windows", "bash", "path"]
+}

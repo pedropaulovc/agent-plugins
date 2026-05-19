@@ -1,29 +1,25 @@
-# personal plugin
-
-Personal productivity plugins for daily development workflows on Windows.
-
-## Hooks
-
-### windows-bash-guard
+# windows-bash-guard plugin
 
 A Rust PreToolUse hook that auto-fixes common Windows+bash path pitfalls before execution, avoiding wasted round-trips.
 
 **Fixes applied:**
 1. `/dev/stdin` → fd `0` in node commands (doesn't exist on Windows)
-2. Backslash drive paths → forward slashes everywhere (fixes unquoted paths, node -e escape bugs, and trailing `\"` in one pass)
+2. Backslash drive paths → forward slashes everywhere (fixes unquoted paths, `node -e` escape bugs, and trailing `\"` in one pass)
 
 **Behavior:**
 - Returns `updatedInput` with the corrected command so Claude Code executes it transparently
 - Injects `additionalContext` so Claude sees what was changed and learns to avoid the pattern
 - Claude can bypass rewriting by adding `[no-rewrite]` to the Bash tool description
 
-### unrelated-issue-detector
+## Build
 
-A Rust PostToolUse hook that detects when Claude dismisses unrelated issues found during development and prompts investigation.
+```
+python3 hooks/build-hooks.py
+```
 
 ## CLAUDE.md guidance for Windows+bash users
 
-If you use Claude Code on Windows with bash, add the following to your `~/.claude/CLAUDE.md` to prevent path-related failures. This guidance is based on analysis of ~6000 real-world Bash tool failures from Claude Code transcripts.
+Add the following to your `~/.claude/CLAUDE.md` to prevent path-related failures. This guidance is based on analysis of ~6000 real-world Bash tool failures from Claude Code transcripts.
 
 ````markdown
 ### Windows path rules (CRITICAL — most common source of bash failures)

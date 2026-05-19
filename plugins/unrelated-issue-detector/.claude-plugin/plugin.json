@@ -1,0 +1,13 @@
+{
+  "name": "unrelated-issue-detector",
+  "description": "PostToolUse hook that detects when Claude dismisses unrelated issues found during development and prompts investigation",
+  "version": "0.1.0",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agents-plugins",
+  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "license": "MIT",
+  "keywords": ["hook", "code-quality", "diligence"]
+}

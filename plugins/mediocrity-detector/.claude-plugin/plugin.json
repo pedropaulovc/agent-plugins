@@ -1,7 +1,7 @@
 {
-  "name": "personal",
-  "description": "Personal productivity plugins: PR comments handler, worktree reset, and GitHub issue creator",
-  "version": "3.6.6",
+  "name": "mediocrity-detector",
+  "description": "Stop hook that detects hedging language suggesting shortcuts or deferred work and prompts Claude to surface assumptions",
+  "version": "0.1.0",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
@@ -9,5 +9,5 @@
   "homepage": "https://github.com/pedropaulovc/agents-plugins",
   "repository": "https://github.com/pedropaulovc/agents-plugins",
   "license": "MIT",
-  "keywords": ["productivity", "pr-comments", "git", "github-issues"]
+  "keywords": ["hook", "code-quality", "diligence"]
 }

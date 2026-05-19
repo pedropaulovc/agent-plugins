@@ -6,13 +6,8 @@
   python3 plugins/superpowers/hooks/build-hooks.py
   ```
   This bakes the current `skills/using-superpowers/SKILL.md` into `hooks/hooks.json`.
-- When bumping the **personal** plugin version, also rebuild the hook binaries:
+- When bumping any Rust-hook plugin version (**windows-bash-guard**, **unrelated-issue-detector**, **mediocrity-detector**, **powershell-autofix**), also rebuild the hook binary:
   ```
-  python3 plugins/personal/hooks/build-hooks.py
+  python3 plugins/<plugin>/hooks/build-hooks.py
   ```
-  This cross-compiles the `unrelated-issue-detector` Rust binary for Linux and Windows.
-- When bumping the **powershell-autofix** plugin version, also rebuild its hook binary:
-  ```
-  python3 plugins/powershell-autofix/hooks/build-hooks.py
-  ```
-  Cross-compiles the `powershell-autofix` Rust binary for Linux and Windows.
+  Cross-compiles the Rust binary for Linux x86_64 and Windows x86_64.

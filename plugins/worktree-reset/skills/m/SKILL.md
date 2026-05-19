@@ -23,7 +23,7 @@ Perform the following steps to reset the current worktree branch to origin/main:
 5. **Reset state**: Run the m.sh script located next to this SKILL.md file:
 
 ```bash
-bash "$(find ~/.claude -path '*/personal/skills/m/m.sh' 2>/dev/null | head -1)"
+bash "$(find ~/.claude -path '*/worktree-reset/skills/m/m.sh' 2>/dev/null | head -1)"
 ```
 
 Report the final status to the user when complete.

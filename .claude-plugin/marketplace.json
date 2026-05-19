@@ -7,8 +7,28 @@
   },
   "plugins": [
     {
-      "name": "personal",
-      "source": "./plugins/personal"
+      "name": "windows-bash-guard",
+      "source": "./plugins/windows-bash-guard"
+    },
+    {
+      "name": "unrelated-issue-detector",
+      "source": "./plugins/unrelated-issue-detector"
+    },
+    {
+      "name": "mediocrity-detector",
+      "source": "./plugins/mediocrity-detector"
+    },
+    {
+      "name": "gh-issue",
+      "source": "./plugins/gh-issue"
+    },
+    {
+      "name": "pr-comments",
+      "source": "./plugins/pr-comments"
+    },
+    {
+      "name": "worktree-reset",
+      "source": "./plugins/worktree-reset"
     },
     {
       "name": "superpowers",
