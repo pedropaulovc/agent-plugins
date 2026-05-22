@@ -15,6 +15,7 @@ Prerequisites:
   - On Linux: cargo-xwin for Windows cross-compilation:
       cargo install cargo-xwin
 """
+import json
 import os
 import platform
 import shutil
@@ -44,8 +45,17 @@ def build_target(crate_dir: str, triple: str, cmd: str = 'build') -> None:
     )
 
 
+def target_dir(crate_dir: str) -> str:
+    """Resolve cargo's target_directory for this crate (workspace-aware)."""
+    result = subprocess.run(
+        ['cargo', 'metadata', '--format-version', '1', '--no-deps'],
+        cwd=crate_dir, capture_output=True, text=True, check=True,
+    )
+    return json.loads(result.stdout)['target_directory']
+
+
 def copy_binary(crate_dir: str, crate_name: str, triple: str, ext: str) -> None:
-    src = os.path.join(crate_dir, 'target', triple, 'release', crate_name + ext)
+    src = os.path.join(target_dir(crate_dir), triple, 'release', crate_name + ext)
     dst = os.path.join(BIN_DIR, crate_name + ext)
     os.makedirs(BIN_DIR, exist_ok=True)
     shutil.copy2(src, dst)
