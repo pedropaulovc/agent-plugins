@@ -1,12 +1,12 @@
-# personal-marketplace
+# agent-plugins
 
 A Claude Code plugin marketplace of hooks, skills, and commands focused on engineering rigor, GitHub workflow, Windows quirks, and one very specific CAD niche.
 
 ## Install
 
 ```bash
-/plugin marketplace add pedropaulovc/personal-marketplace
-/plugin install <plugin-name>@personal-marketplace
+/plugin marketplace add pedropaulovc/agent-plugins
+/plugin install <plugin-name>@agent-plugins
 ```
 
 ## Featured
