@@ -17,13 +17,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate every plugin.json
+      - name: Check marketplace.json sources match plugins/ directories
         run: |
+          manifest=$(jq -r '.plugins[].source' .claude-plugin/marketplace.json | sort)
+          actual=$(find plugins -mindepth 1 -maxdepth 1 -type d | sed 's|^|./|' | sort)
+          missing=$(comm -23 <(echo "$manifest") <(echo "$actual"))
+          orphans=$(comm -13 <(echo "$manifest") <(echo "$actual"))
           fail=0
-          for f in plugins/*/plugin.json; do
-            if ! jq empty "$f"; then
-              echo "::error file=$f::invalid JSON"
-              fail=1
-            fi
-          done
+          if [[ -n "$missing" ]]; then
+            echo "::error::marketplace.json references directories that don't exist:"
+            echo "$missing" | sed 's/^/  /'
+            fail=1
+          fi
+          if [[ -n "$orphans" ]]; then
+            echo "::error::plugins/ contains directories not listed in marketplace.json:"
+            echo "$orphans" | sed 's/^/  /'
+            fail=1
+          fi
           exit $fail
