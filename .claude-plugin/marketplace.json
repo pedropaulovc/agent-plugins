@@ -53,10 +53,6 @@
     {
       "name": "command-chain-separator",
       "source": "./plugins/command-chain-separator"
-    },
-    {
-      "name": "alt-text",
-      "source": "./plugins/alt-text"
     }
   ]
 }
