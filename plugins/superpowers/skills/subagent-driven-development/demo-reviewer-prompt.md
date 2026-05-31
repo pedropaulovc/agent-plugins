@@ -66,6 +66,9 @@ Task tool:
     - No error cases shown at all
     - Demo describes features as "coming later" that are needed now
     - Demo requires imagination to fill gaps ("you can see how X would work")
+    - Demo-presenter reports a feature could only be triggered via a developer
+      hook or forced state — never through a real user action. Treat as NOT
+      delivered: the user-facing trigger is missing, regardless of green tests.
     - Feature is technically present but practically unusable
 ```
 

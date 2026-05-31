@@ -266,7 +266,7 @@ Once both code-reviewer approves AND demo-presenter has recorded artifacts:
 - If **approved** → proceed to shutdown
 - If **rejected**:
   - Demo execution problem (sloppy, incomplete walkthrough) → back to demo-presenter for re-demo → demo-reviewer re-reviews
-  - Implementation problem (feature buggy, incomplete) → back to implementer, re-enters full task cycle (tester → implementer → parallel review) → then re-demo + re-review from scratch
+  - Implementation problem (feature buggy, incomplete, OR demo-presenter could not trigger it through any real user action — a missing user-reachable trigger that green tests hid via a backdoor) → back to implementer, re-enters full task cycle (tester → implementer → parallel review) → then re-demo + re-review from scratch
   - Spec problem → coordinator flags to user → after spec change, re-enter task cycle for affected tasks → then re-demo + re-review from scratch
 
 ### Step 5: Shutdown and Ship
@@ -426,12 +426,14 @@ Done!
 - Skip reviews (tester verification OR code-reviewer spec+quality check)
 - Proceed with unfixed issues
 - Let implementer write e2e/integration tests (that is the tester's job)
+- Let tests trigger the path under test through a test-only backdoor (forced-state flag like `connected:true`, a `window.*` hook) instead of a real user action or real adapter event — the backdoor is itself evidence the production trigger may be missing
+- Accept tests that all run against one default fixture when the feature behaves differently across states (connected/disconnected, alternate modes/units, empty/populated) — silent no-ops hide in the non-default states
 - Skip tester verification of GREEN (implementer may have weakened assertions)
 - If implementer nails it first try, accept without asking tester to strengthen tests
 - Run reviews sequentially when they can run in parallel
 - **Any implementation change invalidates ALL prior approvals** — both reviewers must re-review
 - **Any implementation change after demo invalidates the demo** — must re-demo and re-review from scratch
-- Skip the demo gate
+- Skip the demo gate — it is the one gate that structurally cannot cheat (only real inputs, no hooks or forced state), so it is the backstop that catches features tests reached through a backdoor
 - Let demo-presenter use automated test scripts (must be manual user emulation)
 - Let demo-presenter inject mocking logic, route interception, or request stubs into Playwright or any tool
 - Let demo-presenter implement testing shims or testability harnesses — only implementer/tester create shims, coordinated through you
