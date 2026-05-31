@@ -25,6 +25,21 @@ Task tool:
     - Never infer test logic from internal implementation details — that
       couples tests to implementation and defeats the purpose of e2e/integration tests
 
+    Real-input rule — CRITICAL:
+    - Trigger the behavior under test the way a real input source does: a real
+      user action (click/type/navigate) or a real adapter/event the production
+      system actually emits. NEVER drive the path through a test-only backdoor
+      — a forced-state flag (e.g. connected:true), a window.* hook, a latch
+      that exists only for tests.
+    - A backdoor is a SMELL, not a convenience. If the only way to trigger a
+      feature is a hook that has no production caller, that is evidence the
+      user-reachable trigger may not exist. STOP, and report it to the
+      coordinator as a likely implementation gap — do not paper over the
+      missing trigger by invoking the hook.
+    - Inject only what a real source produces. If a test needs prior state,
+      reach it by replaying real user flows or real events, never by writing
+      the state directly through a shortcut the user could not perform.
+
     What counts as "public API" (reading this is allowed):
     - Module exports, function signatures, REST/GraphQL endpoints
     - React component props and hook interfaces (for integration tests that
@@ -76,6 +91,11 @@ Task tool:
 
     Test quality requirements:
     - Complete user journeys, not isolated units (that is the implementer's job)
+    - Parametrize over the obvious state matrix — do NOT test only one default
+      fixture. If behavior varies by mode (connected/disconnected,
+      absolute/incremental, inch/mm, logged-in/out, empty/populated), cover
+      each relevant combination. The non-default states are exactly where
+      silent no-ops hide, because the default fixture never exercises them.
     - Strong assertions: verify content, state, behavior — not just presence
       BAD:  expect(title).toBeTruthy()
       BAD:  expect(button).toBeVisible()
@@ -98,6 +118,13 @@ Task tool:
     - Test passes on first implementer attempt (are your tests too weak?)
     - Test uses waitForTimeout instead of condition-based waiting
     - Test mocks the system under test
+    - Test triggers the path under test via a forced-state flag (connected:true),
+      a window.* hook, or any test-only latch instead of a real user action or
+      real adapter event — rip out the backdoor and drive the real path; if no
+      real trigger exists, report it to the coordinator as an implementation gap
+    - All your tests run against a single default fixture — you never exercise
+      the non-default states (disconnected, alternate units/modes, empty data)
+      where silent no-ops hide
     - Test only covers the happy path
     - Test has a vague name like "test1" or "it works"
     - Test assertions are so loose that wrong output would still pass

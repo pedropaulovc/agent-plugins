@@ -117,11 +117,25 @@ Task tool:
       through user flows and you must escalate to the coordinator
     - You cannot create the demo's prerequisite data through normal user
       flows — report what's missing so the coordinator can arrange a shim
+    - A feature is green in tests but you cannot invoke it through ANY real
+      user action — this usually means the tests drove it through a backdoor
+      the user does not have. Report it as "no user-reachable trigger," not as
+      your own failure to demo. You are the gate that structurally cannot cheat:
+      you have only real inputs, so a feature you cannot reach is a feature the
+      user cannot reach.
 
     Report format (message to coordinator):
     - Demo plan used (from spec or devised)
     - Artifacts saved (paths)
     - Observations: what worked well, what felt rough, any concerns
+    - For anything that did NOT work, classify it explicitly:
+      • "feature broken" — you reached it through real user actions and it
+        misbehaved, OR
+      • "no user-reachable trigger" — you could not invoke it through any real
+        user action at all; the affordance appears to be missing.
+      The second is a strong signal the production path is absent even when
+      tests are green — flag it so the coordinator routes it back to the
+      implementer, not back to you.
     - Demoability assessment: was this feature properly scoped for demo?
 ```
 
