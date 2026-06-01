@@ -10,14 +10,14 @@ jobs:
   validate-marketplace:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Validate marketplace.json
         run: jq empty .claude-plugin/marketplace.json
 
   validate-plugins:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check marketplace.json sources match plugins/ directories
         run: |
           manifest=$(jq -r '.plugins[].source' .claude-plugin/marketplace.json | sort)
