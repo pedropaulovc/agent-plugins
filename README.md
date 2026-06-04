@@ -17,7 +17,7 @@ Rust `Stop` hook that detects hedging language in the current turn, blocks the s
 
 ### [unrelated-issue-detector](plugins/unrelated-issue-detector)
 
-Rust `PostToolUse` hook that detects when Claude dismisses findings as unrelated or pre-existing and asks for evidence on each dismissal.
+Rust `Stop` hook that detects when Claude dismisses findings as unrelated or pre-existing, blocks the stop, and asks for evidence on each dismissal.
 
 ### [developing-solidworks](plugins/developing-solidworks)
 

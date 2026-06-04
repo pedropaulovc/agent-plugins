@@ -1,10 +1,15 @@
-//! PostToolUse hook that detects when the agent dismisses issues as "unrelated"
+//! Stop hook that detects when the agent dismisses issues as "unrelated"
 //! or "pre-existing".
 //!
-//! Strategy: trust but verify. Scans NEW transcript content since the last check
-//! (via a per-session offset file) for narrow dismissal phrases. If any are
-//! found, blocks the tool call and asks Claude to surface evidence for each
-//! dismissal so the user can make the judgement call.
+//! Strategy: trust but verify. When the agent tries to end its turn, scans NEW
+//! transcript content since the last check (via a per-session offset file) for
+//! narrow dismissal phrases. If any are found, blocks the stop and asks Claude
+//! to surface evidence for each dismissal so the user can make the judgement
+//! call.
+//!
+//! Loop guard: when `stop_hook_active` is set, Claude is already continuing
+//! because of this hook, so we exit cleanly — otherwise the follow-up report
+//! (which repeats the dismissal phrases) would trip the detector forever.
 
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -146,6 +151,17 @@ fn main() {
         Ok(v) => v,
         Err(_) => process::exit(0),
     };
+
+    // Loop guard: if we already blocked a stop this turn, Claude is now
+    // producing its evidence report — which echoes the dismissal phrases. Let
+    // it stop rather than re-trigger on its own report.
+    if input_data
+        .get("stop_hook_active")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        process::exit(0);
+    }
 
     let session_id = input_data
         .get("session_id")
