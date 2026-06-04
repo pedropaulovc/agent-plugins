@@ -131,14 +131,95 @@ fn extract_assistant_text(entry: &Value) -> String {
     String::new()
 }
 
+/// Scan text for dismissal patterns (case-insensitive). Deduplicates via
+/// `seen`. Each finding includes the surrounding phrase so the user can see the
+/// trigger in context.
 fn scan_text(text: &str, findings: &mut Vec<String>, seen: &mut HashSet<String>) {
-    let lower = text.to_lowercase();
     for &pattern in PATTERNS {
-        if !seen.contains(pattern) && lower.contains(pattern) {
-            findings.push(format!("\"{}\"", pattern));
+        if seen.contains(pattern) {
+            continue;
+        }
+        if let Some(pos) = find_case_insensitive(text, pattern) {
+            let phrase = extract_phrase(text, pos, pattern.len());
+            findings.push(format!("\"{}\" → \"{}\"", pattern, phrase));
             seen.insert(pattern.to_string());
         }
     }
+}
+
+/// Case-insensitive byte-level substring search (ASCII-folding only).
+/// Returns the byte offset of the first match in `haystack`.
+fn find_case_insensitive(haystack: &str, needle: &str) -> Option<usize> {
+    let h = haystack.as_bytes();
+    let n = needle.as_bytes();
+    if n.is_empty() || h.len() < n.len() {
+        return None;
+    }
+    'outer: for i in 0..=(h.len() - n.len()) {
+        for j in 0..n.len() {
+            if !h[i + j].eq_ignore_ascii_case(&n[j]) {
+                continue 'outer;
+            }
+        }
+        return Some(i);
+    }
+    None
+}
+
+/// Extract the surrounding sentence containing the match at `match_start`.
+/// Sentence boundaries are `.`, `!`, `?`, `\n`. A per-side cap of 120 bytes
+/// keeps runaway paragraphs short. Result is whitespace-trimmed and has
+/// newlines flattened to spaces.
+fn extract_phrase(text: &str, match_start: usize, match_len: usize) -> String {
+    const MAX_PER_SIDE: usize = 120;
+    let bytes = text.as_bytes();
+
+    let lo_bound = match_start.saturating_sub(MAX_PER_SIDE);
+    let hi_bound = (match_start + match_len + MAX_PER_SIDE).min(bytes.len());
+
+    let mut start = match_start;
+    while start > lo_bound {
+        if matches!(bytes[start - 1], b'.' | b'!' | b'?' | b'\n') {
+            break;
+        }
+        start -= 1;
+    }
+
+    let mut end = match_start + match_len;
+    while end < hi_bound {
+        if matches!(bytes[end], b'.' | b'!' | b'?' | b'\n') {
+            end += 1; // include the punctuation
+            break;
+        }
+        end += 1;
+    }
+
+    // Snap to UTF-8 char boundaries.
+    while start > 0 && !text.is_char_boundary(start) {
+        start -= 1;
+    }
+    while end < text.len() && !text.is_char_boundary(end) {
+        end += 1;
+    }
+
+    let snippet: String = text[start..end]
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let prefix = if start > 0 && !matches!(bytes[start - 1], b'.' | b'!' | b'?' | b'\n') {
+        "…"
+    } else {
+        ""
+    };
+    let suffix = if end < bytes.len() && !matches!(bytes[end - 1], b'.' | b'!' | b'?' | b'\n') {
+        "…"
+    } else {
+        ""
+    };
+
+    format!("{}{}{}", prefix, snippet, suffix)
 }
 
 fn main() {
@@ -222,14 +303,21 @@ fn main() {
         process::exit(0);
     }
 
-    let list = findings.join(", ");
+    let list = findings
+        .iter()
+        .map(|f| format!("  - {}", f))
+        .collect::<Vec<_>>()
+        .join("\n");
     let reason = format!(
-        "Dismissal language detected in this turn: [{}]. Before moving on, \
-         explicitly report to the user each issue you dismissed. For each: \
-         (1) the exact symptom (error message, failing test, unexpected behavior), \
-         (2) the evidence it is pre-existing or unrelated (commit hash, line on main, \
-         a repro on main), (3) what you would investigate further if asked. \
-         Be specific — the user needs to make an informed judgement call.",
+        "Dismissal language detected in this turn:\n{}\n\n\
+         Before moving on, explicitly report to the user each issue you dismissed. \
+         For each: (1) the exact symptom (error message, failing test, unexpected \
+         behavior), (2) the evidence it is pre-existing or unrelated (commit hash, \
+         line on main, a repro on main), (3) what you would investigate further if \
+         asked. Be specific — the user needs to make an informed judgement call.\n\n\
+         Recommended: if this is a true positive, use the AskUserQuestion tool to \
+         offer options such as: start the fix in a separate worktree; pause current \
+         work and fix the issue here immediately; or log the issue and proceed.",
         list
     );
 
@@ -364,5 +452,60 @@ mod tests {
             &mut seen,
         );
         assert!(findings.is_empty());
+    }
+
+    // -- Phrase extraction ----------------------------------------------------
+
+    #[test]
+    fn finding_includes_surrounding_phrase() {
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        scan_text(
+            "The auth test is unrelated to this change, it fails on main too.",
+            &mut findings,
+            &mut seen,
+        );
+        let finding = findings
+            .iter()
+            .find(|f| f.starts_with("\"unrelated to this change\""))
+            .expect("unrelated finding present");
+        assert!(
+            finding.contains("The auth test is unrelated to this change"),
+            "expected surrounding phrase, got: {}",
+            finding
+        );
+    }
+
+    #[test]
+    fn phrase_uses_sentence_boundary() {
+        let phrase = extract_phrase(
+            "Here is some context. That is a pre-existing issue. Then I moved on.",
+            "Here is some context. That is a ".len(),
+            "pre-existing issue".len(),
+        );
+        assert_eq!(phrase, "That is a pre-existing issue.");
+    }
+
+    #[test]
+    fn phrase_caps_long_runs() {
+        // No sentence punctuation — should cap and emit ellipsis markers.
+        let prefix = "a ".repeat(200);
+        let suffix = " b".repeat(200);
+        let text = format!("{}pre-existing issue{}", prefix, suffix);
+        let pos = prefix.len();
+        let phrase = extract_phrase(&text, pos, "pre-existing issue".len());
+        assert!(phrase.contains("pre-existing issue"));
+        assert!(phrase.starts_with('…'), "expected leading ellipsis, got: {}", phrase);
+        assert!(phrase.ends_with('…'), "expected trailing ellipsis, got: {}", phrase);
+        assert!(phrase.len() < text.len(), "expected truncation");
+    }
+
+    #[test]
+    fn phrase_handles_utf8() {
+        // Multi-byte chars on both sides; should not panic.
+        let text = "Résumé note — that is a pre-existing bug — café.";
+        let pos = text.find("pre-existing bug").unwrap();
+        let phrase = extract_phrase(text, pos, "pre-existing bug".len());
+        assert!(phrase.contains("pre-existing bug"));
     }
 }
