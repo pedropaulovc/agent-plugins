@@ -19,6 +19,7 @@ When the agent calls `WebFetch`, the hook returns a `block` decision with routin
 Some targets are served cleanly by plain `WebFetch` and gain nothing from the MCP tools, so the hook lets them through unblocked:
 
 - **GitHub** — `github.com`, `*.githubusercontent.com` (raw files), `*.github.io` pages, and the API.
+- **Claude / Anthropic** — `anthropic.com`, `claude.com`, `claude.ai`, and their subdomains (docs, API).
 - **Agent manifests** — any URL ending in `/llms.txt` or `/llms-full.txt`.
 
 ## Escape hatch
