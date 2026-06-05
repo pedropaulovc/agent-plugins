@@ -14,6 +14,17 @@ When the agent calls `WebFetch`, the hook returns a `block` decision with routin
 - **INTERACT** (login, multi-step click/fill, persistent page state) → `browserbase_{start,navigate,observe,act,extract,end}`
 - **FALLBACK** when both fail → Playwright (always `--headed`) → Claude in Chrome
 
+## Exclusions
+
+Some targets are served cleanly by plain `WebFetch` and gain nothing from the MCP tools, so the hook lets them through unblocked:
+
+- **GitHub** — `github.com`, `*.githubusercontent.com` (raw files), `*.github.io` pages, and the API.
+- **Agent manifests** — any URL ending in `/llms.txt` or `/llms-full.txt`.
+
+## Escape hatch
+
+If the agent is genuinely restricted to the fetch tool with no MCP alternative, it can add `[force-fetch]` to the `WebFetch` prompt to bypass the block. This is reserved for worst-case situations — it is not a routine way to skip the routing above.
+
 ## Requirements
 
 The Firecrawl and Browserbase MCP servers must be configured in your Claude Code MCP settings. Without them this hook will block fetches without providing a working alternative.

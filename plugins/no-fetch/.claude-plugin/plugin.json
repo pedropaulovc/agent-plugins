@@ -1,7 +1,7 @@
 {
   "name": "no-fetch",
   "description": "Blocks the WebFetch tool and redirects to Firecrawl + Browserbase MCP tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
