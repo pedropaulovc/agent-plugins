@@ -29,18 +29,31 @@ Skill for writing social-media alt text that a screen reader user would actually
 
 ## All plugins
 
+### General-purpose
+
+Broadly useful regardless of what you're working on.
+
 | Plugin | Type | What it does |
 |---|---|---|
+| [superpowers](plugins/superpowers) | Skills | Core skills library — TDD, debugging, collaboration patterns (vendored from [obra/superpowers](https://github.com/obra/superpowers)) |
 | [mediocrity-detector](plugins/mediocrity-detector) | Hook | Detects hedging on `Stop` and pushes back |
 | [unrelated-issue-detector](plugins/unrelated-issue-detector) | Hook | Demands evidence for each "unrelated/pre-existing" dismissal |
-| [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks API workflow |
-| [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects to Firecrawl + Browserbase MCPs |
 | [gh-issue](plugins/gh-issue) | Skill | Turns terse bug reports into well-structured GitHub issues via `gh` |
 | [pr-comments](plugins/pr-comments) | Skill | Fetches unresolved PR comments formatted for LLM review and reply |
-| [worktree-reset](plugins/worktree-reset) | Skill | `/m` — resets the current worktree to `origin/main` and reinstalls deps |
-| [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Entrepreneurship subset of gstack: idea validation, market research, strategy (no code) |
-| [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Auto-injects `--headed` into `playwright-cli open` invocations and recommends a standard viewport |
 | [command-chain-separator](plugins/command-chain-separator) | Hook | Injects a visible separator between Bash commands joined by `&&` or `;` so per-command output is easy to read |
+| [windows-bash-guard](plugins/windows-bash-guard) | Hook | Auto-fixes Windows+bash path pitfalls (backslash paths, `/dev/stdin`) before execution |
+
+### Personalized
+
+Tuned to my own setup, tooling, or niche — unlikely to appeal to a broad audience.
+
+| Plugin | Type | What it does |
+|---|---|---|
+| [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks .NET COM API workflow with anti-hallucination guardrails |
+| [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Entrepreneurship subset of gstack: idea validation, market research, strategy (no code) |
+| [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects to my Firecrawl + Browserbase MCPs |
+| [worktree-reset](plugins/worktree-reset) | Skill | `/m` — resets the current worktree to `origin/main` and reinstalls deps |
+| [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Auto-injects `--headed` into `playwright-cli open` invocations and recommends a standard viewport |
 | [alt-text](plugins/alt-text) | Skill | Writes accessibility-focused alt text for images about to be posted on social media |
 
 ## License
