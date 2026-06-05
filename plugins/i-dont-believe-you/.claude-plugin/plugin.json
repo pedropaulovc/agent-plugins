@@ -1,0 +1,13 @@
+{
+  "name": "i-dont-believe-you",
+  "description": "Experimental Stop hook that sends the turn's agent responses to a fast model and blocks the stop when it finds a factual, completion, or verification claim the agent never actually corroborated",
+  "version": "0.1.0",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agents-plugins",
+  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "license": "MIT",
+  "keywords": ["hook", "diligence", "verification", "anti-hallucination", "experimental"]
+}

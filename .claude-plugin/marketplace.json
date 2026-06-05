@@ -57,6 +57,10 @@
     {
       "name": "alt-text",
       "source": "./plugins/alt-text"
+    },
+    {
+      "name": "i-dont-believe-you",
+      "source": "./plugins/i-dont-believe-you"
     }
   ]
 }
