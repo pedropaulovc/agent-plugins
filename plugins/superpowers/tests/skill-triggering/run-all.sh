@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Run all skill triggering tests
 # Usage: ./run-all.sh
 
@@ -12,6 +12,7 @@ SKILLS=(
     "test-driven-development"
     "writing-plans"
     "dispatching-parallel-agents"
+    "executing-plans"
     "requesting-code-review"
 )
 
