@@ -300,7 +300,7 @@ Once both code-reviewer approves AND demo-presenter has recorded artifacts:
 ```
 Coordinator: I'm using Subagent-Driven Development to execute this plan.
 
-[Read plan file: docs/plans/feature-plan.md]
+[Read plan file: docs/superpowers/plans/feature-plan.md]
 [Extract all 3 tasks with full text and context]
 
 [TeamCreate: team_name="plan-execution"]
