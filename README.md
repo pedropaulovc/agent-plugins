@@ -42,6 +42,7 @@ Skill for writing social-media alt text that a screen reader user would actually
 | [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Auto-injects `--headed` into `playwright-cli open` invocations and recommends a standard viewport |
 | [command-chain-separator](plugins/command-chain-separator) | Hook | Injects a visible separator between Bash commands joined by `&&` or `;` so per-command output is easy to read |
 | [alt-text](plugins/alt-text) | Skill | Writes accessibility-focused alt text for images about to be posted on social media |
+| [i-dont-believe-you](plugins/i-dont-believe-you) | Hook | On `Stop`, asks a fast model whether the turn asserted any fact/completion/verification it never corroborated, and blocks until you back it up (experimental) |
 
 ## License
 

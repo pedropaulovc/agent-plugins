@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/flag-uncorroborated.py\"",
+            "timeout": 60,
+            "statusMessage": "Checking this turn for uncorroborated claims…"
+          }
+        ]
+      }
+    ]
+  }
+}
