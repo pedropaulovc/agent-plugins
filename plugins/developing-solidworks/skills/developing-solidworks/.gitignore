@@ -10,3 +10,6 @@ types/
 
 # Generated README
 README.md
+
+# Installed bundle version marker
+.bundle-version

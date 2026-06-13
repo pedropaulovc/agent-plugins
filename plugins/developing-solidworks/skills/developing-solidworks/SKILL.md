@@ -32,6 +32,23 @@ After invocation, re-check `./types/` and `./enums/`. If they're still empty, th
 
 Only continue to the workflow below once `./types/` and `./enums/` contain content.
 
+## Already downloaded? Check for a newer bundle
+
+The reference is published as versioned GitHub releases, so a populated `./types/`/`./enums/` may still be stale. **Once per session, before relying on the docs, check whether a newer bundle exists.** The download skill records the installed version in `./.bundle-version`; compare it against the latest release tag:
+
+```bash
+cat ./.bundle-version 2>/dev/null   # e.g. v3.1.0 — missing/empty means an older bundle predating version tracking; treat as stale
+curl -s https://api.github.com/repos/pedropaulovc/offline-solidworks-api-docs/releases/latest | grep '"tag_name"'
+```
+
+If the latest `tag_name` differs from `./.bundle-version` (or the file is missing), a newer bundle is available — re-invoke the download skill to refresh in place. It overwrites the doc folders and rewrites `./.bundle-version`:
+
+```
+Skill(skill="developing-solidworks:download-solidworks-docs")
+```
+
+This check is best-effort, not a gate: if it fails (offline, GitHub rate-limited, `curl` unavailable), **proceed with the bundle you have** — a slightly stale reference is still far better than guessing API calls from memory. Only treat a confirmed newer version as a reason to re-download.
+
 ## The non-negotiable rule: run, don't just build
 
 `dotnet build` only proves the code compiles against the Interop assemblies. It does not prove the COM calls succeed, that selections resolved, that the active document is the right type, or that a feature was actually created. The API frequently returns `null` or `false` on failure rather than throwing.

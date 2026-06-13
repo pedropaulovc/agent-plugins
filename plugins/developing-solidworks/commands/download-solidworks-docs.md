@@ -14,6 +14,9 @@ if (-not $asset) {
     exit 1
 }
 
+$latestVersion = $response.tag_name
+Write-Output "Latest release: $latestVersion"
+
 $downloadUrl = $asset.browser_download_url
 Write-Output "Downloading from: $downloadUrl"
 
@@ -42,7 +45,12 @@ if (Test-Path $sevenZip) {
     Expand-Archive -Path $tempPath -DestinationPath $targetDir -Force
 }
 
+# Record the installed version so the skill can detect a stale bundle later
+$versionFile = Join-Path $targetDir '.bundle-version'
+Set-Content -Path $versionFile -Value $latestVersion -NoNewline
+Write-Output "Recorded bundle version $latestVersion to $versionFile"
+
 # Clean up
 Remove-Item $tempPath
-Write-Output "Done! Unpacked to $targetDir"
+Write-Output "Done! Unpacked $latestVersion to $targetDir"
 ```
