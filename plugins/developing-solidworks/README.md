@@ -9,7 +9,7 @@ Auto-activates whenever you're touching `.cs` / `.csproj` files that reference t
 - A documentation-first workflow (read first, code second, **run** before claiming success)
 - Grep recipes for navigating the (large) SolidWorks API reference once it's downloaded into the skill folder
 - Code-quality rules tuned for SolidWorks: named parameters, null-check discipline, enum/interface casting patterns
-- A `learnings/` directory with documented fixes for real problems (`FeatureCut4` returning null, extrusion failures, faulty-geometry detection)
+- A `learnings/` directory with documented fixes for real problems (`FeatureCut4` returning null, extrusion failures, faulty-geometry detection, broken-mate detection via `GetWhatsWrong`)
 - A `scripts/find_api_redist.py` helper that locates the latest installed `SolidWorks.Interop.*` redistributable folder
 
 ## Slash commands

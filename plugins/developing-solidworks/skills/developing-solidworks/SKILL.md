@@ -37,7 +37,7 @@ Only continue to the workflow below once `./types/` and `./enums/` contain conte
 The reference is published as versioned GitHub releases, so a populated `./types/`/`./enums/` may still be stale. **Once per session, before relying on the docs, check whether a newer bundle exists.** The download skill records the installed version in `./.bundle-version`; compare it against the latest release tag:
 
 ```bash
-cat ./.bundle-version 2>/dev/null   # e.g. v3.1.0 — missing/empty means an older bundle predating version tracking; treat as stale
+cat ./.bundle-version 2>/dev/null   # e.g. v3.2.0 — missing/empty means an older bundle predating version tracking; treat as stale
 curl -s https://api.github.com/repos/pedropaulovc/offline-solidworks-api-docs/releases/latest | grep '"tag_name"'
 ```
 
