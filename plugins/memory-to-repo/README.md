@@ -3,7 +3,7 @@
 Two hooks that move Claude Code's auto memory off the **machine-local auto-memory directory** (`~/.claude/projects/<slug>/memory/`) and onto the **repository's `./memory/` folder** — so accumulated memory is git-tracked and shared across every user, machine, and cloud session:
 
 - a `PreToolUse` hook that blocks CRUD on the machine-local directory and redirects the agent to make the **exact same change** under `./memory/` instead;
-- a `SessionStart` hook that, at the start of every session, tells the agent to use `./memory/` as the auto-memory destination and injects the repo's `./memory/MEMORY.md` index up front — mirroring how Claude Code normally surfaces the auto-memory `MEMORY.md`, but from the version-controlled location.
+- a `SessionStart` hook that, at the start of every session, tells the agent to use `./memory/` as the auto-memory destination and surfaces the repo's `./memory/MEMORY.md` index up front — emitting just the memory **titles** (not the full one-line descriptions) to keep context lean, mirroring how Claude Code normally surfaces the auto-memory `MEMORY.md`, but from the version-controlled location.
 
 ## Why
 
@@ -23,7 +23,7 @@ The hook matches the tools Claude uses to manipulate memory files — `Write`, `
 
 ### SessionStart injection
 
-At session start (including resume, clear, and compact) the `SessionStart` hook emits a `<system-reminder>` instructing the agent to ignore the default auto-memory destination and use `<project>/memory` instead. When `<project>/memory/MEMORY.md` exists, its contents are appended verbatim under a `Contents of …/MEMORY.md (project's auto-memory, persists across conversations)` header — so the index is in context from the first turn, loaded from the shared repo folder rather than the machine-local one. The project root is taken from `$CLAUDE_PROJECT_DIR` (falling back to the working directory).
+At session start (including resume, clear, and compact) the `SessionStart` hook emits a `<system-reminder>` instructing the agent to ignore the default auto-memory destination and use `<project>/memory` instead. When `<project>/memory/MEMORY.md` exists, only the memory **titles** are appended — each index line (`- [Title](file.md) — description`) is reduced to `- Title`, so the index is in context from the first turn without the full descriptions bloating it. The reminder points the agent at `MEMORY.md` to read the complete contents on demand. The project root is taken from `$CLAUDE_PROJECT_DIR` (falling back to the working directory).
 
 Only the path-bearing fields (`file_path`, `path`, `command`) are inspected — **file content is never scanned**, so writing documentation that merely *mentions* the auto-memory path is not blocked. The `transcript_path` field (which lives under the same `projects/` directory but has no `memory` segment) is also left untouched.
 
