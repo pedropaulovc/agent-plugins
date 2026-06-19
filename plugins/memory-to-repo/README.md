@@ -10,7 +10,7 @@ This hook converts every memory operation into a hard block with guidance to per
 
 ## Behavior
 
-The hook matches the tools Claude uses to manipulate memory files — `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, and `Bash` — and inspects the **target path** (Claude reads/writes auto memory with its standard file tools; there is no dedicated "memory" tool). If the path resolves to `~/.claude/projects/<slug>/memory/` (POSIX or Windows backslash form, plus custom `autoMemoryDirectory` locations that keep a `.../memory` segment), it returns a `deny` decision instructing the agent to:
+The hook matches the tools Claude uses to manipulate memory files — `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, `Grep`, `Glob`, `ListDir`, and `Bash` — and inspects the **target path** (Claude reads/writes auto memory with its standard file tools; there is no dedicated "memory" tool). It decodes JSON string escapes first, so a double-quoted path inside a `Bash` command (`rm "~/.claude/.../memory/x.md"`) is matched rather than truncated. Shell deletes/renames — including PowerShell `Remove-Item`/`Move-Item` — run through the `Bash` tool and are matched path-agnostically; there is no separate PowerShell tool. If the path resolves to `~/.claude/projects/<slug>/memory/` (POSIX or Windows backslash form), it returns a `deny` decision instructing the agent to:
 
 - **Create / Update** → write the same file under `./memory/` with identical content (e.g. `./memory/MEMORY.md`, `./memory/debugging.md`)
 - **Read** → read the corresponding file under `./memory/` instead
@@ -19,6 +19,10 @@ The hook matches the tools Claude uses to manipulate memory files — `Write`, `
 `./memory/MEMORY.md` is kept as the index, mirroring the auto-memory layout, so the redirected structure matches what Claude already expects.
 
 Only the path-bearing fields (`file_path`, `path`, `command`) are inspected — **file content is never scanned**, so writing documentation that merely *mentions* the auto-memory path is not blocked. The `transcript_path` field (which lives under the same `projects/` directory but has no `memory` segment) is also left untouched.
+
+## Limitation: custom memory locations
+
+The hook anchors to the **default** auto-memory location, `~/.claude/projects/<slug>/memory/`. If you relocate auto memory with the [`autoMemoryDirectory`](https://code.claude.com/docs/en/memory) setting (e.g. `~/my-memory-dir`), that path is **not** auto-detected. This is deliberate: matching a bare `.../memory` segment anywhere would also block the repo's own `./memory/` folder — the very target this hook redirects to. To cover a relocated store, extend the regex in `hooks/memory-to-repo.sh` to include that path.
 
 ## Escape hatch
 
