@@ -41,4 +41,25 @@ out=$(run "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm $AUTO [force
 cmd=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.updatedInput.command')
 [ "$cmd" = "rm $AUTO" ] && pass "strips [force-memory] from command" || die "command not stripped clean: '$cmd'"
 
+# --- SessionStart hook ------------------------------------------------------
+SS="$(dirname "$0")/session-start.sh"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+ss() { CLAUDE_PROJECT_DIR="$tmp" sh "$SS" </dev/null; }
+
+# 6. No repo MEMORY.md: emits the redirect reminder, no contents block.
+out=$(ss)
+ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
+echo "$ctx" | grep -q "use \`$tmp/memory\` instead" && pass "SessionStart points at repo ./memory/" || die "redirect line missing: $ctx"
+echo "$ctx" | grep -q '<system-reminder>' && pass "SessionStart wraps in system-reminder" || die "no system-reminder wrapper: $ctx"
+echo "$ctx" | grep -q 'Contents of' && die "unexpected contents block with no MEMORY.md: $ctx" || pass "no contents block when MEMORY.md absent"
+
+# 7. With a repo MEMORY.md: contents are included verbatim.
+mkdir -p "$tmp/memory"
+printf '# Index\n- [foo](foo.md) — bar baz\n' > "$tmp/memory/MEMORY.md"
+out=$(ss)
+ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
+echo "$ctx" | grep -q "Contents of $tmp/memory/MEMORY.md" && pass "SessionStart includes MEMORY.md header" || die "header missing: $ctx"
+echo "$ctx" | grep -q '\- \[foo\](foo.md) — bar baz' && pass "SessionStart includes MEMORY.md contents verbatim" || die "contents missing: $ctx"
+
 exit $fail
