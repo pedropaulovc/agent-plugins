@@ -26,7 +26,7 @@ The hook anchors to the **default** auto-memory location, `~/.claude/projects/<s
 
 ## Escape hatch
 
-If a note is genuinely machine-specific, secret, or otherwise must **not** be shared, add `[force-memory]` to the tool call to bypass the block. This is reserved for the rare non-shareable case — not a routine way to skip the redirect.
+If a note is genuinely machine-specific, secret, or otherwise must **not** be shared, add `[force-memory]` to the call's main string field — the `Bash` `command`, or the `file_path` for a file tool — to bypass the block. The hook strips the marker from the request before the operation runs, so it never lands in an executed command or a written path. This is reserved for the rare non-shareable case — not a routine way to skip the redirect.
 
 ## Note
 

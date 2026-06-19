@@ -1,10 +1,24 @@
 #!/bin/sh
 input=$(cat)
 
-# Escape hatch: the agent put [force-memory] in the tool call — let it through.
-# Reserved for genuinely machine-specific / secret / non-shareable notes that
-# do NOT belong in version control; not a routine bypass of the redirect below.
-echo "$input" | grep -q '\[force-memory\]' && exit 0
+# Escape hatch: the agent put [force-memory] anywhere in the tool call (the
+# documented spot is the main string field — the Bash command, or the file_path
+# for file tools). Honor it, but STRIP the marker from the request first so it
+# never lands in an executed command or a written path. Reserved for genuinely
+# machine-specific / secret / non-shareable notes that do NOT belong in version
+# control; not a routine bypass of the redirect below.
+if echo "$input" | grep -q '\[force-memory\]'; then
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$input" | jq -c '{
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        updatedInput: (.tool_input | walk(if type == "string" then gsub(" ?\\[force-memory\\] ?"; "") else . end)),
+        additionalContext: "memory-to-repo: [force-memory] escape hatch honored; the marker was stripped from the request before the operation runs."
+      }
+    }'
+  fi
+  exit 0
+fi
 
 # Decode JSON string escapes (\" -> space) before extracting fields. Without
 # this, a double-quoted path inside a Bash command — e.g.
@@ -45,4 +59,4 @@ $command"
 # you relocate auto memory, extend the pattern below to include that path.
 echo "$candidates" | grep -qiE '\.claude[\\/]+projects[\\/]+[^\\/]+[\\/]+memory([\\/"]|$|[[:space:]])' || exit 0
 
-printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked: this targets the machine-local auto-memory directory (~/.claude/projects/<slug>/memory/). It is NOT tracked in git and NOT shared across users, machines, or cloud sessions, so anything stored there is invisible to teammates and lost on a fresh checkout.\n\nMake the EXACT same change in the repository ./memory/ folder instead (relative to the repo root), then commit it so the knowledge is version-controlled and shared with everyone:\n- Create / Update: write the same file under ./memory/ with identical content (e.g. ./memory/MEMORY.md, ./memory/debugging.md).\n- Read: read the corresponding file under ./memory/ instead.\n- Delete / Rename: do it under ./memory/.\nCreate ./memory/ if it does not exist, and keep ./memory/MEMORY.md as the index, mirroring the auto-memory layout.\n\nEscape hatch: if a note is genuinely machine-specific, secret, or otherwise must NOT be shared, add [force-memory] to the tool call to bypass this block. Do not use it to avoid the redirect above."}}'
+printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked: this targets the machine-local auto-memory directory (~/.claude/projects/<slug>/memory/). It is NOT tracked in git and NOT shared across users, machines, or cloud sessions, so anything stored there is invisible to teammates and lost on a fresh checkout.\n\nMake the EXACT same change in the repository ./memory/ folder instead (relative to the repo root), then commit it so the knowledge is version-controlled and shared with everyone:\n- Create / Update: write the same file under ./memory/ with identical content (e.g. ./memory/MEMORY.md, ./memory/debugging.md).\n- Read: read the corresponding file under ./memory/ instead.\n- Delete / Rename: do it under ./memory/.\nCreate ./memory/ if it does not exist, and keep ./memory/MEMORY.md as the index, mirroring the auto-memory layout.\n\nEscape hatch: if a note is genuinely machine-specific, secret, or otherwise must NOT be shared, add [force-memory] to the call'\''s main string field (the Bash command, or the file_path for a file tool) to bypass this block — the marker is stripped before the operation runs. Do not use it to avoid the redirect above."}}'

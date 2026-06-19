@@ -24,7 +24,7 @@ Some targets are served cleanly by plain `WebFetch` and gain nothing from the MC
 
 ## Escape hatch
 
-If the agent is genuinely restricted to the fetch tool with no MCP alternative, it can add `[force-fetch]` to the `WebFetch` prompt to bypass the block. This is reserved for worst-case situations — it is not a routine way to skip the routing above.
+If the agent is genuinely restricted to the fetch tool with no MCP alternative, it can add `[force-fetch]` to the `WebFetch` `url` (the tool's main string field) to bypass the block. The hook strips the marker from the request before the fetch runs, so it never reaches the network as part of the URL. This is reserved for worst-case situations — it is not a routine way to skip the routing above.
 
 ## Requirements
 
