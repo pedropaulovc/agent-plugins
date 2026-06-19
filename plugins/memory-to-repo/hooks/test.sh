@@ -54,12 +54,14 @@ echo "$ctx" | grep -q "use \`$tmp/memory\` instead" && pass "SessionStart points
 echo "$ctx" | grep -q '<system-reminder>' && pass "SessionStart wraps in system-reminder" || die "no system-reminder wrapper: $ctx"
 echo "$ctx" | grep -q 'Contents of' && die "unexpected contents block with no MEMORY.md: $ctx" || pass "no contents block when MEMORY.md absent"
 
-# 7. With a repo MEMORY.md: contents are included verbatim.
+# 7. With a repo MEMORY.md: only memory titles are surfaced, not descriptions.
 mkdir -p "$tmp/memory"
 printf '# Index\n- [foo](foo.md) — bar baz\n' > "$tmp/memory/MEMORY.md"
 out=$(ss)
 ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
-echo "$ctx" | grep -q "Contents of $tmp/memory/MEMORY.md" && pass "SessionStart includes MEMORY.md header" || die "header missing: $ctx"
-echo "$ctx" | grep -q '\- \[foo\](foo.md) — bar baz' && pass "SessionStart includes MEMORY.md contents verbatim" || die "contents missing: $ctx"
+echo "$ctx" | grep -q "only titles shown" && pass "SessionStart explains titles-only" || die "titles-only note missing: $ctx"
+echo "$ctx" | grep -q '^- foo$' && pass "SessionStart includes the memory title" || die "title missing: $ctx"
+echo "$ctx" | grep -q 'bar baz' && die "description leaked into context: $ctx" || pass "drops the one-line description"
+echo "$ctx" | grep -q 'foo.md' && die "link target leaked into context: $ctx" || pass "drops the link target"
 
 exit $fail
