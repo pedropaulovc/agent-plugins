@@ -37,6 +37,7 @@ Broadly useful regardless of what you're working on.
 |---|---|---|
 | [superpowers](plugins/superpowers) | Skills | Core skills library — TDD, debugging, collaboration patterns (vendored from [obra/superpowers](https://github.com/obra/superpowers)) |
 | [windows-bash-guard](plugins/windows-bash-guard) | Hook | Auto-fixes Windows+bash path pitfalls (backslash paths, `/dev/stdin`) before execution |
+| [memory-to-repo](plugins/memory-to-repo) | Hook | Blocks CRUD on the machine-local auto-memory dir and redirects to the repo's `./memory/` folder so memory is git-tracked and shareable |
 
 ### Personalized
 
