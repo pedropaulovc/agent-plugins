@@ -43,13 +43,14 @@ Over time, memories drift: a note references a function that was renamed, a "we 
 
 It fans out **one read-only [`Explore`](https://code.claude.com/docs/en/sub-agents) subagent per memory file, on Haiku**, in parallel. Each subagent reads its assigned memory, extracts the concrete claims (file paths, symbols, flags, decisions, dates, `[[links]]`), then checks them against the **current repo state** (does the thing still exist / behave as described?) and **git history** (`git log`/`git blame` — was it renamed, moved, removed, or reversed?). Because the evaluators are `Explore` agents they can read and run `git` but cannot `Edit`/`Write`, so they can never mutate a memory while judging it.
 
-Each returns a verdict — `FRESH` / `STALE` / `CONTRADICTED` / `UNVERIFIABLE` — with evidence (the file line or commit SHA that proves the problem). The findings bubble back up to the **main agent**, which decides per memory:
+Each returns a verdict — `FRESH` / `STALE` / `CONTRADICTED` / `UNVERIFIABLE` — with evidence (the file line or commit SHA that proves the problem). The findings bubble back up to the **main agent**, which decides per memory — and **when in doubt, raises it to you rather than editing silently**:
 
-- **Amend** in place — convert relative dates to absolute, update a contradicted fact to the new truth *with* an `(Updated <date>, previously: …)` note. Facts are **superseded, never silently deleted**.
+- **Amend** in place — only **mechanical, objective** fixes: convert relative dates to absolute, fix a plainly renamed/moved reference. Facts are **superseded, never silently deleted**.
+- **Raise for confirmation** — every `CONTRADICTED` finding and any important-looking `UNVERIFIABLE` claim. A contradiction is ambiguous: the memory may be out of date, *or* the code may have drifted from a recorded decision/preference. Rewriting it to "the new truth" would launder a regression into remembered fact, so the command presents the evidence and lets you choose: update the memory, fix the code, or keep it as-is.
 - **Drop** — only after confirming with you, since deleting a committed memory removes shared knowledge for the whole team.
-- **Keep** — `FRESH` and `UNVERIFIABLE` (e.g. user preferences git can't confirm) memories are left alone.
+- **Keep** — `FRESH` (and unconfirmed `UNVERIFIABLE`) memories are left alone.
 
-It then re-syncs `MEMORY.md` so the index matches the files on disk, and reports a summary table of what changed. It does **not** commit — you review the diff and commit, since the store is version-controlled.
+It then re-syncs `MEMORY.md` so the index matches the files on disk, and reports a summary table of what it changed versus what it raised for you to decide.
 
 ```
 /memory-audit                       # audit every memory
