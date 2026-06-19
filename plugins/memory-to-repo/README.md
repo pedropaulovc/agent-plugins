@@ -5,6 +5,8 @@ Two hooks that move Claude Code's auto memory off the **machine-local auto-memor
 - a `PreToolUse` hook that blocks CRUD on the machine-local directory and redirects the agent to make the **exact same change** under `./memory/` instead;
 - a `SessionStart` hook that, at the start of every session, tells the agent to use `./memory/` as the auto-memory destination and surfaces the repo's `./memory/MEMORY.md` index up front — emitting just the memory **titles** (not the full one-line descriptions) to keep context lean, mirroring how Claude Code normally surfaces the auto-memory `MEMORY.md`, but from the version-controlled location.
 
+It also ships a `/memory-audit` command that audits the store for staleness (see [below](#memory-audit-command)).
+
 ## Why
 
 [Auto memory](https://code.claude.com/docs/en/memory) lets Claude accumulate learnings across sessions by reading and writing `MEMORY.md` and topic files. But that directory is **machine-local**: it isn't tracked in git and isn't shared across users, machines, or cloud sessions. Knowledge Claude saves there is invisible to your teammates and lost on a fresh checkout.
@@ -34,6 +36,25 @@ The hook anchors to the **default** auto-memory location, `~/.claude/projects/<s
 ## Escape hatch
 
 If a note is genuinely machine-specific, secret, or otherwise must **not** be shared, add `[force-memory]` to the call's main string field — the `Bash` `command`, or the `file_path` for a file tool — to bypass the block. The hook strips the marker from the request before the operation runs, so it never lands in an executed command or a written path. This is reserved for the rare non-shareable case — not a routine way to skip the redirect.
+
+## `/memory-audit` command
+
+Over time, memories drift: a note references a function that was renamed, a "we always do X" decision that was later reversed, or a relative date ("changed the key yesterday") with no anchor. `/memory-audit` audits the `./memory/` store for exactly that kind of staleness.
+
+It fans out **one read-only [`Explore`](https://code.claude.com/docs/en/sub-agents) subagent per memory file, on Haiku**, in parallel. Each subagent reads its assigned memory, extracts the concrete claims (file paths, symbols, flags, decisions, dates, `[[links]]`), then checks them against the **current repo state** (does the thing still exist / behave as described?) and **git history** (`git log`/`git blame` — was it renamed, moved, removed, or reversed?). Because the evaluators are `Explore` agents they can read and run `git` but cannot `Edit`/`Write`, so they can never mutate a memory while judging it.
+
+Each returns a verdict — `FRESH` / `STALE` / `CONTRADICTED` / `UNVERIFIABLE` — with evidence (the file line or commit SHA that proves the problem). The findings bubble back up to the **main agent**, which decides per memory:
+
+- **Amend** in place — convert relative dates to absolute, update a contradicted fact to the new truth *with* an `(Updated <date>, previously: …)` note. Facts are **superseded, never silently deleted**.
+- **Drop** — only after confirming with you, since deleting a committed memory removes shared knowledge for the whole team.
+- **Keep** — `FRESH` and `UNVERIFIABLE` (e.g. user preferences git can't confirm) memories are left alone.
+
+It then re-syncs `MEMORY.md` so the index matches the files on disk, and reports a summary table of what changed. It does **not** commit — you review the diff and commit, since the store is version-controlled.
+
+```
+/memory-audit                       # audit every memory
+/memory-audit memory/decisions.md   # audit specific file(s) or globs
+```
 
 ## Note
 
