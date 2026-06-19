@@ -1,0 +1,116 @@
+---
+description: Audit the repo ./memory/ store for staleness — fan out read-only Haiku subagents (one per memory) to check each fact against the current repo state and git history, then bubble up drop/amend recommendations
+argument-hint: "[memory-file-or-glob ...]  (optional; default: all memories)"
+allowed-tools: Read, Grep, Glob, Bash, Edit, Write, Task
+---
+
+# Memory audit: prune stale repo memory
+
+You are auditing the repository's version-controlled memory store — the `./memory/`
+folder that the **memory-to-repo** plugin redirects all auto-memory into. Each
+`./memory/*.md` file holds one fact/note with frontmatter (`name`, `description`,
+`metadata.type`) and a body; `./memory/MEMORY.md` is the index, one line per
+memory in the form `- [Title](file.md) — hook`.
+
+Your job: find memories that no longer match reality (the code today, the git
+history, or their own internal consistency), and decide whether each should be
+kept, amended, or dropped.
+
+## Memory store
+
+- Project memory directory: `${CLAUDE_PROJECT_DIR:-$PWD}/memory`
+- Today's date: !`date +%F`
+
+Memory files (the index `MEMORY.md` is excluded — it is regenerated, not audited):
+!`cd "${CLAUDE_PROJECT_DIR:-$PWD}" && ls -1 memory/*.md 2>/dev/null | grep -v '/MEMORY\.md$' || echo '(no memory files found)'`
+
+Current index — `memory/MEMORY.md`:
+!`cat "${CLAUDE_PROJECT_DIR:-$PWD}/memory/MEMORY.md" 2>/dev/null || echo '(no MEMORY.md)'`
+
+Requested scope (empty = audit everything): $ARGUMENTS
+
+## What to do
+
+### 1. Scope
+If `$ARGUMENTS` names specific files or globs, restrict the audit to those (still
+under `memory/`). Otherwise audit **every** `memory/*.md` except `MEMORY.md`. If
+there are no memory files, say so and stop.
+
+### 2. Fan out — one read-only Haiku subagent per memory
+Launch the evaluators **in parallel** (multiple `Task` calls in a single message).
+For each memory file spawn one subagent with:
+- `subagent_type: Explore` — read-only; it can read files and run `git`, but
+  cannot Edit/Write, so it can never mutate a memory while judging it.
+- `model: haiku` — these are cheap, well-scoped checks.
+
+One subagent per file (never batch several memories into one) so each evaluation
+stays focused and the fan-out runs concurrently. Fill the template below in for
+each file.
+
+#### Subagent prompt template
+```
+You are a read-only memory staleness auditor. Evaluate ONE memory file against the
+current repository. You CANNOT and MUST NOT modify anything — return findings only.
+
+Memory file: <PATH>
+Repo root: <REPO_ROOT>
+Today's date: <YYYY-MM-DD>
+
+Steps:
+1. Read the memory file in full (frontmatter + body).
+2. Extract every concrete, checkable claim: file paths, function/symbol names,
+   flags, commands, config keys, versions, dates, decisions, "we do X" statements,
+   and any [[links]] to other memories.
+3. Verify each claim against the CURRENT repo state AND git history:
+   - Current state: read the referenced files/symbols (Read/Grep/Glob). Does the
+     thing still exist? Does it still behave as the memory describes?
+   - History: `git log`, `git log -p`, `git log --oneline -- <path>`, `git blame`
+     to detect a referenced thing being renamed, moved, removed, or a decision
+     reversed. Cite the commit (short SHA + subject) responsible.
+   - A relative date ("yesterday", "last week", "recently") with no absolute
+     anchor is a staleness smell — flag it.
+   - A [[link]] to a memory not present in the store is a smell.
+4. Decide one STATUS for the whole file.
+
+Return EXACTLY these fields, concisely:
+- FILE: <path>
+- STATUS: FRESH | STALE | CONTRADICTED | UNVERIFIABLE
+    FRESH        = every checkable claim still matches the repo.
+    STALE        = references something renamed/moved/removed, or an unanchored
+                   relative date, or otherwise out of date but not actively wrong.
+    CONTRADICTED = a claim is now FALSE; the repo/git history shows the opposite.
+    UNVERIFIABLE = claims are about things outside this repo (user prefs, external
+                   services) that git cannot confirm. Say so; do NOT guess.
+- EVIDENCE: bullet list. For each problem claim, quote it then cite the file
+  line or commit (short SHA + subject) that proves the issue. If FRESH, say what
+  you verified.
+- RECOMMENDATION: KEEP | AMEND | DROP, one line why.
+    If AMEND, give the EXACT replacement text. Rule: never drop a fact without a
+    replacement — supersede it, convert relative dates to absolute, and preserve
+    source attribution.
+```
+
+### 3. Collect and decide (you, the main agent, own this)
+When all subagents return, build a summary table:
+`file | status | recommendation | one-line reason`. Then act on each:
+
+- **FRESH** → leave untouched.
+- **AMEND** → apply the edit to the memory file. Convert relative dates to
+  absolute. Update a contradicted fact to the new truth **with** a
+  `(Updated <today>, previously: …)` note — **never delete a fact outright,
+  supersede it**. If the summary changed, update the file's `description`
+  frontmatter and its `MEMORY.md` index line to match.
+- **DROP** → dropping deletes shared, committed knowledge for the whole team.
+  Do **not** delete unilaterally. Present these to the user with the evidence and
+  get confirmation before removing the file and its `MEMORY.md` line.
+- **UNVERIFIABLE** → keep; note it could not be checked from the repo.
+
+### 4. Re-sync the index
+After any change, make `memory/MEMORY.md` match the files on disk: every memory
+has exactly one `- [Title](file.md) — hook` line, dropped memories have none, and
+amended summaries are reflected. Keep it lean.
+
+### 5. Report
+Print the final summary table and a short list of what you changed (amended /
+dropped) versus left alone. Do **not** commit — the memory-to-repo plugin keeps
+`./memory/` under version control, so the user will review the diff and commit.
