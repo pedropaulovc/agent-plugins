@@ -57,6 +57,10 @@
     {
       "name": "alt-text",
       "source": "./plugins/alt-text"
+    },
+    {
+      "name": "memory-to-repo",
+      "source": "./plugins/memory-to-repo"
     }
   ]
 }
