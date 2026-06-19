@@ -85,25 +85,42 @@ Return EXACTLY these fields, concisely:
   line or commit (short SHA + subject) that proves the issue. If FRESH, say what
   you verified.
 - RECOMMENDATION: KEEP | AMEND | DROP, one line why.
-    If AMEND, give the EXACT replacement text. Rule: never drop a fact without a
-    replacement — supersede it, convert relative dates to absolute, and preserve
-    source attribution.
+    AMEND is for MECHANICAL, objective fixes only (relative→absolute dates, a
+    plainly renamed/moved reference) — give the EXACT replacement text, and never
+    drop a fact without a replacement (supersede it, preserve source attribution).
+    If the memory records a decision/preference and the code contradicts it, report
+    STATUS: CONTRADICTED but note the code may have DRIFTED from intent — do NOT
+    assume the memory is the wrong side. That is for a human to confirm.
 ```
 
 ### 3. Collect and decide (you, the main agent, own this)
 When all subagents return, build a summary table:
-`file | status | recommendation | one-line reason`. Then act on each:
+`file | status | recommendation | one-line reason`.
+
+**When in doubt, raise it — don't act silently.** Anything you are not confident
+about goes to the user for confirmation rather than an automatic edit. In
+particular, surface every `CONTRADICTED` finding and any important-looking
+`UNVERIFIABLE` claim, with the evidence and your proposed action, and let the user
+decide. Then act on each:
 
 - **FRESH** → leave untouched.
-- **AMEND** → apply the edit to the memory file. Convert relative dates to
-  absolute. Update a contradicted fact to the new truth **with** a
-  `(Updated <today>, previously: …)` note — **never delete a fact outright,
-  supersede it**. If the summary changed, update the file's `description`
-  frontmatter and its `MEMORY.md` index line to match.
+- **AMEND** → apply only **mechanical, objective** fixes in place: convert relative
+  dates to absolute, fix a reference that was plainly renamed or moved. **Never
+  delete a fact without a replacement** — supersede it and preserve source
+  attribution. If the summary changed, update the file's `description` frontmatter
+  and its `MEMORY.md` index line to match.
+- **CONTRADICTED** → **do not silently rewrite the memory to match the code.** A
+  contradiction can mean the memory is out of date *or* that the code has drifted
+  from a recorded decision/preference — rewriting it to "the new truth" would
+  launder an accidental regression into remembered fact and erase the original
+  intent. Surface it to the user with the evidence and a proposed correction, and
+  let them choose: update the memory, fix the code, or keep it as-is.
 - **DROP** → dropping deletes shared, committed knowledge for the whole team.
   Do **not** delete unilaterally. Present these to the user with the evidence and
   get confirmation before removing the file and its `MEMORY.md` line.
-- **UNVERIFIABLE** → keep; note it could not be checked from the repo.
+- **UNVERIFIABLE** → keep. Raise the ones that look important (e.g. a stated
+  decision or preference you cannot confirm from the repo) to the user so they can
+  confirm the claim still holds.
 
 ### 4. Re-sync the index
 After any change, make `memory/MEMORY.md` match the files on disk: every memory
@@ -111,6 +128,6 @@ has exactly one `- [Title](file.md) — hook` line, dropped memories have none, 
 amended summaries are reflected. Keep it lean.
 
 ### 5. Report
-Print the final summary table and a short list of what you changed (amended /
-dropped) versus left alone. Do **not** commit — the memory-to-repo plugin keeps
-`./memory/` under version control, so the user will review the diff and commit.
+Print the final summary table and a short list of what you changed (amended)
+versus what you raised for the user to decide (contradicted, drops, important
+unverifiable claims) versus left alone.
