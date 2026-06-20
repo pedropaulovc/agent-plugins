@@ -2,7 +2,7 @@
 name: m
 description: Reset current worktree to origin/main. Tears down agent state (task list, scheduled timers, teammates, subagents, monitors, loops, background jobs), cleans stale branches, resets to main, and runs npm install on all worktrees. Pass --force to discard everything without asking.
 disable-model-invocation: true
-allowed-tools: Bash, AskUserQuestion, TodoWrite, TaskStop, TaskOutput, Monitor
+allowed-tools: Bash, AskUserQuestion, TodoWrite, TaskStop, TaskOutput, Monitor, Agent, SendMessage
 ---
 
 # Reset worktree to origin/main
