@@ -2,7 +2,7 @@
 name: m
 description: Reset current worktree to origin/main. Tears down agent state (task list, scheduled timers, teammates, subagents, monitors, loops, background jobs), cleans stale branches, resets to main, and runs npm install on all worktrees. Pass --force to discard everything without asking.
 disable-model-invocation: true
-allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate, TaskStop, TaskOutput, Monitor, Agent, SendMessage, CronList, CronDelete
+allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate, TaskStop, TaskOutput, Monitor, Agent, SendMessage, CronList, CronDelete, unsubscribe_pr_activity
 ---
 
 # Reset worktree to origin/main
@@ -17,8 +17,9 @@ confirmation:
 
 - Discard all agent state below without asking.
 - Discard all uncommitted, untracked, **and** git-ignored files without asking — use
-  `git clean -fdx .` in place of the gentler clean in step 4, and skip the
-  uncommitted-changes guard in step 2 (the reset and clean will discard them).
+  `git clean -fdx .` in place of the gentler clean in step 5, and skip the
+  uncommitted-changes guard in step 3 (the reset and clean will discard them).
+- Drop all stashes without asking (`git stash clear` in step 4).
 
 Without `--force`, keep the confirmation behaviour described in each step.
 
@@ -41,14 +42,33 @@ cleared, report it to the user rather than continuing silently.
   remain.
 - **Background jobs**: kill any active background shell job, then confirm the job list is
   empty.
+- **PR activity subscriptions**: unsubscribe from every watched PR
+  (`unsubscribe_pr_activity`) so the session stops waking on GitHub webhook events, then
+  confirm no subscriptions remain.
 
-## 2. Check for uncommitted changes
+## 2. Abort any in-progress git operation
+
+A half-finished operation will block the checkout/reset in step 6, so clear it first.
+For each of the following, abort only if one is actually in progress (each command is a
+no-op / harmless failure otherwise):
+
+```bash
+git rebase --abort 2>/dev/null || true
+git merge --abort 2>/dev/null || true
+git cherry-pick --abort 2>/dev/null || true
+git am --abort 2>/dev/null || true
+```
+
+Also remove a stale lock left by a crashed git process if (and only if) no git process
+is running: `rm -f .git/index.lock`.
+
+## 3. Check for uncommitted changes
 
 Run `git status` to see if there are any staged or unstaged changes. If there are
 uncommitted changes, stop and inform the user — they need to commit or stash these
 changes first. (Skip this guard in `--force` mode.)
 
-## 3. Check for untracked files
+## 4. Check for untracked files and stashes
 
 Run `git status` to list any untracked files. If untracked files exist:
 
@@ -58,9 +78,13 @@ Run `git status` to list any untracked files. If untracked files exist:
   uncertain file should be deleted or kept.
 - Only proceed with cleanup if the user confirms all untracked files can be deleted.
 
-(In `--force` mode, skip these questions — everything is discarded in step 5.)
+Also run `git stash list`. A `git reset --hard` does **not** clear stashes, so report any
+that exist and let the user decide whether to keep them.
 
-## 4. Run git clean
+(In `--force` mode, skip these questions — everything is discarded in step 5, and run
+`git stash clear` to drop all stashes.)
+
+## 5. Run git clean
 
 If the user confirms cleanup (or if all untracked files are clearly throwaway), run
 `git clean -df` from the root of the repository to remove untracked files and
@@ -68,11 +92,13 @@ directories.
 
 In `--force` mode, run `git clean -fdx .` instead to also remove git-ignored files.
 
-## 5. Reset state
+## 6. Reset state
 
-Run the m.sh script located next to this SKILL.md file:
+Prune bookkeeping for worktrees whose directories are gone, then run the m.sh script
+located next to this SKILL.md file:
 
 ```bash
+git worktree prune
 bash "$(find ~/.claude -path '*/worktree-reset/skills/m/m.sh' 2>/dev/null | head -1)"
 ```
 
