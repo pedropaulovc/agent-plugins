@@ -94,12 +94,15 @@ In `--force` mode, run `git clean -fdx .` instead to also remove git-ignored fil
 
 ## 6. Reset state
 
-Prune bookkeeping for worktrees whose directories are gone, then run the m.sh script
-located next to this SKILL.md file:
+Prune bookkeeping for worktrees whose directories are gone, then run the `m.sh` script
+that sits in this skill's own directory (right next to this `SKILL.md`). You already know
+that directory's absolute path — it's where you loaded this file from — so invoke the
+script by that path directly. Do **not** search for it with `find`; that scans all of
+`~/.claude` and can match a stale or differently-installed copy.
 
 ```bash
 git worktree prune
-bash "$(find ~/.claude -path '*/worktree-reset/skills/m/m.sh' 2>/dev/null | head -1)"
+bash "<absolute path of the directory containing this SKILL.md>/m.sh"
 ```
 
 Report the final status to the user when complete, including confirmation that every
