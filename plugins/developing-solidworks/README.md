@@ -14,7 +14,7 @@ Auto-activates whenever you're touching `.cs` / `.csproj` files that reference t
 
 ## Slash commands
 
-- **`/download-solidworks-docs`** — Downloads the latest SolidWorks API doc bundle from [pedropaulovc/offline-solidworks-api-docs](https://github.com/pedropaulovc/offline-solidworks-api-docs) and unpacks it into the skill folder (`$CLAUDE_PLUGIN_ROOT/skills/developing-solidworks/`). Run this once after installing the plugin so the `types/`, `enums/`, `docs/`, `examples/`, and `index/` directories the skill grep recipes expect actually exist. **Currently requires 7-Zip at `C:\Program Files\7-Zip\7z.exe`** — that hardcoded path is inherited from the source repo and not yet portable.
+- **`/download-solidworks-docs [skill-dir]`** — Downloads the latest SolidWorks API doc bundle from [pedropaulovc/offline-solidworks-api-docs](https://github.com/pedropaulovc/offline-solidworks-api-docs) and unpacks it into the skill folder (`skills/developing-solidworks/`). Run this once after installing the plugin so the `types/`, `enums/`, `docs/`, `examples/`, and `index/` directories the skill grep recipes expect actually exist. Pass the absolute skill-directory path as an argument; if omitted, the command searches `~/.claude/plugins` to locate it. (It does **not** rely on `CLAUDE_PLUGIN_ROOT`, which Claude Code only exports to hook/MCP/LSP subprocesses, not to the shell this script runs in.) For unpacking it uses 7-Zip if `7z`/`7za` is on `PATH` or installed under either `Program Files` tree, otherwise it falls back to the slower built-in `Expand-Archive`.
 
 ## Versioned doc tree (gitignored)
 
