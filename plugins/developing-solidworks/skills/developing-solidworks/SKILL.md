@@ -10,6 +10,18 @@ paths: ["**/*.cs", "**/*.csproj", "**/*.sln"]
 
 The SolidWorks COM API is large, inconsistently named, weakly typed, and poorly covered by LLM training data. Guessing method names, parameter orders, or return types almost always produces code that compiles but fails at runtime. This skill ships the official API reference, working examples, and accumulated debugging notes alongside it. **Consult them before writing code, not after a failure.**
 
+## Before anything: anchor to this skill directory
+
+Every `ls`/`grep`/`cat` recipe below uses paths relative to this skill's own directory (the folder containing this `SKILL.md`). Those paths only resolve if your shell's working directory **is** that folder — and it usually isn't by default.
+
+`CLAUDE_PLUGIN_ROOT` does **not** help here: Claude Code exports it only to hook/MCP/LSP subprocesses, never to the shell you run tool calls in. So resolve the directory yourself, from the absolute path of this `SKILL.md` that you were given when the skill loaded, and `cd` into it before running any recipe:
+
+```bash
+cd "<absolute path of the directory containing this SKILL.md>"
+```
+
+After that, every `./types/`, `./enums/`, `./examples/`, etc. path below is correct. If a recipe ever comes up empty, first confirm you're still in this directory before concluding the docs are missing.
+
 ## First-time setup: download the API docs
 
 **Before doing anything else, check whether `./types/` and `./enums/` are populated.** If either is empty or missing, the reference material this skill depends on has not been downloaded yet and every code suggestion below will be a guess.
@@ -20,13 +32,15 @@ ls ./types/ ./enums/ 2>/dev/null | head
 
 **If empty or missing, you (the agent) MUST invoke the bundled download skill yourself before doing anything else. Do not hand this off to the user. Do not ask for permission. Do not skip it and continue with guessed API calls.**
 
-Invoke it via the Skill tool:
+Invoke it via the Skill tool, passing the absolute path of **this** skill directory (the folder containing this `SKILL.md`) as the argument:
 
 ```
-Skill(skill="developing-solidworks:download-solidworks-docs")
+Skill(skill="developing-solidworks:download-solidworks-docs", args="<absolute path to this skill directory>")
 ```
 
-The corresponding slash command `/download-solidworks-docs` is for *humans* to run manually when working without an agent — agents must use the Skill tool form above so the docs land in this skill's directory automatically.
+Pass the path explicitly because `CLAUDE_PLUGIN_ROOT` is **not** exported into tool-spawned shells — the download script cannot discover its own location on its own. If you omit the argument, the script falls back to searching the Claude plugins install tree, which is slower and may pick the wrong copy if multiple are installed.
+
+The corresponding slash command `/download-solidworks-docs` is for *humans* to run manually when working without an agent — pass the skill path as an argument there too, or let the fallback search find it.
 
 After invocation, re-check `./types/` and `./enums/`. If they're still empty, the download failed: surface the failure to the user with the exact error message and **stop**. Do not fall back to API calls reasoned from memory — the SolidWorks API surface is ~9,000 methods with weak naming conventions and many silent-failure modes, and "I'll figure it out from nearby code" is the documented failure mode this skill exists to prevent.
 
