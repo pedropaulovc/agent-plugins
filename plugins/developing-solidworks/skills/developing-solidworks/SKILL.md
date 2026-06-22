@@ -85,14 +85,22 @@ All paths below are relative to this `SKILL.md` (the skill directory). They are 
 
 If `./types/` or `./enums/` ever looks empty mid-session, jump back to **First-time setup** above.
 
-## How to navigate the docs with grep
+## How to navigate the docs — use the Bash tool, NOT the Glob/Grep tools
 
-The doc layout is grep-optimised. Use it directly instead of reading whole folders.
+> **The `Glob` and `Grep` tools do not work on this bundle. Do not use them.** They silently return "No files found" / "No matches found" even though the files exist — regardless of the path you pass them.
+>
+> These docs live in the plugin cache (`~/.claude/plugins/cache/...`), **outside the project workspace**. `Glob` and `Grep` only search registered *working roots* (the project directory plus any `--add-dir` paths), so they cannot reach the bundle. This is structural — not a `.gitignore` issue, and no plugin setting can change it. (The `cd` from the anchor section above does **not** fix it either: the working-root gate is independent of the shell's cwd.)
+>
+> What works on the bundle with zero configuration:
+> - **Search / discover files → the `Bash` tool** (`grep`, `ls`, `find`). The shell is not restricted to working roots — every recipe below uses it.
+> - **Read a file's content → the `Read` tool** on the file's absolute path (preferred; `cat` in `Bash` also works).
+
+The doc layout is grep-optimised. Drive it with `Bash` grep instead of reading whole folders.
 
 ```bash
 # Find a method on a specific interface
 grep -rl "CreateArc" ./types/IModelDoc2/
-cat  ./types/IModelDoc2/CreateArc2.md
+cat  ./types/IModelDoc2/CreateArc2.md   # or: Read tool on the absolute path
 
 # List all members of an interface (excluding the overview file)
 ls ./types/IModelDoc2/*.md | grep -v "_overview"
