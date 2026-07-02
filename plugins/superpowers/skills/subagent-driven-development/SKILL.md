@@ -5,11 +5,16 @@ description: Use when executing implementation plans with independent tasks in t
 
 # Subagent-Driven Development
 
-Execute plan by creating an agent team: you are the coordinator, teammates handle implementation, testing, review, and demo. Teammates persist across rounds so they keep context during fix cycles.
+Execute plan by dispatching a fresh implementer subagent per task, a task review (spec compliance + code quality) after each, and a broad whole-branch review at the end.
 
-**Core principle:** You coordinate. Teammates implement, test, review, and demo. Nobody works alone — every change gets adversarial testing AND review (spec compliance + code quality in one pass). Fix cycles go directly between you and the teammates, no context lost.
+**Why subagents:** You delegate tasks to specialized agents with isolated context. By precisely crafting their instructions and context, you ensure they stay focused and succeed at their task. They should never inherit your session's context or history — you construct exactly what they need. This also preserves your own context for coordination work.
 
-**IMPORTANT:** This skill requires `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`. Use the TeamCreate, Task (with `team_name`), SendMessage, TaskCreate/TaskUpdate/TaskList tools. Do NOT use background Task subagents — use persistent teammates instead.
+**Core principle:** Fresh subagent per task + task review (spec + quality) + broad final review = high quality, fast iteration
+
+**Narration:** between tool calls, narrate at most one short line — the
+ledger and the tool results carry the record.
+
+**Continuous execution:** Do not pause to check in with your human partner between tasks. Execute all tasks from the plan without stopping. The only reasons to stop are: BLOCKED status you cannot resolve, ambiguity that genuinely prevents progress, or all tasks complete. "Should I continue?" prompts and progress summaries waste their time — they asked you to execute the plan, so execute it.
 
 ## When to Use
 
@@ -17,461 +22,397 @@ Execute plan by creating an agent team: you are the coordinator, teammates handl
 digraph when_to_use {
     "Have implementation plan?" [shape=diamond];
     "Tasks mostly independent?" [shape=diamond];
+    "Stay in this session?" [shape=diamond];
     "subagent-driven-development" [shape=box];
+    "executing-plans" [shape=box];
     "Manual execution or brainstorm first" [shape=box];
 
     "Have implementation plan?" -> "Tasks mostly independent?" [label="yes"];
     "Have implementation plan?" -> "Manual execution or brainstorm first" [label="no"];
-    "Tasks mostly independent?" -> "subagent-driven-development" [label="yes"];
+    "Tasks mostly independent?" -> "Stay in this session?" [label="yes"];
     "Tasks mostly independent?" -> "Manual execution or brainstorm first" [label="no - tightly coupled"];
+    "Stay in this session?" -> "subagent-driven-development" [label="yes"];
+    "Stay in this session?" -> "executing-plans" [label="no - parallel session"];
 }
 ```
 
-## Team Structure
-
-Create a team with five teammates. You (the coordinator) never implement — you orchestrate.
-
-| Role | subagent_type | Purpose |
-|------|---------------|---------|
-| **You** (coordinator) | — | Read plan, create tasks, assign work, mediate fix cycles, maximize parallelism |
-| **implementer** | `general-purpose` | Implements tasks, writes unit tests, makes tester's e2e tests pass |
-| **tester** | `general-purpose` | Writes adversarial e2e/integration tests (RED), verifies GREEN is genuine |
-| **code-reviewer** | `general-purpose` | Verifies spec compliance AND reviews code quality, maintainability, patterns |
-| **demo-presenter** | `general-purpose` | Demos completed feature manually, records artifacts |
-| **demo-reviewer** | `general-purpose` | Reviews spec + demo as strict client CEO (no code access) |
-
-## Parallelism Principle
-
-**Run agents in parallel whenever there are no data dependencies between them.** Sequential handoffs are only required when one agent's output is another's input. The coordinator must maximize concurrency at every stage.
+**vs. Executing Plans (parallel session):**
+- Same session (no context switch)
+- Fresh subagent per task (no context pollution)
+- Review after each task (spec compliance + code quality), broad review at the end
+- Faster iteration (no human-in-loop between tasks)
 
 ## The Process
 
 ```dot
 digraph process {
     rankdir=TB;
-    node [fontsize=10];
-
-    "Read plan, extract tasks, create team" [shape=box];
-    "Create TaskList from plan tasks" [shape=box];
 
     subgraph cluster_per_task {
-        label="Per Task (coordinator orchestrates)";
-        style=dashed;
-
-        subgraph cluster_tdd {
-            label="TDD Cycle (tester → implementer)";
-            style=dotted;
-            "Assign task to tester: write failing e2e tests" [shape=box];
-            "Tester reports: test files, RED confirmed" [shape=box];
-            "Assign task to implementer: make tests GREEN + unit tests" [shape=box];
-            "Implementer reports: implementation complete" [shape=box];
-        }
-
-        subgraph cluster_parallel_review {
-            label="PARALLEL: tester + code-reviewer simultaneously";
-            style=dotted;
-            "Tester: verify GREEN, test strength" [shape=box];
-            "Code-reviewer: verify spec + code quality" [shape=box];
-        }
-
-        "Both approve?" [shape=diamond];
-        "Send consolidated fixes to implementer" [shape=box];
-        "Mark task complete" [shape=box];
+        label="Per Task";
+        "Dispatch implementer subagent (./implementer-prompt.md)" [shape=box];
+        "Implementer subagent asks questions?" [shape=diamond];
+        "Answer questions, provide context" [shape=box];
+        "Implementer subagent implements, tests, commits, self-reviews" [shape=box];
+        "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)" [shape=box];
+        "Task reviewer reports spec ✅ and quality approved?" [shape=diamond];
+        "Dispatch fix subagent for Critical/Important findings" [shape=box];
+        "Mark task complete in todo list and progress ledger" [shape=box];
     }
 
-    "More tasks?" [shape=diamond];
+    "Read plan, note context and global constraints, create todos" [shape=box];
+    "More tasks remain?" [shape=diamond];
+    "Dispatch final code reviewer subagent (../requesting-code-review/code-reviewer.md)" [shape=box];
+    "Use superpowers:finishing-a-development-branch" [shape=box style=filled fillcolor=lightgreen];
 
-    subgraph cluster_final_phase {
-        label="PARALLEL: Final Review + Demo Prep";
-        style=dashed;
-        "Send final holistic review to code-reviewer" [shape=box];
-        "Assign demo to demo-presenter" [shape=box];
-        "Feature demoable?" [shape=diamond];
-        "Demo data creatable via user flows?" [shape=diamond];
-        "Coordinator arranges shim or escalates to user" [shape=box];
-        "Flag undemoable feature to user" [shape=box];
-        "Demo-presenter records demo artifacts" [shape=box];
-    }
-
-    "Final review issues?" [shape=diamond];
-    "Implementer applies final fixes" [shape=box];
-    "Send spec + demo artifacts to demo-reviewer" [shape=box];
-    "Demo approved?" [shape=diamond];
-    "Route demo failure" [shape=box];
-
-    "Shut down teammates" [shape=box];
-    "Push branch + open PR" [shape=box style=filled fillcolor=lightgreen];
-
-    // Setup
-    "Read plan, extract tasks, create team" -> "Create TaskList from plan tasks";
-    "Create TaskList from plan tasks" -> "Assign task to tester: write failing e2e tests";
-
-    // TDD cycle
-    "Assign task to tester: write failing e2e tests" -> "Tester reports: test files, RED confirmed";
-    "Tester reports: test files, RED confirmed" -> "Assign task to implementer: make tests GREEN + unit tests";
-    "Assign task to implementer: make tests GREEN + unit tests" -> "Implementer reports: implementation complete";
-
-    // Parallel review (tester + code-reviewer at once)
-    "Implementer reports: implementation complete" -> "Tester: verify GREEN, test strength";
-    "Implementer reports: implementation complete" -> "Code-reviewer: verify spec + code quality";
-    "Tester: verify GREEN, test strength" -> "Both approve?";
-    "Code-reviewer: verify spec + code quality" -> "Both approve?";
-
-    // Fix loop
-    "Both approve?" -> "Send consolidated fixes to implementer" [label="any reject"];
-    "Send consolidated fixes to implementer" -> "Implementer reports: implementation complete" [label="implementer fixes"];
-    "Both approve?" -> "Mark task complete" [label="all approve"];
-
-    // Task loop
-    "Mark task complete" -> "More tasks?";
-    "More tasks?" -> "Assign task to tester: write failing e2e tests" [label="yes"];
-    "More tasks?" -> "Send final holistic review to code-reviewer" [label="no"];
-    "More tasks?" -> "Assign demo to demo-presenter" [label="no"];
-
-    // Final review (parallel with demo prep)
-    "Send final holistic review to code-reviewer" -> "Final review issues?";
-    "Final review issues?" -> "Implementer applies final fixes" [label="yes"];
-    "Implementer applies final fixes" -> "Assign demo to demo-presenter" [label="re-demo required"];
-    "Final review issues?" -> "Send spec + demo artifacts to demo-reviewer" [label="no — await demo-presenter"];
-
-    // Demo prep (parallel with final review)
-    "Assign demo to demo-presenter" -> "Feature demoable?";
-    "Feature demoable?" -> "Flag undemoable feature to user" [label="no"];
-    "Flag undemoable feature to user" -> "Assign demo to demo-presenter" [label="after resolution"];
-    "Feature demoable?" -> "Demo data creatable via user flows?" [label="yes"];
-    "Demo data creatable via user flows?" -> "Demo-presenter records demo artifacts" [label="yes"];
-    "Demo data creatable via user flows?" -> "Coordinator arranges shim or escalates to user" [label="no"];
-    "Coordinator arranges shim or escalates to user" -> "Assign demo to demo-presenter" [label="after resolution"];
-    "Demo-presenter records demo artifacts" -> "Send spec + demo artifacts to demo-reviewer";
-
-    // Demo review
-    "Send spec + demo artifacts to demo-reviewer" -> "Demo approved?";
-    "Demo approved?" -> "Route demo failure" [label="no"];
-    "Route demo failure" -> "Assign demo to demo-presenter" [label="demo problem: re-demo"];
-    "Route demo failure" -> "Assign task to tester: write failing e2e tests" [label="impl problem: re-enter task cycle"];
-    "Demo approved?" -> "Shut down teammates" [label="yes"];
-
-    // Finish
-    "Shut down teammates" -> "Push branch + open PR";
+    "Read plan, note context and global constraints, create todos" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+    "Dispatch implementer subagent (./implementer-prompt.md)" -> "Implementer subagent asks questions?";
+    "Implementer subagent asks questions?" -> "Answer questions, provide context" [label="yes"];
+    "Answer questions, provide context" -> "Dispatch implementer subagent (./implementer-prompt.md)";
+    "Implementer subagent asks questions?" -> "Implementer subagent implements, tests, commits, self-reviews" [label="no"];
+    "Implementer subagent implements, tests, commits, self-reviews" -> "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)";
+    "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)" -> "Task reviewer reports spec ✅ and quality approved?";
+    "Task reviewer reports spec ✅ and quality approved?" -> "Dispatch fix subagent for Critical/Important findings" [label="no"];
+    "Dispatch fix subagent for Critical/Important findings" -> "Write diff file, dispatch task reviewer subagent (./task-reviewer-prompt.md)" [label="re-review"];
+    "Task reviewer reports spec ✅ and quality approved?" -> "Mark task complete in todo list and progress ledger" [label="yes"];
+    "Mark task complete in todo list and progress ledger" -> "More tasks remain?";
+    "More tasks remain?" -> "Dispatch implementer subagent (./implementer-prompt.md)" [label="yes"];
+    "More tasks remain?" -> "Dispatch final code reviewer subagent (../requesting-code-review/code-reviewer.md)" [label="no"];
+    "Dispatch final code reviewer subagent (../requesting-code-review/code-reviewer.md)" -> "Use superpowers:finishing-a-development-branch";
 }
 ```
 
-## Step-by-Step
+## Pre-Flight Plan Review
 
-### Step 1: Setup
+Before dispatching Task 1, scan the plan once for conflicts:
 
-1. Read plan file, extract all tasks with full text
-2. Create team:
-   ```
-   TeamCreate: team_name="plan-execution", description="Executing [plan name]"
-   ```
-3. Spawn five teammates (all `general-purpose`, use `team_name="plan-execution"`):
-   - **tester** — see `./tester-prompt.md` for spawn prompt
-   - **implementer** — see `./implementer-prompt.md` for spawn prompt
-   - **code-reviewer** — see `./code-reviewer-prompt.md` for spawn prompt
-   - **demo-presenter** — see `./demo-presenter-prompt.md` for spawn prompt
-   - **demo-reviewer** — see `./demo-reviewer-prompt.md` for spawn prompt
-4. Create TaskList entries for all plan tasks using TaskCreate
+- tasks that contradict each other or the plan's Global Constraints
+- anything the plan explicitly mandates that the review rubric treats as a
+  defect (a test that asserts nothing, verbatim duplication of a logic block)
 
-### Step 2: Per-Task Cycle
+Present everything you find to your human partner as one batched question —
+each finding beside the plan text that mandates it, asking which governs —
+before execution begins, not one interrupt per discovery mid-plan. If the
+scan is clean, proceed without comment. The review loop remains the net for
+conflicts that only emerge from implementation.
 
-For each task in order:
+## Model Selection
 
-**2a. TDD RED — Assign to tester**
-- Mark task `in_progress` via TaskUpdate
-- SendMessage to **tester** with:
-  - Full task text from plan (never make them read the plan file)
-  - Context: where this fits, dependencies, architectural notes
-  - Instruction: write e2e/integration tests, confirm RED, report back
+Use the least powerful model that can handle each role to conserve cost and increase speed.
 
-**2b. Wait for tester report**
-- Tester messages back with: test file paths, test names, failure output (RED confirmed)
-- If tester asks questions: answer via SendMessage, let them continue
-- If tester requests a spec clarification on a public API or data contract:
-  - Forward the question to the **implementer** asking them to document the
-    answer in the spec (not just reply verbally)
-  - Once spec is updated, notify the tester to re-read it and continue
+**Mechanical implementation tasks** (isolated functions, clear specs, 1-2 files): use a fast, cheap model. Most implementation tasks are mechanical when the plan is well-specified.
 
-**2c. TDD GREEN — Assign to implementer**
-- SendMessage to **implementer** with:
-  - Full task text from plan
-  - Context
-  - Tester's test file paths and test names
-  - Instruction: make tester's tests GREEN, write unit tests, commit, self-review, report
+**Integration and judgment tasks** (multi-file coordination, pattern matching, debugging): use a standard model.
 
-**2d. Wait for implementer report**
-- Implementer messages back with: what they built, test results, files changed, concerns
-- If implementer asks questions: answer via SendMessage, let them continue
-- If implementer reports a spec bug:
-  - **Minor / unambiguous** (e.g., typo, obvious omission with clear intent):
-    authorize the implementer to patch the spec and continue
-  - **Significant / ambiguous** (e.g., contradictory requirements, unclear
-    behavior): pause the task and escalate to the user for clarification
-    before the implementer proceeds
+**Architecture and design tasks**: use the most capable available model.
+The final whole-branch review is one of these — dispatch it on the most
+capable available model, not the session default.
 
-**2e. PARALLEL review — Send both at once**
+**Review tasks**: choose the model with the same judgment, scaled to the
+diff's size, complexity, and risk. A small mechanical diff does not need the
+most capable model; a subtle concurrency change does.
 
-After implementer reports, send review requests to **both simultaneously**:
+**Always specify the model explicitly when dispatching a subagent.** An
+omitted model inherits your session's model — often the most capable and
+most expensive — which silently defeats this section.
 
-1. SendMessage to **tester**: verify GREEN (tests pass? assertions intact? strength assessment?)
-2. SendMessage to **code-reviewer**: verify spec compliance + code quality (read actual code + git diff, not just report)
+**Turn count beats token price.** Wall-clock and context cost scale with how
+many turns a subagent takes, and the cheapest models routinely take 2-3× the
+turns on multi-step work — costing more overall. Use a mid-tier model as the
+floor for reviewers and for implementers working from prose descriptions.
+When the task's plan text contains the complete code to write, the
+implementation is transcription plus testing: use the cheapest tier for
+that implementer. Single-file mechanical fixes also take the cheapest tier.
 
-These two have no data dependency on each other — run them in parallel.
+**Task complexity signals (implementation tasks):**
+- Touches 1-2 files with a complete spec → cheap model
+- Touches multiple files with integration concerns → standard model
+- Requires design judgment or broad codebase understanding → most capable model
 
-**2f. Collect results and handle**
-- If **both approve** → mark task complete via TaskUpdate, proceed to next task
-- If **either rejects** → send consolidated fix list to **implementer**, wait for fixes, then **re-send to both reviewers again** (any implementation change invalidates all prior approvals)
+## Handling Implementer Status
 
-**Safety valve:** max 3 full review cycles per task. If after 3 cycles either reviewer is still not satisfied, escalate to user.
+Implementer subagents report one of four statuses. Handle each appropriately:
 
-### Step 3: Final Review + Demo Prep (parallel)
+**DONE:** Generate the review package (`scripts/review-package BASE HEAD`, from this skill's directory — it prints the unique file path it wrote; BASE is the commit you recorded before dispatching the implementer — never `HEAD~1`, which silently drops all but the last commit of a multi-commit task), then dispatch the task reviewer with the printed path.
 
-After all tasks complete, send **both simultaneously** — no dependency between them:
+**DONE_WITH_CONCERNS:** The implementer completed the work but flagged doubts. Read the concerns before proceeding. If the concerns are about correctness or scope, address them before review. If they're observations (e.g., "this file is getting large"), note them and proceed to review.
 
-1. SendMessage to **code-reviewer**: review the entire implementation holistically
-2. SendMessage to **demo-presenter**: demo assignment (spec, completed tasks, demo plan)
+**NEEDS_CONTEXT:** The implementer needs information that wasn't provided. Provide the missing context and re-dispatch.
 
-**Handle demo-presenter demoability** (while awaiting code-reviewer):
-- If feature is demoable: demo-presenter executes and records demo artifacts
-- If demo-presenter **cannot create demo data through user flows**: coordinator must resolve:
-  - Decide whether the implementer/tester should create a testing shim
-    (a lightweight, temporary feature kept until the real feature lands)
-  - OR escalate to the user for help creating demo data
-  - Once resolved, provide the demo-presenter with instructions and re-assign
-- If feature is **NOT demoable at all**: demo-presenter reports WHY → coordinator must resolve:
-  - Pull UI/frontend forward from future features
-  - Have implementer create a testing shim (coordinator decides scope)
-  - Escalate to user if spec changes are needed
-  - After resolution, re-assign to demo-presenter
-- **Demo-presenter must NEVER create mocks, shims, route interception, or test
-  harnesses themselves** — all such infrastructure goes through the coordinator
-  to the implementer/tester
+**BLOCKED:** The implementer cannot complete the task. Assess the blocker:
+1. If it's a context problem, provide more context and re-dispatch with the same model
+2. If the task requires more reasoning, re-dispatch with a more capable model
+3. If the task is too large, break it into smaller pieces
+4. If the plan itself is wrong, escalate to the human
 
-**Handle code-reviewer final report**:
-- If **no issues**: wait for demo-presenter artifacts, then proceed to demo-reviewer
-- If **issues found**: send fixes to implementer → after implementer fixes, re-assign demo-presenter (demo is stale) → once both done, proceed to demo-reviewer
+**Never** ignore an escalation or force the same model to retry without changes. If the implementer said it's stuck, something needs to change.
 
-**Any implementation change invalidates the demo. Always re-demo after implementation fixes.**
+## Handling Reviewer ⚠️ Items
 
-### Step 4: Demo Review
+The task reviewer may report "⚠️ Cannot verify from diff" items — requirements
+that live in unchanged code or span tasks. These do not block the rest of the
+review, but you must resolve each one yourself before marking the task
+complete: you hold the plan and cross-task context the reviewer
+lacks. If you confirm an item is a real gap, treat it as a failed spec
+review — send it back to the implementer and re-review.
 
-Once both code-reviewer approves AND demo-presenter has recorded artifacts:
+## Constructing Reviewer Prompts
 
-- SendMessage to **demo-reviewer** with:
-  - Full spec/requirements (NO implementation code)
-  - Demo artifacts from demo-presenter
-  - Instruction: review as strict client CEO
+Per-task reviews are task-scoped gates. The broad review happens once, at the
+final whole-branch review. When you fill a reviewer template:
 
-**Handle demo review result**:
-- If **approved** → proceed to shutdown
-- If **rejected**:
-  - Demo execution problem (sloppy, incomplete walkthrough) → back to demo-presenter for re-demo → demo-reviewer re-reviews
-  - Implementation problem (feature buggy, incomplete, OR demo-presenter could not trigger it through any real user action — a missing user-reachable trigger that green tests hid via a backdoor) → back to implementer, re-enters full task cycle (tester → implementer → parallel review) → then re-demo + re-review from scratch
-  - Spec problem → coordinator flags to user → after spec change, re-enter task cycle for affected tasks → then re-demo + re-review from scratch
+- Do not add open-ended directives like "check all uses" or "run race tests
+  if useful" without a concrete, task-specific reason
+- Do not ask a reviewer to re-run tests the implementer already ran on the
+  same code — the implementer's report carries the test evidence
+- Do not pre-judge findings for the reviewer — never instruct a reviewer to
+  ignore or not flag a specific issue. If you believe a finding would be a
+  false positive, let the reviewer raise it and adjudicate it in the review
+  loop. If the prompt you are writing contains "do not flag," "don't treat X
+  as a defect," "at most Minor," or "the plan chose" — stop: you are
+  pre-judging, usually to spare yourself a review loop.
+- The global-constraints block you hand the reviewer is its attention
+  lens. Copy the binding requirements verbatim from the plan's Global
+  Constraints section or the spec: exact values, exact formats, and the
+  stated relationships between components ("same layout as X", "matches
+  Y"). The reviewer's template already carries the process rules (YAGNI,
+  test hygiene, review method) — the constraints block is for what THIS
+  project's spec demands.
+- Hand the reviewer its diff as a file: run this skill's
+  `scripts/review-package BASE HEAD` and pass the reviewer the file path
+  it prints (or, without bash: `git log --oneline`, `git diff --stat`,
+  and `git diff -U10` for the range, redirected to one uniquely named
+  file). The output never enters your own context, and the reviewer sees
+  the commit list, stat summary, and full diff with context in one Read
+  call. Use the BASE you recorded before dispatching the implementer —
+  never `HEAD~1`, which silently truncates multi-commit tasks.
+- A dispatch prompt describes one task, not the session's history. Do not
+  paste accumulated prior-task summaries ("state after Tasks 1-3") into
+  later dispatches — a real session's dispatch hit 42k chars of which 99%
+  was pasted history. A fresh subagent needs its task, the interfaces it
+  touches, and the global constraints. Nothing else.
+- Dispatch fix subagents for Critical and Important findings. Record Minor
+  findings in the progress ledger as you go, and point the final
+  whole-branch review at that list so it can triage which must be fixed
+  before merge. A roll-up nobody reads is a silent discard.
+- A finding labeled plan-mandated — or any finding that conflicts with
+  what the plan's text requires — is the human's decision, like any plan
+  contradiction: present the finding and the plan text, ask which governs.
+  Do not dismiss the finding because the plan mandates it, and do not
+  dispatch a fix that contradicts the plan without asking.
+- The final whole-branch review gets a package too: run
+  `scripts/review-package MERGE_BASE HEAD` (MERGE_BASE = the commit the
+  branch started from, e.g. `git merge-base main HEAD`) and include the
+  printed path in the final review dispatch, so the final reviewer reads
+  one file instead of re-deriving the branch diff with git commands.
+- Every fix dispatch carries the implementer contract: the fix subagent
+  re-runs the tests covering its change and reports the results. Name the
+  covering test files in the dispatch — a one-line fix does not need the
+  whole suite. Before re-dispatching the reviewer, confirm the fix report
+  contains the covering tests, the command run, and the output; dispatch
+  the re-review once all three are present.
+- If the final whole-branch review returns findings, dispatch ONE fix
+  subagent with the complete findings list — not one fixer per finding.
+  Per-finding fixers each rebuild context and re-run suites; a real
+  session's final-review fix wave cost more than all its tasks combined.
 
-### Step 5: Shutdown and Ship
+## File Handoffs
 
-1. Send `shutdown_request` to all five teammates
-2. Wait for shutdown confirmations
-3. Push branch and open PR immediately — no prompting:
-   ```bash
-   git push -u origin <feature-branch>
-   gh pr create --title "<title>" --body "$(cat <<'EOF'
-   ## Summary
-   <2-3 bullets of what changed>
+Everything you paste into a dispatch prompt — and everything a subagent
+prints back — stays resident in your context for the rest of the session
+and is re-read on every later turn. Hand artifacts over as files:
 
-   ## Test Plan
-   - [ ] <verification steps>
-   EOF
-   )"
-   ```
-4. Report the PR URL to the user
+- **Task brief:** before dispatching an implementer, run this skill's
+  `scripts/task-brief PLAN_FILE N` — it extracts the task's full text to a
+  uniquely named file and prints the path. Compose the dispatch so the
+  brief stays the single source of requirements. Your dispatch should
+  contain: (1) one line on where this task fits in the project; (2) the
+  brief path, introduced as "read this first — it is your requirements,
+  with the exact values to use verbatim"; (3) interfaces and decisions
+  from earlier tasks that the brief cannot know; (4) your resolution of
+  any ambiguity you noticed in the brief; (5) the report-file path and
+  report contract. Exact values (numbers, magic strings, signatures, test
+  cases) appear only in the brief.
+- **Report file:** name the implementer's report file after the brief
+  (brief `…/task-N-brief.md` → report `…/task-N-report.md`) and put it in
+  the dispatch prompt. The implementer writes the full report there and
+  returns only status, commits, a one-line test summary, and concerns.
+- **Reviewer inputs:** the task reviewer gets three paths — the same brief
+  file, the report file, and the review package — plus the global
+  constraints that bind the task.
+- Fix dispatches append their fix report (with test results) to the same
+  report file and return a short summary; re-reviews read the updated file.
+
+## Durable Progress
+
+Conversation memory does not survive compaction. In real sessions,
+controllers that lost their place have re-dispatched entire completed task
+sequences — the single most expensive failure observed. Track progress in
+a ledger file, not only in todos.
+
+- At skill start, check for a ledger:
+  `cat "$(git rev-parse --show-toplevel)/.superpowers/sdd/progress.md"`. Tasks listed there
+  as complete are DONE — do not re-dispatch them; resume at the first task
+  not marked complete.
+- When a task's review comes back clean, append one line to the ledger in
+  the same message as your other bookkeeping:
+  `Task N: complete (commits <base7>..<head7>, review clean)`.
+- The ledger is your recovery map: the commits it names exist in git even
+  when your context no longer remembers creating them. After compaction,
+  trust the ledger and `git log` over your own recollection.
+- `git clean -fdx` will destroy the ledger (it's git-ignored scratch); if
+  that happens, recover from `git log`.
 
 ## Prompt Templates
 
-- `./tester-prompt.md` — Spawn prompt and message templates for adversarial tester
-- `./implementer-prompt.md` — Spawn prompt and message templates for implementer
-- `./code-reviewer-prompt.md` — Spawn prompt and message templates for code reviewer (spec + quality)
-- `./demo-presenter-prompt.md` — Spawn prompt and message templates for demo presenter
-- `./demo-reviewer-prompt.md` — Spawn prompt and message templates for demo reviewer
+- [implementer-prompt.md](implementer-prompt.md) - Dispatch implementer subagent
+- [task-reviewer-prompt.md](task-reviewer-prompt.md) - Dispatch task reviewer subagent (spec compliance + code quality)
+- Final whole-branch review: use superpowers:requesting-code-review's [code-reviewer.md](../requesting-code-review/code-reviewer.md)
 
 ## Example Workflow
 
 ```
-Coordinator: I'm using Subagent-Driven Development to execute this plan.
+You: I'm using Subagent-Driven Development to execute this plan.
 
-[Read plan file: docs/superpowers/plans/feature-plan.md]
-[Extract all 3 tasks with full text and context]
+[Read plan file once: docs/superpowers/plans/feature-plan.md]
+[Create todos for all tasks]
 
-[TeamCreate: team_name="plan-execution"]
-[Spawn tester, implementer, code-reviewer, demo-presenter, demo-reviewer]
-[TaskCreate for all 3 tasks]
+Task 1: Hook installation script
 
---- Task 1: User registration form ---
+[Run task-brief for Task 1; dispatch implementer with brief + report paths + context]
 
-[SendMessage to tester: full task text + context]
+Implementer: "Before I begin - should the hook be installed at user or system level?"
 
-Tester: "Tests written:
-  - test_registration_happy_path: fills form, submits, verifies redirect to dashboard + welcome email
-  - test_registration_duplicate_email: registers, tries again with same email, verifies error message
-  - test_registration_weak_password: tries weak password, verifies rejection with specific message
-  - test_registration_empty_fields: submits empty form, verifies all required field errors shown
-  All 4 tests FAIL (RED confirmed). Test files: tests/e2e/test_registration.py"
+You: "User level (~/.config/superpowers/hooks/)"
 
-[SendMessage to implementer: task text + tester's test files]
+Implementer: "Got it. Implementing now..."
+[Later] Implementer:
+  - Implemented install-hook command
+  - Added tests, 5/5 passing
+  - Self-review: Found I missed --force flag, added it
+  - Committed
 
-Implementer: "Implemented registration form + validation + persistence.
-  All e2e tests pass. Wrote 6 unit tests for validation logic. Committed."
+[Run review-package, dispatch task reviewer with the printed path]
+Task reviewer: Spec ✅ - all requirements met, nothing extra.
+  Strengths: Good test coverage, clean. Issues: None. Task quality: Approved.
 
-[PARALLEL: SendMessage to tester, code-reviewer simultaneously]
+[Mark Task 1 complete]
 
-Tester: "All 4 tests pass. BUT implementer nailed it first try — suspicious.
-  Writing additional adversarial tests:
-  - test_registration_sql_injection: tries SQL in email field
-  - test_registration_xss_in_name: tries script tags in name field
-  Both new tests FAIL (RED). Reporting new RED to coordinator."
+Task 2: Recovery modes
 
-[SendMessage to implementer: "Tester found new RED — SQL injection and XSS tests. Make them GREEN."]
+[Run task-brief for Task 2; dispatch implementer with brief + report paths + context]
 
-Implementer: "Fixed. Added input sanitization. Both new tests pass. Committed."
+Implementer: [No questions, proceeds]
+Implementer:
+  - Added verify/repair modes
+  - 8/8 tests passing
+  - Self-review: All good
+  - Committed
 
-[Meanwhile, code-reviewer already reported:]
+[Run review-package, dispatch task reviewer with the printed path]
+Task reviewer: Spec ❌:
+  - Missing: Progress reporting (spec says "report every 100 items")
+  - Extra: Added --json flag (not requested)
+  Issues (Important): Magic number (100)
 
-Code reviewer: "## Spec Compliance
-  ✅ Compliant — all requirements met.
-  ## Code Quality
-  Issues (Important): Password validation logic duplicated in frontend and
-  backend. Extract shared validation. Otherwise approved."
+[Dispatch fix subagent with all findings]
+Fixer: Removed --json flag, added progress reporting, extracted PROGRESS_INTERVAL constant
 
-[SendMessage to implementer: consolidated fixes — code reviewer's duplication issue]
+[Task reviewer reviews again]
+Task reviewer: Spec ✅. Task quality: Approved.
 
-Implementer: "Extracted shared validation module. Committed."
+[Mark Task 2 complete]
 
-[PARALLEL: Re-send to BOTH (implementation changed, both must re-review)]
+...
 
-Tester: "All 6 tests pass. Assertions intact. Adversarial tests pass. ✅"
-Code reviewer: "## Spec Compliance ✅  ## Code Quality ✅ Duplication resolved. Approved."
-
-[TaskUpdate: mark Task 1 complete]
-
---- Task 2: Login flow --- [similar cycle] ---
---- Task 3: Password reset --- [similar cycle] ---
-
---- Final holistic review + demo prep (parallel) ---
-
-[PARALLEL: SendMessage to code-reviewer: "Final review of entire auth system"
-           SendMessage to demo-presenter: spec + completed tasks]
-
-Code reviewer: "Consistent patterns, good test coverage, approved."
-
-Demo-presenter: "Demo plan (devised — not in spec):
-  1. Register new user with valid details
-  2. Log out
-  3. Log in with those credentials
-  4. Request password reset
-  5. Follow reset link, set new password
-  6. Log in with new password
-  7. Try registering with duplicate email (error case)
-
-  Executed full demo via Playwright manual steps. Recorded step-by-step
-  screenshots. Saved to spec/demo/2026-02-17-auth-system/
-
-  Observations: reset email link takes 3 seconds to appear — might
-  feel slow to users but functional."
-
-[SendMessage to demo-reviewer: spec + demo artifacts (NO code)]
-
-Demo-reviewer: "REJECTED.
-  - Registration demo looks good ✅
-  - Login works ✅
-  - Password reset: demo shows clicking the link but NOT the actual
-    'set new password' form. Was it skipped? Requirement says 'user
-    enters new password with confirmation field' — this was not shown.
-  - No error cases shown for login (wrong password, locked account)"
-
-[SendMessage to demo-presenter: "Re-demo. Show the full password reset form
-  and add login error cases (wrong password)."]
-
-Demo-presenter: "Re-demoed with complete password reset flow and login errors.
-  Updated screenshots saved to spec/demo/2026-02-17-auth-system/"
-
-[SendMessage to demo-reviewer: "Re-review with updated artifacts"]
-
-Demo-reviewer: "✅ APPROVED. All requirements demonstrated. Password reset
-  form shown in full. Error cases covered."
-
-[shutdown_request to all teammates]
-[git push -u origin feature-branch]
-[gh pr create → PR URL reported to user]
+[After all tasks]
+[Dispatch final code-reviewer]
+Final reviewer: All requirements met, ready to merge
 
 Done!
 ```
 
-## Why Teams Over Background Tasks
+## Advantages
 
-| | Background Tasks | Agent Teams |
-|---|---|---|
-| **Context across fix rounds** | Lost — each dispatch starts fresh | Kept — teammate remembers prior work |
-| **Fix cycles** | Re-explain everything each round | Just say "fix X" — they know the context |
-| **Coordination** | One-shot fire-and-forget | Persistent back-and-forth messaging |
-| **Reviewer context** | Re-reads code from scratch each time | Already knows what to look for |
-| **Parallel reviews** | Must dispatch sequentially or manage separate tasks | Send three messages at once, collect results |
-| **Cost** | New context per dispatch | Amortized — fewer tokens over multiple rounds |
+**vs. Manual execution:**
+- Subagents follow TDD naturally
+- Fresh context per task (no confusion)
+- Parallel-safe (subagents don't interfere)
+- Subagent can ask questions (before AND during work)
+
+**vs. Executing Plans:**
+- Same session (no handoff)
+- Continuous progress (no waiting)
+- Review checkpoints automatic
+
+**Efficiency gains:**
+- Controller curates exactly what context is needed; bulk artifacts move
+  as files, not pasted text
+- Subagent gets complete information upfront
+- Questions surfaced before work begins (not after)
+
+**Quality gates:**
+- Self-review catches issues before handoff
+- Task review carries two verdicts: spec compliance and code quality
+- Review loops ensure fixes actually work
+- Spec compliance prevents over/under-building
+- Code quality ensures implementation is well-built
+
+**Cost:**
+- More subagent invocations (implementer + reviewer per task)
+- Controller does more prep work (extracting all tasks upfront)
+- Review loops add iterations
+- But catches issues early (cheaper than debugging later)
 
 ## Red Flags
 
 **Never:**
 - Start implementation on main/master branch without explicit user consent
-- Implement code yourself — you are the coordinator, delegate everything
-- Skip reviews (tester verification OR code-reviewer spec+quality check)
+- Skip task review, or accept a report missing either verdict (spec compliance AND task quality are both required)
 - Proceed with unfixed issues
-- Let implementer write e2e/integration tests (that is the tester's job)
-- Let tests trigger the path under test through a test-only backdoor (forced-state flag like `connected:true`, a `window.*` hook) instead of a real user action or real adapter event — the backdoor is itself evidence the production trigger may be missing
-- Accept tests that all run against one default fixture when the feature behaves differently across states (connected/disconnected, alternate modes/units, empty/populated) — silent no-ops hide in the non-default states
-- Skip tester verification of GREEN (implementer may have weakened assertions)
-- If implementer nails it first try, accept without asking tester to strengthen tests
-- Run reviews sequentially when they can run in parallel
-- **Any implementation change invalidates ALL prior approvals** — both reviewers must re-review
-- **Any implementation change after demo invalidates the demo** — must re-demo and re-review from scratch
-- Skip the demo gate — it is the one gate that structurally cannot cheat (only real inputs, no hooks or forced state), so it is the backstop that catches features tests reached through a backdoor
-- Let demo-presenter use automated test scripts (must be manual user emulation)
-- Let demo-presenter inject mocking logic, route interception, or request stubs into Playwright or any tool
-- Let demo-presenter implement testing shims or testability harnesses — only implementer/tester create shims, coordinated through you
-- Let demo-presenter create demo data through anything other than normal user flows (UI, documented CLI, public APIs) — if they can't, they must escalate to you
-- Give demo-reviewer access to implementation code
-- Accept "feature can't be demoed" without investigating — this is a design smell
-- Skip scene-setting context (teammates need to understand where task fits)
-- Accept "close enough" on spec compliance
+- Dispatch multiple implementation subagents in parallel (conflicts)
+- Make a subagent read the whole plan file (hand it its task brief —
+  `scripts/task-brief` — instead)
+- Skip scene-setting context (subagent needs to understand where task fits)
+- Ignore subagent questions (answer before letting them proceed)
+- Accept "close enough" on spec compliance (reviewer found spec issues = not done)
+- Skip review loops (reviewer found issues = implementer fixes = review again)
 - Let implementer self-review replace actual review (both are needed)
-- **Start code review before implementer reports GREEN** — code-reviewer and tester review in parallel after implementer's report, not before
-- Move to next task while either reviewer has open issues
+- Tell a reviewer what not to flag, or pre-rate a finding's severity in the
+  dispatch prompt ("treat it as Minor at most") — the plan's example code is
+  a starting point, not evidence that its weaknesses were chosen
+- Dispatch a task reviewer without a diff file — generate it first
+  (`scripts/review-package BASE HEAD`) and name the printed path in the
+  prompt
+- Move to next task while the review has open Critical/Important issues
+- Re-dispatch a task the progress ledger already marks complete — check
+  the ledger (and `git log`) after any compaction or resume
 
-**If implementer asks questions:**
-- Answer clearly and completely via SendMessage
+**If subagent asks questions:**
+- Answer clearly and completely
 - Provide additional context if needed
 - Don't rush them into implementation
 
-**If any reviewer finds issues:**
-- Consolidate all rejection feedback into one message to implementer
-- Wait for implementer to fix and report back
-- Re-send to BOTH reviewers (implementation changed)
-- Repeat until both approve
+**If reviewer finds issues:**
+- Implementer (same subagent) fixes them
+- Reviewer reviews again
+- Repeat until approved
+- Don't skip the re-review
 
-**If implementer is stuck:**
-- Help them via SendMessage with guidance
-- Don't take over implementation yourself
-
-**If demo-reviewer rejects:**
-- Classify the failure: demo problem, implementation problem, or spec problem
-- Route to the right teammate or escalate to user
-- After any implementation fix: re-demo and re-review from scratch
+**If subagent fails task:**
+- Dispatch fix subagent with specific instructions
+- Don't try to fix manually (context pollution)
 
 ## Integration
 
 **Required workflow skills:**
-- **superpowers:using-git-worktrees** - REQUIRED: Set up isolated workspace before starting
+- **superpowers:using-git-worktrees** - Ensures isolated workspace (creates one or verifies existing)
 - **superpowers:writing-plans** - Creates the plan this skill executes
-- **superpowers:requesting-code-review** - Code review template for reviewer teammates
+- **superpowers:requesting-code-review** - Code review template for the final whole-branch review
+- **superpowers:finishing-a-development-branch** - Complete development after all tasks
 
-**Teammates should use:**
-- **superpowers:test-driven-development** - Tester and implementer follow TDD
+**Subagents should use:**
+- **superpowers:test-driven-development** - Subagents follow TDD for each task
+
+**Alternative workflow:**
+- **superpowers:executing-plans** - Use for parallel session instead of same-session execution
