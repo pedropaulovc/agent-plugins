@@ -19,6 +19,22 @@ Subagent (general-purpose):
 
     [Scene-setting: where this fits, dependencies, architectural context]
 
+    ## Tester's E2E/Integration Tests (make these GREEN)
+
+    An independent tester has already written failing e2e/integration tests
+    for this task. Test files and names:
+    [TESTER_TEST_FILES]
+
+    ## Test Responsibility
+
+    - **E2e/integration tests** were written by the tester (above). Your job is
+      to make them pass (GREEN) without weakening, skipping, or deleting any
+      assertion — the tester re-checks them against your diff afterward.
+    - **Unit tests** are YOURS: write them yourself following TDD (red/green/
+      refactor) for the internal logic you build.
+    - Run BOTH the tester's e2e tests AND your own unit tests before reporting;
+      all must pass.
+
     ## Before You Begin
 
     If you have questions about:
@@ -32,12 +48,13 @@ Subagent (general-purpose):
     ## Your Job
 
     Once you're clear on requirements:
-    1. Implement exactly what the task specifies
-    2. Write tests (following TDD if task says to)
-    3. Verify implementation works
-    4. Commit your work
-    5. Self-review (see below)
-    6. Report back
+    1. Run the tester's e2e tests first — confirm they FAIL (RED) for the right reason
+    2. Implement exactly what the task specifies
+    3. Write your own unit tests (follow TDD — red/green/refactor)
+    4. Run ALL tests (tester's e2e + your unit tests) — confirm GREEN
+    5. Commit your work
+    6. Self-review (see below)
+    7. Report back
 
     Work from: [directory]
 
@@ -59,6 +76,27 @@ Subagent (general-purpose):
       and note it as a concern in your report
     - In existing codebases, follow established patterns. Improve code you're touching
       the way a good developer would, but don't restructure things outside your task.
+
+    ## Spec Bugs — Report, Don't Work Around
+
+    If you discover a bug, ambiguity, or contradiction in the spec while
+    working, STOP and report it (status NEEDS_CONTEXT, or note it in your
+    report if you could proceed) — do not silently fix or work around it. The
+    controller decides whether to escalate to the human or authorize a spec
+    patch. Report spec bugs even if you found a way past them: a silent
+    workaround hides a real problem from everyone downstream.
+
+    ## External API Integration
+
+    Mocks are a liability when they are not validated against reality.
+    - NEVER assume API field names — check the official docs AND the real
+      response shape included in the plan/task brief.
+    - If the brief includes a verified real API response, use it as the source
+      of truth for field names, types, and nesting.
+    - If the brief does NOT include a real response and you must consume an
+      external API, check the official docs AND make a real call. If that is
+      not possible, STOP and report NEEDS_CONTEXT asking the controller to
+      verify the response shape — do not guess or rely on what seems obvious.
 
     ## When You're in Over Your Head
 
@@ -114,12 +152,14 @@ Subagent (general-purpose):
 
     Write your full report to [REPORT_FILE]:
     - What you implemented (or what you attempted, if blocked)
-    - What you tested and test results
-    - **TDD Evidence** (if TDD was required for this task):
-      - RED: command run, relevant failing output before implementation, and why the failure was expected
-      - GREEN: command run and relevant passing output after implementation
+    - What you tested and test results (both the tester's e2e/integration
+      tests and your own unit tests)
+    - **TDD Evidence**:
+      - RED: command run, the tester's e2e tests failing before implementation, and your own unit tests' RED
+      - GREEN: command run and the passing output after implementation
     - Files changed
     - Self-review findings (if any)
+    - Spec bugs found (if any) — report these even if you worked past them
     - Any issues or concerns
 
     Then report back with ONLY (under 15 lines — the detail lives in the
