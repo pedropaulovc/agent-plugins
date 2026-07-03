@@ -45,6 +45,11 @@ const PATTERNS: &[&str] = &[
 /// Code markers matched case-sensitively.
 const CODE_MARKERS: &[&str] = &["TODO", "FIXME", "HACK", "XXX"];
 
+/// Substrings that legitimately contain a pattern and must not trigger a
+/// finding — e.g. `TemporaryDirectory` (an RAII temp-dir handle) contains
+/// "temporary". Matched case-insensitively.
+const EXCEPTIONS: &[&str] = &["TemporaryDirectory"];
+
 fn main() {
     let mut input = String::new();
     if io::stdin().read_to_string(&mut input).is_err() {
@@ -181,7 +186,7 @@ fn scan_text(text: &str, findings: &mut Vec<String>, seen: &mut HashSet<String>)
         if seen.contains(pattern) {
             continue;
         }
-        if let Some(pos) = find_case_insensitive(text, pattern) {
+        if let Some(pos) = find_pattern(text, pattern) {
             let phrase = extract_phrase(text, pos, pattern.len());
             findings.push(format!("\"{}\" → \"{}\"", pattern, phrase));
             seen.insert(pattern.to_string());
@@ -198,6 +203,38 @@ fn scan_text(text: &str, findings: &mut Vec<String>, seen: &mut HashSet<String>)
             seen.insert(marker.to_string());
         }
     }
+}
+
+/// Find the first case-insensitive occurrence of `pattern` that is not part of
+/// a known false-positive substring (see EXCEPTIONS).
+fn find_pattern(text: &str, pattern: &str) -> Option<usize> {
+    let mut from = 0;
+    while let Some(rel) = find_case_insensitive(&text[from..], pattern) {
+        let pos = from + rel;
+        if !within_exception(text, pos, pattern.len()) {
+            return Some(pos);
+        }
+        // Patterns are ASCII, so `pos` is a char boundary and `pos + 1` is too.
+        from = pos + 1;
+    }
+    None
+}
+
+/// True if the match at `[pos, pos + len)` lies within an occurrence of any
+/// EXCEPTIONS entry.
+fn within_exception(text: &str, pos: usize, len: usize) -> bool {
+    for &exc in EXCEPTIONS {
+        let mut from = 0;
+        while let Some(rel) = find_case_insensitive(&text[from..], exc) {
+            let start = from + rel;
+            let end = start + exc.len();
+            if start <= pos && pos + len <= end {
+                return true;
+            }
+            from = start + 1;
+        }
+    }
+    false
 }
 
 /// Case-insensitive byte-level substring search (ASCII-folding only).
@@ -361,6 +398,32 @@ mod tests {
             &mut seen,
         );
         assert!(findings.iter().any(|f| f.contains("temporary")));
+    }
+
+    #[test]
+    fn ignores_temporary_directory() {
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        scan_text(
+            "with tempfile.TemporaryDirectory() as tmp:",
+            &mut findings,
+            &mut seen,
+        );
+        assert!(findings.is_empty(), "got: {:?}", findings);
+    }
+
+    #[test]
+    fn detects_temporary_after_exception() {
+        // A real "temporary" hedge later in the text must still fire even when a
+        // TemporaryDirectory occurrence precedes it.
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        scan_text(
+            "I used a TemporaryDirectory. This is a temporary hack.",
+            &mut findings,
+            &mut seen,
+        );
+        assert!(findings.iter().any(|f| f.starts_with("\"temporary\"")), "got: {:?}", findings);
     }
 
     #[test]
