@@ -68,7 +68,7 @@ while true; do
   # Inline review-thread comments are pull review comments — separate from issue
   # comments and not always tied to a new submitted review. Track their count so a
   # reply to an existing thread still trips the feedback fetch.
-  rc=$(gh api "repos/$SLUG/pulls/$NUM/comments" --jq 'length' 2>/dev/null || true)
+  rc=$(gh api --paginate "repos/$SLUG/pulls/$NUM/comments" --jq '.[].id' 2>/dev/null | wc -l | tr -d ' ')
   # Reactions on top-level comments — Codex acks an `@codex review` mention (👀)
   # and posts its all-clear (👍) on the comment, not the PR body. Normalize the
   # API's lowercase keys to the same CONTENT names gh uses for PR-body reactions.
@@ -102,7 +102,10 @@ while true; do
       path=$(bash "$COMMENTS" "$URL" 2>/dev/null || true)
       if [[ -n "$path" && -f "$path" ]]; then
         active=$(grep -m1 '^active_comments:' "$path" | grep -oE '[0-9]+' || echo 0)
-        if [[ "${active:-0}" -gt 0 ]]; then
+        # Print when there are active threads/comments OR a body-only review summary
+        # (comments.sh emits <review-summary> only for reviews with a non-empty body,
+        # which don't count toward active_comments).
+        if [[ "${active:-0}" -gt 0 ]] || grep -q '<review-summary' "$path"; then
           echo "===== BEGIN PR FEEDBACK ($path) ====="
           cat "$path"
           echo "===== END PR FEEDBACK ====="
