@@ -27,6 +27,10 @@
       "source": "./plugins/pr-comments"
     },
     {
+      "name": "watch-pr",
+      "source": "./plugins/watch-pr"
+    },
+    {
       "name": "worktree-reset",
       "source": "./plugins/worktree-reset"
     },

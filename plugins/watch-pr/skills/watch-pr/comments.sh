@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Vendored copy of pr-comments/skills/comments/comments.sh — kept self-contained
+# because Claude Code plugins have no dependency management. Keep in sync with the
+# pr-comments original if that formatter changes.
+
 # Fetch PR comments and format for LLM consumption
 # Usage: fetch-pr-comments.sh [pr-url-or-ref] [output-file]
 # Examples:
