@@ -110,22 +110,31 @@ echo "Fetching comments for $OWNER/$REPO#$PR_NUMBER..." >&2
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-# Fetch all comment types in parallel
-gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/comments" --paginate > "$TMPDIR/inline.json" &
+# Fetch all comment types in parallel. --slurp collapses every page into ONE
+# array-of-arrays document; without it --paginate emits one JSON document per page
+# and the jq filter below runs once per page, producing duplicate/partial markdown.
+# flatten_arrays (in the jq) unwraps the array-of-arrays.
+gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/comments" --paginate --slurp > "$TMPDIR/inline.json" &
 PID_INLINE=$!
 
-gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" --paginate > "$TMPDIR/issue.json" &
+gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" --paginate --slurp > "$TMPDIR/issue.json" &
 PID_ISSUE=$!
 
-gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" --paginate > "$TMPDIR/reviews.json" &
+gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" --paginate --slurp > "$TMPDIR/reviews.json" &
 PID_REVIEWS=$!
 
-# Fetch thread IDs via GraphQL (needed for resolving threads)
-gh api graphql -f query="
-query {
-  repository(owner: \"$OWNER\", name: \"$REPO\") {
-    pullRequest(number: $PR_NUMBER) {
-      reviewThreads(first: 100) {
+# Fetch thread IDs via GraphQL (needed for resolving threads). --paginate walks
+# past the 100-node cap (reviewThreads maxes at first:100 per page); each page is
+# its own JSON document that the --slurpfile below gathers, and the jq concatenates
+# the per-page node arrays.
+gh api graphql --paginate \
+  -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" \
+  -f query='
+query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           id
           isResolved
@@ -138,8 +147,7 @@ query {
       }
     }
   }
-}
-" > "$TMPDIR/threads.json" 2>/dev/null &
+}' > "$TMPDIR/threads.json" 2>/dev/null &
 PID_THREADS=$!
 
 # Wait for the essential REST fetches — abort if any fails. Bash `wait` with
@@ -190,8 +198,10 @@ def flatten_arrays:
 ($reviews[0] // []) | flatten_arrays as $reviews_list |
 ($inline_raw // []) | flatten_arrays as $inline_comments |
 
-# Build thread ID lookup from GraphQL data (comment databaseId -> {id, isResolved})
-(($threads[0].data.repository.pullRequest.reviewThreads.nodes // []) |
+# Build thread ID lookup from GraphQL data (comment databaseId -> {id, isResolved}).
+# --paginate yields one document per page; $threads (slurpfile) holds them all, so
+# concatenate the per-page node arrays before indexing.
+(([$threads[] | .data.repository.pullRequest.reviewThreads.nodes // []] | add // []) |
   map({key: (.comments.nodes[0].databaseId | tostring), value: {id: .id, isResolved: .isResolved}}) |
   from_entries) as $thread_lookup |
 
