@@ -146,8 +146,15 @@ query {
 " > "$TMPDIR/threads.json" 2>/dev/null &
 PID_THREADS=$!
 
-# Wait for all fetches
-wait $PID_INLINE $PID_ISSUE $PID_REVIEWS $PID_THREADS
+# Wait for the essential REST fetches — abort if any fails. Bash `wait` with
+# multiple PIDs returns only the LAST PID's status, so a failed earlier fetch
+# would be masked under `set -e`, leaving the formatter to run on empty/partial
+# JSON. The GraphQL thread lookup is best-effort (jq falls back to `// []`,
+# showing threads as "unknown"), so its failure isn't fatal.
+for pid in $PID_INLINE $PID_ISSUE $PID_REVIEWS; do
+    wait "$pid" || { echo "Error: a GitHub API fetch failed" >&2; exit 1; }
+done
+wait $PID_THREADS || true
 
 # Get current timestamp
 FETCHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")

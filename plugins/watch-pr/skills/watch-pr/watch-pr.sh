@@ -59,6 +59,17 @@ else
   exit 1
 fi
 
+# Does the local checkout's `origin` point at the PR's base repo ($SLUG)? The
+# rebase hint can only safely say `git pull --rebase origin <base>` when it does.
+# For a fork PR (or a URL to another repo), origin is the wrong remote, so we tell
+# the agent to rebase against the base repo explicitly instead. Computed once — the
+# answer is stable, and a stable rebase line keeps the poll-to-poll diff stable.
+origin_url=$(git remote get-url origin 2>/dev/null || echo "")
+ORIGIN_IS_BASE=0
+if [[ "$origin_url" =~ github\.com[:/]([^/]+)/([^/.]+) && "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}" == "$SLUG" ]]; then
+  ORIGIN_IS_BASE=1
+fi
+
 prev=""
 while true; do
   # -R pins every poll to the PR's own repo, so a URL to another repo still works.
@@ -83,7 +94,7 @@ while true; do
 
   cur=$( {
     jq -r '.[] | "check \(.name): \(.bucket)" + (if (.completedAt // "") != "" then " @\(.completedAt)" else "" end)' <<<"$checks"
-    jq -r 'select(.mergeStateStatus=="BEHIND" or .mergeStateStatus=="DIRTY") | "rebase: \(.mergeStateStatus) — git pull --rebase origin \(.baseRefName) (BEHIND=fast-forward, DIRTY=resolve conflicts)"' <<<"$meta"
+    jq -r --arg slug "$SLUG" --arg ob "$ORIGIN_IS_BASE" 'select(.mergeStateStatus=="BEHIND" or .mergeStateStatus=="DIRTY") | "rebase: \(.mergeStateStatus) — " + (if $ob=="1" then "git pull --rebase origin \(.baseRefName)" else "base is \($slug):\(.baseRefName); local origin ≠ base repo — rebase against the base remote, not origin" end) + " (BEHIND=fast-forward, DIRTY=resolve conflicts)"' <<<"$meta"
     jq -r '.reviews[] | "review \(.author.login): \(.state) @\(.submittedAt)"' <<<"$meta"
     jq -r '"comments: \(.comments | length)"' <<<"$meta"
     [[ "$rc" =~ ^[0-9]+$ ]] && echo "review-comments: $rc"
@@ -100,6 +111,9 @@ while true; do
     # once on startup. Stay silent when there are none active.
     if grep -qE '^(review |comments: |review-comments: )' <<<"$diff_lines"; then
       path=$(bash "$COMMENTS" "$URL" 2>/dev/null || true)
+      # On Git Bash the formatter emits a Windows path (cygpath -w); convert it
+      # back to POSIX for the -f/grep/cat reads below, else the check silently fails.
+      command -v cygpath &>/dev/null && [[ -n "$path" ]] && path=$(cygpath -u "$path")
       if [[ -n "$path" && -f "$path" ]]; then
         active=$(grep -m1 '^active_comments:' "$path" | grep -oE '[0-9]+' || echo 0)
         # Print when there are active threads/comments OR a body-only review summary
