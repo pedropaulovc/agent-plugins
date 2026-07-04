@@ -49,6 +49,7 @@ Tuned to my own setup, tooling, workflow preferences, or niche — unlikely to a
 | [unrelated-issue-detector](plugins/unrelated-issue-detector) | Hook | Demands evidence for each "unrelated/pre-existing" dismissal |
 | [gh-issue](plugins/gh-issue) | Skill | Turns terse bug reports into well-structured GitHub issues via `gh` |
 | [pr-comments](plugins/pr-comments) | Skill | Fetches unresolved PR comments formatted for LLM review and reply |
+| [watch-pr](plugins/watch-pr) | Skill | `/watch-pr` — watches a PR's full lifecycle via the Monitor tool (CI, rebase, reviews, merge) and surfaces incoming feedback inline for the reply flow (self-contained; vendors its own comment formatter) |
 | [command-chain-separator](plugins/command-chain-separator) | Hook | Injects a visible separator between Bash commands joined by `&&` or `;` so per-command output is easy to read |
 | [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks .NET COM API workflow with anti-hallucination guardrails |
 | [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Entrepreneurship subset of gstack: idea validation, market research, strategy (no code) |

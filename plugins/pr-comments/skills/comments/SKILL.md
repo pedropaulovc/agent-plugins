@@ -39,4 +39,4 @@ bash "$(find ~/.claude -path '*/pr-comments/skills/comments/comments.sh' 2>/dev/
    1. Make any code changes you agreed to
    2. Commit and push them
    3. Send the replies to the comments in GitHub, use the gh command available in the markdown file
-   4. Ask the user if they agree to resolve the open threads, if so, execute the resolve thread command
+   4. Resolve threads automatically where the issue is settled — you made the requested change, or your reply conclusively answers/closes the point. Run the resolve-thread command from the markdown file for each such thread. Keep open any thread that is still a pending discussion — an unresolved debate, a design decision awaiting a call, or anything needing further back-and-forth. Tell the user which threads you resolved and which you left open, and why.
