@@ -31,7 +31,10 @@ gh pr view --json number,url -q '"#\(.number) \(.url)"'
 ```
 
 If that fails, there is no PR for this branch — stop and tell the user (offer to
-open one). Otherwise note the PR number for the rest of the flow.
+open one). Otherwise carry the **URL** forward (not just the number) and pass it as
+`<PR>` in step 2: `watch-pr.sh` resolves a bare number against the local `gh` repo,
+which can miss or mis-target a PR when the branch's PR lives in another repo (e.g. a
+fork checkout), whereas the URL is unambiguous.
 
 The watch loop fetches once on startup, so any threads already open when you start
 arrive as a `BEGIN PR FEEDBACK` block in the first poll (silent if none are active).

@@ -154,15 +154,15 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
 }' > "$TMPDIR/threads.json" 2>/dev/null &
 PID_THREADS=$!
 
-# Wait for the essential REST fetches — abort if any fails. Bash `wait` with
-# multiple PIDs returns only the LAST PID's status, so a failed earlier fetch
-# would be masked under `set -e`, leaving the formatter to run on empty/partial
-# JSON. The GraphQL thread lookup is best-effort (jq falls back to `// []`,
-# showing threads as "unknown"), so its failure isn't fatal.
-for pid in $PID_INLINE $PID_ISSUE $PID_REVIEWS; do
+# Wait for every fetch — abort if any fails. Bash `wait` with multiple PIDs
+# returns only the LAST PID's status, so a failed earlier fetch would be masked
+# under `set -e`, leaving the formatter to run on empty/partial JSON. The GraphQL
+# thread fetch is included: it is the sole source of isResolved/thread IDs, so on
+# its failure resolved threads would render as active with `unknown` IDs — worse
+# than failing, since it sends the agent back to already-settled feedback.
+for pid in $PID_INLINE $PID_ISSUE $PID_REVIEWS $PID_THREADS; do
     wait "$pid" || { echo "Error: a GitHub API fetch failed" >&2; exit 1; }
 done
-wait $PID_THREADS || true
 
 # Get current timestamp
 FETCHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -388,7 +388,7 @@ gh api repos/\($owner)/\($repo)/issues/\($pr)/comments \\
   -f body=\"Your comment here\" > /dev/null 2>&1
 
 # Resolve a thread (use Thread ID, not Comment ID)
-gh api graphql -f query=\"mutation { resolveReviewThread(input: {threadId: \\\\\"THREAD_ID\\\\\"}) { thread { isResolved } } }\" > /dev/null 2>&1
+gh api graphql -f query=\"mutation { resolveReviewThread(input: {threadId: \\\"THREAD_ID\\\"}) { thread { isResolved } } }\" > /dev/null 2>&1
 ```
 "
 ' "$TMPDIR/inline.json" | tr -d '\r' > "$OUTPUT_FILE"
