@@ -148,6 +148,21 @@ scope-expanding idea as AskUserQuestion. Dream, but user opts in or out.
 opportunity individually. Neutral recommendation posture. Accepted expansions become
 part of scope. Rejected ones go to "NOT in scope."
 
+**How to frame an expansion (EXPANSION and SELECTIVE EXPANSION):** Every expansion
+proposal follows the same pattern. Lead with the felt experience, close with concrete
+effort and impact.
+
+- FLAT (avoid): "Add real-time notifications. Users would see results faster."
+- EXPANSIVE (aim for): "Imagine the moment a workflow finishes... the user sees the result
+  instantly, no tab-switching, no 'did it actually work?' anxiety. Real-time feedback
+  turns a tool they check into a tool that talks to them. Makes the product feel 10x more
+  alive."
+
+Both are outcome-framed. Only one makes the user feel the cathedral. For SELECTIVE
+EXPANSION, neutral posture does not mean flat prose: present vivid options, then let the
+user decide. Evocative, not promotional... "feels 10x more alive" is vivid; "this 10x's
+your revenue" is over-sell.
+
 **HOLD SCOPE:** Make it bulletproof. Catch every failure mode. Map every edge case.
 Do not silently reduce OR expand.
 
@@ -201,6 +216,11 @@ and key decisions. Ask the subagent to:
 
 Present findings and provide cross-model synthesis.
 
+Second-opinion findings are INFORMATIONAL until the user explicitly approves each one. Do
+NOT fold them into the plan without presenting each finding via AskUserQuestion and
+getting explicit approval, even when you agree with them. Cross-model consensus is a
+strong signal... present it as such... but the user makes the decision.
+
 ---
 
 ## Step 4: Decision Audit
@@ -240,4 +260,7 @@ Present via AskUserQuestion:
 - **User controls scope.** Every expansion or reduction is opt-in.
 - **Commit to the chosen mode.** Don't drift.
 - **Take positions.** Don't hedge. State your view and what evidence would change it.
+- **Approaches carry equal weight.** Don't default to the smaller-scope option just
+  because it's smaller. Recommend whichever best serves the user's goal. If the right
+  answer is a bigger rethink or a rewrite, say so.
 - **The assignment is mandatory.** End with a concrete action.

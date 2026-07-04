@@ -45,6 +45,13 @@ Gather what you need to research effectively.
    > 1. What the product is and who it's for
    > 2. What space/industry
    > 3. What you're trying to learn (competitors? pricing? positioning? trends?)
+   > 4. The one thing you want a customer to remember after they first encounter this
+   >    product (a feeling, a claim like "faster than anything else," or a posture like
+   >    "for builders, not managers")
+
+The answer to #4 is the positioning anchor. Carry it into the Phase 4 positioning map and
+the Phase 5 strategic implications... a product that tries to be memorable for everything
+is memorable for nothing.
 
 ---
 
