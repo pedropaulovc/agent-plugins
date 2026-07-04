@@ -15,8 +15,10 @@ lines; when a `BEGIN PR FEEDBACK` block appears, you drive the reply flow.
 
 ## Arguments
 
-- `$ARGUMENTS` (optional): PR URL, `owner/repo#123`, or bare `123`. If omitted,
-  auto-detects the PR from the current branch (`gh pr view --json number`).
+- `$ARGUMENTS` (optional): a PR number, full URL, or branch name — the forms
+  `gh pr view` accepts. (`owner/repo#123` is **not** accepted; pass the URL for a
+  PR in another repo.) If omitted, auto-detects the PR from the current branch.
+  The script validates the ref up front and exits loudly on a bad one.
 
 ## Instructions
 
@@ -56,15 +58,18 @@ never stop it manually.
 | Event line | What it means | Action |
 |---|---|---|
 | `check <name>: pending` | a CI check started/re-ran | note it; wait for the terminal bucket |
-| `check <name>: fail` (or `failure`) | CI went red | investigate the failure (`gh run view`/logs), propose a fix, and — with the user's ok — push it; the next `check … pending → pass/fail` line confirms the re-run |
-| `check <name>: pass` (or `success`) | CI went green | nothing to do |
-| `rebase: BEHIND …` | branch fell behind `main` | `git pull --rebase origin main` (fast-forwards cleanly), then push |
-| `rebase: DIRTY …` | merge conflicts with `main` | `git pull --rebase origin main`, resolve conflicts during the rebase, then force-push with `--force-with-lease` |
+| `check <name>: fail [@<ts>]` (or `failure`) | CI went red | investigate the failure (`gh run view`/logs), propose a fix, and — with the user's ok — push it; the next `check … pending → pass/fail` line confirms the re-run (the `@<completedAt>` stamp makes a same-bucket rerun show as a change) |
+| `check <name>: pass [@<ts>]` (or `success`) | CI went green | nothing to do |
+| `rebase: BEHIND — git pull --rebase origin <base> …` | branch fell behind the PR's **base** branch | run the emitted command (fast-forwards cleanly), then push |
+| `rebase: DIRTY — git pull --rebase origin <base> …` | merge conflicts with the base branch | run the emitted command, resolve conflicts during the rebase, then force-push with `--force-with-lease` |
 | `review <login>: <state> @<ts>` | a reviewer just submitted | a `BEGIN PR FEEDBACK` block follows with the comments inline → **step 4** |
-| `comments: <n>` | top-level comment count changed | same — a `BEGIN PR FEEDBACK` block follows → **step 4** |
+| `comments: <n>` | top-level (issue) comment count changed | same — a `BEGIN PR FEEDBACK` block follows → **step 4** |
+| `review-comments: <n>` | inline review-thread comment count changed (e.g. a reply to an existing thread) | same — a `BEGIN PR FEEDBACK` block follows → **step 4** |
 | `===== BEGIN PR FEEDBACK (<path>) =====` … `===== END PR FEEDBACK =====` | the active comments, already fetched + formatted, printed inline | **go to step 4**: handle the feedback from the block; `<path>` is the file to write drafts into |
-| `reaction EYES: 1` (👀) | Codex acknowledged the push, reviewing | informational — wait for its verdict |
-| `reaction THUMBS_UP: 1` (👍) | Codex finished, found **nothing** | informational — its all-clear (when it *does* find something it posts a review → `review …` + a `BEGIN PR FEEDBACK` block → step 4) |
+| `reaction EYES: 1` (👀) | Codex acked a **push**-triggered review on the PR body, reviewing | informational — wait for its verdict |
+| `reaction THUMBS_UP: 1` (👍) | Codex finished a push-triggered review, found **nothing** | informational — its all-clear (when it *does* find something it posts a review → `review …` + a `BEGIN PR FEEDBACK` block → step 4) |
+| `comment-reaction EYES: 1` (👀) | Codex acked an **`@codex review`** mention on a comment, reviewing | informational — wait for its verdict |
+| `comment-reaction THUMBS_UP: 1` (👍) | Codex finished an at-mention review, found **nothing** | informational — its all-clear for the mention (no review object is posted in this case) |
 | `PR <PR> finished: MERGED` | merged (loop ran `git fetch --all --prune`) | done — confirm to the user |
 | `PR <PR> finished: CLOSED` | closed without merging | done — confirm to the user |
 
