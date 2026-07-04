@@ -167,10 +167,15 @@ done
 # Get current timestamp
 FETCHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+# reply.sh sits next to this script; embed its path in the generated commands so the
+# markdown carries no hand-escaped gh/GraphQL (the source of past quoting bugs).
+REPLY_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/reply.sh"
+
 # Process with jq and generate markdown
 jq -r --arg owner "$OWNER" \
       --arg repo "$REPO" \
       --arg pr "$PR_NUMBER" \
+      --arg reply "$REPLY_SH" \
       --arg fetched_at "$FETCHED_AT" \
       --arg include_resolved "$INCLUDE_RESOLVED" \
       --slurpfile issue "$TMPDIR/issue.json" \
@@ -245,10 +250,12 @@ shown_threads: \($shown_thread_count)
 
 ## How to Reply
 
-Use GitHub CLI to reply (append inline `-- 🤖 [Claude Code](https://claude.ai/claude-code)` to replies, redirect output with `> /dev/null 2>&1`):
-- **Inline comments**: `gh api repos/\($owner)/\($repo)/pulls/\($pr)/comments/<COMMENT_ID>/replies -f body=\"<reply>\" > /dev/null 2>&1`
-- **Top-level comments**: `gh api repos/\($owner)/\($repo)/issues/\($pr)/comments -f body=\"<reply>\" > /dev/null 2>&1`
-- **Resolve thread**: `gh api graphql -f query=\"mutation { resolveReviewThread(input: {threadId: \\\"<THREAD_ID>\\\"}) { thread { isResolved } } }\" > /dev/null 2>&1`
+Use the `reply.sh` wrapper — it appends the `🤖 [Claude Code]` signature, silences
+output, and (with `--resolve`) resolves the thread a comment belongs to, no thread ID needed:
+- **Inline comment**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\"`
+- **Inline comment + resolve its thread**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\" --resolve`
+- **Top-level comment**: `bash \($reply) \($owner)/\($repo)#\($pr) --issue --body \"<reply>\"`
+- **Resolve a thread by ID**: `bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread <THREAD_ID>`
 
 ---
 
@@ -377,18 +384,19 @@ else "
 **Showing:** Active threads only (\($resolved_count) resolved threads filtered out)"
 end) + "
 
-**Reply commands** (append `🤖 [Claude Code](https://claude.ai/claude-code)` to replies):
+**Reply / resolve** with the `reply.sh` wrapper (signature + output silencing built in):
 ```bash
-# Reply to inline comment
-gh api repos/\($owner)/\($repo)/pulls/\($pr)/comments/COMMENT_ID/replies \\
-  -f body=\"Your response here\" > /dev/null 2>&1
+# Reply to an inline review comment
+bash \($reply) \($owner)/\($repo)#\($pr) --comment COMMENT_ID --body \"Your response here\"
 
-# Add new top-level comment
-gh api repos/\($owner)/\($repo)/issues/\($pr)/comments \\
-  -f body=\"Your comment here\" > /dev/null 2>&1
+# Reply and resolve the comment thread in one call (no thread ID needed)
+bash \($reply) \($owner)/\($repo)#\($pr) --comment COMMENT_ID --body \"Your response here\" --resolve
 
-# Resolve a thread (use Thread ID, not Comment ID)
-gh api graphql -f query=\"mutation { resolveReviewThread(input: {threadId: \\\"THREAD_ID\\\"}) { thread { isResolved } } }\" > /dev/null 2>&1
+# Post a new top-level comment
+bash \($reply) \($owner)/\($repo)#\($pr) --issue --body \"Your comment here\"
+
+# Resolve a thread directly by its node ID
+bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread THREAD_ID
 ```
 "
 ' "$TMPDIR/inline.json" | tr -d '\r' > "$OUTPUT_FILE"

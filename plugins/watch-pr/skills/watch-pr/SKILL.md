@@ -85,10 +85,10 @@ for each open comment, reflect on whether it's pertinent,
 draft a reply (confirm with the user on any real design/coding decision), write
 draft replies + needed code changes into the markdown file, and present them. Once
 the user agrees: make the code changes, commit and push (which restarts CI — the
-watch loop will surface the new `check …` lines), send the replies with the `gh`
-commands in the markdown, then auto-resolve threads whose issue is settled (the
-requested change is made, or the reply conclusively closes the point) and leave
-pending discussions open (unresolved debate or a design call awaiting a decision).
+watch loop will surface the new `check …` lines), send the replies with the
+`reply.sh` commands in the markdown (reply + resolve settled threads in one call via
+`--comment <ID> --body "…" --resolve`), leaving pending discussions open (unresolved
+debate or a design call awaiting a decision).
 
 Then return to watching — the Monitor loop is still running and will keep emitting
 new events until the PR reaches MERGED/CLOSED.
