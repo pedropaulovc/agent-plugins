@@ -72,8 +72,8 @@ while true; do
   # Reactions on top-level comments — Codex acks an `@codex review` mention (👀)
   # and posts its all-clear (👍) on the comment, not the PR body. Normalize the
   # API's lowercase keys to the same CONTENT names gh uses for PR-body reactions.
-  creact=$(gh api "repos/$SLUG/issues/$NUM/comments" --jq '
-    [.[].reactions? // {} | to_entries[]
+  creact=$(gh api --paginate --slurp "repos/$SLUG/issues/$NUM/comments" --jq '
+    [.[][]? | (.reactions? // {}) | to_entries[]
       | select(.key | test("^([+-]1|eyes|laugh|hooray|confused|heart|rocket)$"))
       | select(.value > 0)]
     | group_by(.key)
