@@ -25,7 +25,7 @@ For your own commentary: direct, concrete, builder-to-builder.
 ## Step 0: Check Codex Binary
 
 ```bash
-which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
+command -v codex >/dev/null 2>&1 && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```
 
 If not found, tell the user:
@@ -78,7 +78,7 @@ Write the prompt:
 3. Run Codex:
 ```bash
 TMPERR=$(mktemp /tmp/codex-err-XXXXXXXX)
-codex exec "$(cat "$CODEX_PROMPT_FILE")" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR"
+codex exec "$(cat "$CODEX_PROMPT_FILE")" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 ```
 
 Use `timeout: 300000` (5 minutes).
@@ -100,7 +100,17 @@ GATE: [PASS/FAIL]
    - Where Claude disagrees and why
    - What Codex found that Claude missed
 
-7. Clean up temp files.
+7. **Recommendation:** Close with the one line a user reads when they don't have time for
+   the verbatim output:
+   `Recommendation: <action> because <one-line reason that names the most actionable finding>`
+   The reason must engage a specific finding or compare against an alternative (another
+   finding, fix-vs-ship, sequencing). Boilerplate reasons ("because it's better") fail the
+   format. Never silently auto-decide... always emit the line. Example:
+   `Recommendation: Cut enterprise SSO from v1 because the wedge is solo builders who never
+   hit SSO, and shipping without it reaches real usage two months sooner than the
+   compliance work Codex also flagged.`
+
+8. Clean up temp files.
 
 ---
 
@@ -120,7 +130,7 @@ Stress-test a plan or idea. Find ways it will fail.
 3. Run Codex:
 ```bash
 TMPERR=$(mktemp /tmp/codex-err-XXXXXXXX)
-codex exec "[PROMPT]" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached 2>"$TMPERR"
+codex exec "[PROMPT]" -s read-only -c 'model_reasoning_effort="high"' --enable web_search_cached < /dev/null 2>"$TMPERR"
 ```
 
 Use `timeout: 300000` (5 minutes).
@@ -137,6 +147,15 @@ CODEX SAYS (challenge):
    - Which challenges are valid and need addressing
    - Which are based on incorrect assumptions
    - What you'd add to Codex's analysis
+
+6. **Recommendation:** Close with one line:
+   `Recommendation: <action> because <one-line reason that names the most serious risk>`
+   The reason must point to a specific challenge and compare against alternatives (other
+   risks, fix-vs-ship). Generic reasons ("because it's risky") fail the format. Never
+   silently skip the line. Example:
+   `Recommendation: Delay launch until you have three paying design partners because
+   Codex's demand-risk challenge is more fatal than the timing risk it also raised... no
+   amount of good timing saves a product no one will pay for.`
 
 ---
 
@@ -156,21 +175,47 @@ If session exists, ask: "Continue previous Codex conversation or start fresh?"
 
 3. Prepend filesystem boundary to the prompt. Always.
 
+   Run with `--json` so the session ID can be captured, and pipe through a small parser
+   that prints the readable text plus a `SESSION_ID:<id>` line (from the `thread.started`
+   event). `< /dev/null` prevents a stdin deadlock on some CLI versions.
+
 4. For new session:
 ```bash
 TMPERR=$(mktemp /tmp/codex-err-XXXXXXXX)
-codex exec "[PROMPT]" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached 2>"$TMPERR"
+codex exec "[PROMPT]" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | python3 -c '
+import sys, json
+for line in sys.stdin:
+    try: obj = json.loads(line)
+    except Exception: continue
+    t = obj.get("type","")
+    if t == "thread.started":
+        tid = obj.get("thread_id","")
+        if tid: print(f"SESSION_ID:{tid}", flush=True)
+    elif t == "item.completed" and "item" in obj:
+        text = obj["item"].get("text","")
+        if text: print(text, flush=True)
+'
 ```
 
-5. For resumed session:
+5. For resumed session (note: `codex exec resume` takes `-c 'sandbox_mode="read-only"'`,
+   not the `-s` short flag):
 ```bash
-codex exec resume <session-id> "[PROMPT]" -s read-only -c 'model_reasoning_effort="medium"' --enable web_search_cached 2>"$TMPERR"
+TMPERR=$(mktemp /tmp/codex-err-XXXXXXXX)
+codex exec resume <session-id> "[PROMPT]" -c 'sandbox_mode="read-only"' -c 'model_reasoning_effort="medium"' --enable web_search_cached --json < /dev/null 2>"$TMPERR" | python3 -c '
+import sys, json
+for line in sys.stdin:
+    try: obj = json.loads(line)
+    except Exception: continue
+    if obj.get("type") == "item.completed" and "item" in obj:
+        text = obj["item"].get("text","")
+        if text: print(text, flush=True)
+'
 ```
 
-6. Save session ID:
+6. Save session ID (the `SESSION_ID:<id>` line the parser printed for a new session):
 ```bash
 mkdir -p .context
-echo "<SESSION_ID>" > .context/codex-session-id
+echo "<id from SESSION_ID: line>" > .context/codex-session-id
 ```
 
 7. Present:
@@ -184,6 +229,13 @@ Session saved. Run /codex again to continue this conversation.
 ```
 
 8. Note any disagreements: "Note: Claude disagrees on X because Y."
+
+9. **Recommendation:** Close with one line:
+   `Recommendation: <action> because <one-line reason that names the most actionable insight from Codex>`
+   The reason must engage a specific Codex insight and compare against an alternative (a
+   different recommendation, status-quo, or another Codex point). Generic synthesis
+   ("because Codex raised good points") fails the format. Never silently auto-decide...
+   always emit the line.
 
 ---
 

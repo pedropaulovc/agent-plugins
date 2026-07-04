@@ -59,6 +59,22 @@ Taste decisions come from three sources:
 2. **Borderline scope** ... ambiguous whether to include or defer
 3. **Cross-model disagreements** ... second opinion raises a valid counter-point
 
+**User Challenge** ... a fourth, qualitatively different category. When both the primary
+review and the cross-model second opinion agree the user's stated direction should change
+(merge, split, add, or remove features or workflows the user specified), that is a User
+Challenge. It is **NEVER auto-decided.** It goes to the final gate with richer context
+than a taste decision:
+- **What the user said:** their original direction
+- **What both models recommend:** the change
+- **Why:** the models' reasoning
+- **What context we might be missing:** explicit acknowledgment of blind spots
+- **If we're wrong, the cost is:** what happens if the user's original direction was right
+
+The user's original direction is the default. The models must make the case for change,
+not the other way around. **Exception:** if both models flag the change as a security or
+feasibility risk (not a preference), the AskUserQuestion framing says so explicitly and is
+appropriately urgent... the user still decides.
+
 ---
 
 ## What "Auto-Decide" Means
@@ -73,6 +89,11 @@ Replace user judgment with the 6 principles. Analysis depth stays the same.
 
 Never compress a review section to a summary. "No issues found" is valid only after
 analysis. "Skipped" is never valid.
+
+**Two exceptions ... never auto-decided:**
+1. Premises (Phase 1) ... require human judgment about what problem to solve.
+2. User Challenges ... when both models agree the user's stated direction should change.
+   The user always has context the models lack. See Decision Classification above.
 
 ---
 
@@ -105,6 +126,8 @@ Follow the `ceo-review` skill methodology at full depth.
 - Scope expansion: In blast radius + quick -> approve (P2). Outside -> defer.
   Duplicates -> reject (P4). Borderline -> TASTE DECISION.
 - Cross-model second opinion: Always run (P6).
+- If both the review and the second opinion agree the user's stated direction should
+  change (merge, split, add, remove) -> USER CHALLENGE (never auto-decided).
 
 **Mandatory outputs:**
 - Reviewed premises (confirmed by user)
@@ -183,8 +206,10 @@ Apply leverage obsession: what's the one thing that makes everything else easier
 
 After each auto-decision, append:
 
-| # | Phase | Decision | Principle | Rationale | Rejected Alternative |
-|---|-------|----------|-----------|-----------|---------------------|
+| # | Phase | Decision | Classification | Principle | Rationale | Rejected Alternative |
+|---|-------|----------|----------------|-----------|-----------|---------------------|
+
+`Classification` is one of: mechanical, taste, or user-challenge.
 
 ---
 
@@ -194,7 +219,19 @@ STOP and present to user via AskUserQuestion:
 
 > ## Auto-Review Complete
 >
-> **Decisions Made:** [N] total
+> **Decisions Made:** [N] total ([M] auto-decided, [K] taste choices, [J] user challenges)
+>
+> ### User Challenges (both models disagree with your stated direction)
+> {For each: **Challenge [N]: [title]** (from [phase])
+>  You said: [original direction]
+>  Both models recommend: [the change]
+>  Why: [reasoning]
+>  What we might be missing: [blind spots]
+>  If we're wrong, the cost is: [downside of changing]
+>  [If security/feasibility: "Both models flag this as a security/feasibility risk, not
+>  just a preference."]
+>  Your call... your original direction stands unless you explicitly change it.}
+> {Skip this whole section if there are 0 user challenges.}
 >
 > ### Your Choices (taste decisions)
 > {each taste decision with recommendation + principle}
@@ -216,6 +253,7 @@ STOP and present to user via AskUserQuestion:
 **Options:**
 - A) Approve as-is
 - B) Approve with overrides (specify which taste decisions to change)
+- B2) Approve with user challenge responses (accept or reject each challenge)
 - C) Interrogate (ask about a specific decision)
 - D) Revise (re-run affected phases, max 3 cycles)
 - E) Reject (start over)
@@ -225,7 +263,10 @@ STOP and present to user via AskUserQuestion:
 ## Important Rules
 
 - **Never abort.** Respect the user's choice to run /autoplan.
-- **Premises are the one gate.** The only non-auto AskUserQuestion during execution.
+- **Two gates.** The only non-auto-decided AskUserQuestions during execution are (1)
+  premise confirmation in Phase 1, and (2) User Challenges... when both models agree the
+  user's stated direction should change. Everything else is auto-decided using the 6
+  principles.
 - **Log every decision.** No silent auto-decisions.
 - **Full depth means full depth.** Do not compress sections.
 - **Sequential order.** CEO -> Market -> Product.
