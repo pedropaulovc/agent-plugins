@@ -128,9 +128,14 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
     # always trips this via the count lines, so open threads are fetched once on
     # startup. Stay silent when there are none active.
     if grep -qE '^(review |comments: |review-comments: |unresolved-threads: )' <<<"$diff_lines"; then
-      path=$(bash "$COMMENTS" "$URL" 2>/dev/null || true)
-      # On Git Bash the formatter emits a Windows path (cygpath -w); convert it
-      # back to POSIX for the -f/grep/cat reads below, else the check silently fails.
+      # comments.sh prints a Windows path on Git Bash (cygpath -w), a POSIX path
+      # elsewhere. Keep BOTH: $display_path is what the agent sees in the BEGIN
+      # marker — its Read/Edit tools want the native Windows path, not the
+      # /tmp/… POSIX form, which they can't open. $path is the POSIX form used
+      # for the -f/grep/cat reads below, which run in this Git Bash and would
+      # fail on a `C:\…` string.
+      display_path=$(bash "$COMMENTS" "$URL" 2>/dev/null || true)
+      path="$display_path"
       command -v cygpath &>/dev/null && [[ -n "$path" ]] && path=$(cygpath -u "$path")
 
       # The formatter now aborts (non-zero, no file) on a transient gh/API/jq
@@ -147,7 +152,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
         # (comments.sh emits <review-summary> only for reviews with a non-empty body,
         # which don't count toward active_comments).
         if [[ "${active:-0}" -gt 0 ]] || grep -q '<review-summary' "$path"; then
-          echo "===== BEGIN PR FEEDBACK ($path) ====="
+          echo "===== BEGIN PR FEEDBACK ($display_path) ====="
           cat "$path"
           echo "===== END PR FEEDBACK ====="
         fi
