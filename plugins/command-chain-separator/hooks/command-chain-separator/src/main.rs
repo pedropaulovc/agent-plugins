@@ -162,9 +162,16 @@ fn scan(cmd: &str) -> Option<Vec<Sep>> {
 
         // Backslash escape: consume the next byte verbatim. Handles `\\\n`
         // line continuation and any escaped operator (`\&`, `\;`, etc.).
+        // A line continuation (`\` + newline) merely joins two physical
+        // lines — it's whitespace and must NOT change command position, or a
+        // control-flow keyword on the continued line (e.g. `&& \<newline>for`)
+        // goes undetected and we fail to bail, corrupting the loop body. Any
+        // other escaped byte is part of a word, so it leaves command position.
         if c == b'\\' && i + 1 < b.len() {
+            if b[i + 1] != b'\n' {
+                at_cmd_pos = false;
+            }
             i += 2;
-            at_cmd_pos = false;
             continue;
         }
 
@@ -588,6 +595,20 @@ mod tests {
             count("cmd1 \\\n  && cmd2"),
             1
         );
+    }
+
+    #[test]
+    fn bails_on_for_loop_reached_via_line_continuation() {
+        // Regression: the `for` opens at command position but is reached over a
+        // `&& \<newline>` line continuation. The continuation must not clear
+        // command position, or the keyword goes undetected and the loop's
+        // internal `;` (before `do`/`done`) get spliced, corrupting it.
+        assert!(rewrite("split x && \\\n  for i in 00 01 02; do \\\n    echo $i; \\\n  done && ls").is_none());
+    }
+
+    #[test]
+    fn bails_on_if_block_reached_via_line_continuation() {
+        assert!(rewrite("prep && \\\n  if [ -f foo ]; then echo yes; fi").is_none());
     }
 
     // -- Realistic chains ----------------------------------------------------
