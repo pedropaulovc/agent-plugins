@@ -29,3 +29,7 @@ The doc tree (`types/`, `enums/`, `docs/`, `examples/`, `index/`) is excluded fr
 ## Source
 
 Extracted from [pedropaulovc/harmonic-analyzer](https://github.com/pedropaulovc/harmonic-analyzer)'s `cad/.claude/skills/developing-solidworks/`.
+
+## Codex support
+
+Works in both. Under Codex, invoke the bundled `download-solidworks-docs` skill with `$download-solidworks-docs` (or run its PowerShell block directly) — the Claude `Skill()` tool call in the setup steps is Claude-Code-specific.

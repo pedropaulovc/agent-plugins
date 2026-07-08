@@ -86,3 +86,7 @@ Claude Code loads `MEMORY.md` at session start and the `/memory` command operate
 ## License
 
 MIT
+
+## Codex support
+
+Works in both. Redirects each harness's machine-local auto-memory to the repo `./memory/` store — `~/.claude/projects/<slug>/memory/` under Claude Code and `~/.codex/memories/` under Codex. The `[force-memory]` escape hatch auto-approves under Codex only in `bypassPermissions`/`dontAsk` modes; otherwise it defers to the normal approval prompt.

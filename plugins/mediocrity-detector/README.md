@@ -7,3 +7,7 @@ A Rust Stop hook that detects hedging language in the current turn ("for now", "
 ```
 python3 hooks/build-hooks.py
 ```
+
+## Codex support
+
+Works in both. The `Stop` hook parses both Claude Code transcripts and Codex rollout logs, scanning the full final turn.

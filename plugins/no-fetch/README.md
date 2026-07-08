@@ -33,3 +33,7 @@ The Firecrawl and Browserbase MCP servers must be configured in your Claude Code
 ## License
 
 MIT
+
+## Codex support
+
+**Claude Code only.** Deliberately not shipped to Codex: Codex has no `WebFetch` tool to intercept, and its `web_search` is not hook-interceptable. To force MCP tools under Codex, set `web_search = "disabled"` in `~/.codex/config.toml` instead.
