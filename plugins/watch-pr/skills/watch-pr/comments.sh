@@ -181,9 +181,15 @@ jq -r --arg owner "$OWNER" \
       --slurpfile issue "$TMPDIR/issue.json" \
       --slurpfile reviews "$TMPDIR/reviews.json" \
       --slurpfile threads "$TMPDIR/threads.json" '
+# Codex ends every review/comment body with a "Useful? React with 👍 / 👎." trailer
+# (optionally preceded by a `---` separator). It's pure noise here — the reply flow's
+# own instructions cover reactions — so trim it before rendering any body.
+def strip_codex_trailer:
+    sub("\\n+[-\\s]*Useful\\? React with[^\\n]*[ \\t]*$"; "");
+
 # Helper function to escape for blockquote
 def blockquote:
-    split("\n") | map("> " + .) | join("\n");
+    strip_codex_trailer | split("\n") | map("> " + .) | join("\n");
 
 # Helper function to get short diff context
 def short_diff:
@@ -257,6 +263,10 @@ output, and (with `--resolve`) resolves the thread a comment belongs to, no thre
 - **Top-level comment**: `bash \($reply) \($owner)/\($repo)#\($pr) --issue --body \"<reply>\"`
 - **Resolve a thread by ID**: `bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread <THREAD_ID>`
 
+Optionally add `--thumbs-up` (👍) or `--thumbs-down` (👎) to an `--comment` call to react
+to that comment — e.g. a quick 👍 to acknowledge feedback you're acting on. It's optional,
+not required; skip it when a reaction adds nothing.
+
 ---
 
 ## REVIEW SUMMARIES
@@ -271,7 +281,7 @@ output, and (with `--resolve`) resolves the thread a comment belongs to, no thre
 | `review-\(.id)` | PR Review | \(.user.login) | \(.submitted_at) |
 
 **Body:**
-\(.body | gsub("\n"; "\n> ") | "> " + .)
+\(.body | strip_codex_trailer | gsub("\n"; "\n> ") | "> " + .)
 </review-summary>") | join("\n---\n\n")
     else
         "_No review summaries with body text._"
@@ -330,7 +340,7 @@ end) +
 (if ($replies | length) > 0 then
     "\n\n**Replies:**\n" +
     ([$replies[] |
-        "<reply id=\"\(.id)\" author=\"\(.user.login)\">\n> **\(.user.login)**: \(.body | gsub("\n"; "\n> "))\n</reply>"
+        "<reply id=\"\(.id)\" author=\"\(.user.login)\">\n> **\(.user.login)**: \(.body | strip_codex_trailer | gsub("\n"; "\n> "))\n</reply>"
     ] | join("\n"))
 else ""
 end) +
@@ -391,6 +401,9 @@ bash \($reply) \($owner)/\($repo)#\($pr) --comment COMMENT_ID --body \"Your resp
 
 # Reply and resolve the comment thread in one call (no thread ID needed)
 bash \($reply) \($owner)/\($repo)#\($pr) --comment COMMENT_ID --body \"Your response here\" --resolve
+
+# Optional: add a 👍/👎 reaction to a comment (append to any --comment call, or use alone)
+bash \($reply) \($owner)/\($repo)#\($pr) --comment COMMENT_ID --body \"Your response here\" --thumbs-up
 
 # Post a new top-level comment
 bash \($reply) \($owner)/\($repo)#\($pr) --issue --body \"Your comment here\"

@@ -88,7 +88,9 @@ the user agrees: make the code changes, commit and push (which restarts CI — t
 watch loop will surface the new `check …` lines), send the replies with the
 `reply.sh` commands in the markdown (reply + resolve settled threads in one call via
 `--comment <ID> --body "…" --resolve`), leaving pending discussions open (unresolved
-debate or a design call awaiting a decision).
+debate or a design call awaiting a decision). Optionally add `--thumbs-up`/`--thumbs-down`
+to a `--comment` reply to react 👍/👎 to that comment — a quick acknowledgement when it
+helps, never required.
 
 Then return to watching — the Monitor loop is still running and will keep emitting
 new events until the PR reaches MERGED/CLOSED.
