@@ -1,13 +1,27 @@
 # agent-plugins
 
-A Claude Code plugin marketplace of hooks, skills, and commands focused on engineering rigor, GitHub workflow, Windows quirks, and one very specific CAD niche.
+A Claude Code and OpenAI Codex plugin marketplace of hooks, skills, and commands focused on engineering rigor, GitHub workflow, Windows quirks, and one very specific CAD niche.
 
 ## Install
+
+**Claude Code:**
 
 ```bash
 /plugin marketplace add pedropaulovc/agent-plugins
 /plugin install <plugin-name>@agent-plugins
 ```
+
+**OpenAI Codex CLI:** every plugin except `no-fetch` ships a `.codex-plugin/plugin.json`
+and is listed in `.agents/plugins/marketplace.json`, so Codex loads them from the same repo:
+
+```bash
+codex plugin marketplace add pedropaulovc/agent-plugins
+```
+
+Then enable plugins from the `/plugins` browser. `no-fetch` is Claude-only — Codex's
+web access is a hosted `web_search` tool that hooks can't intercept (disable it with
+`web_search = "disabled"` in `~/.codex/config.toml` instead). Slash-commands become
+skills under Codex (invoke with `$<skill>` or `/skills`).
 
 ## Featured
 
@@ -37,7 +51,7 @@ Broadly useful regardless of what you're working on.
 |---|---|---|
 | [superpowers](plugins/superpowers) | Skills | Core skills library — TDD, debugging, collaboration patterns (vendored from [obra/superpowers](https://github.com/obra/superpowers)) |
 | [windows-bash-guard](plugins/windows-bash-guard) | Hook | Auto-fixes Windows+bash path pitfalls (backslash paths, `/dev/stdin`) before execution |
-| [memory-to-repo](plugins/memory-to-repo) | Hook | Blocks CRUD on the machine-local auto-memory dir and redirects to the repo's `./memory/` folder so memory is git-tracked and shareable |
+| [memory-to-repo](plugins/memory-to-repo) | Hook + Skills | Blocks CRUD on the machine-local auto-memory dir and redirects to the repo's `./memory/` folder so memory is git-tracked and shareable |
 
 ### Personalized
 
