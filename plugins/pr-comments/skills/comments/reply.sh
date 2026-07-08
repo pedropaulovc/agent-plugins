@@ -8,10 +8,13 @@ set -euo pipefail
 # thread WITHOUT the caller ever handling a thread node ID.
 #
 # Usage:
-#   reply.sh <pr> --comment <COMMENT_ID> --body <text> [--resolve]
-#       Reply to an inline review comment; with --resolve, also resolve its thread.
+#   reply.sh <pr> --comment <COMMENT_ID> --body <text> [--resolve] [--thumbs-up|--thumbs-down]
+#       Reply to an inline review comment; with --resolve, also resolve its thread;
+#       with --thumbs-up/--thumbs-down, also react 👍/👎 to that comment.
 #   reply.sh <pr> --comment <COMMENT_ID> --resolve
 #       Resolve the comment's thread without replying.
+#   reply.sh <pr> --comment <COMMENT_ID> --thumbs-up
+#       React 👍 (or 👎 with --thumbs-down) to a comment without replying.
 #   reply.sh <pr> --issue --body <text>
 #       Post a new top-level (issue) comment.
 #   reply.sh <pr> --resolve-thread <THREAD_ID>
@@ -30,6 +33,7 @@ BODY=""
 HAVE_BODY=false
 RESOLVE=false
 RESOLVE_THREAD_ID=""
+REACTION=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -38,6 +42,8 @@ while [[ $# -gt 0 ]]; do
         --body)           BODY="$2"; HAVE_BODY=true; shift 2 ;;
         --resolve)        RESOLVE=true; shift ;;
         --resolve-thread) RESOLVE_THREAD_ID="$2"; shift 2 ;;
+        --thumbs-up)      REACTION="+1"; shift ;;
+        --thumbs-down)    REACTION="-1"; shift ;;
         -h|--help)        awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; started=1; next} started{exit}' "$0"; exit 0 ;;
         -*)               echo "Error: unknown flag: $1" >&2; exit 1 ;;
         *)
@@ -127,6 +133,17 @@ if [[ "$HAVE_BODY" == true ]]; then
     fi
 fi
 
+# --- React, if requested -----------------------------------------------------
+if [[ -n "$REACTION" ]]; then
+    if [[ -z "$COMMENT_ID" ]]; then
+        echo "Error: --thumbs-up/--thumbs-down needs --comment <ID>" >&2
+        exit 1
+    fi
+    gh api "repos/$OWNER/$REPO/pulls/comments/$COMMENT_ID/reactions" \
+        -f content="$REACTION" >/dev/null
+    echo "reacted $REACTION to comment $COMMENT_ID" >&2
+fi
+
 # --- Resolve, if requested ---------------------------------------------------
 if [[ "$RESOLVE" == true ]]; then
     if [[ -z "$COMMENT_ID" ]]; then
@@ -149,7 +166,7 @@ if [[ -n "$RESOLVE_THREAD_ID" ]]; then
     resolve_thread "$RESOLVE_THREAD_ID"
 fi
 
-if [[ "$HAVE_BODY" == false && "$RESOLVE" == false && -z "$RESOLVE_THREAD_ID" ]]; then
-    echo "Error: nothing to do — pass --body, --resolve, or --resolve-thread. See: $0 --help" >&2
+if [[ "$HAVE_BODY" == false && "$RESOLVE" == false && -z "$RESOLVE_THREAD_ID" && -z "$REACTION" ]]; then
+    echo "Error: nothing to do — pass --body, --resolve, --resolve-thread, or --thumbs-up/--thumbs-down. See: $0 --help" >&2
     exit 1
 fi
