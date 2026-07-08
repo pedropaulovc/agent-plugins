@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/unrelated-issue-detector\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\";; *) exec \"$b\";; esac"
+            "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/unrelated-issue-detector\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\";; Linux) exec \"$b\";; *) exit 0;; esac",
+            "commandWindows": "\"%CLAUDE_PLUGIN_ROOT%\\hooks\\bin\\unrelated-issue-detector.exe\""
           }
         ]
       }
