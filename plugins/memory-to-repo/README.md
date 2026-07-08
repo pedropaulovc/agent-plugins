@@ -65,6 +65,8 @@ It then re-syncs `MEMORY.md` so the index matches the files on disk, and reports
 
 For every `Read` tool call in those transcripts whose target resolved to a file under `memory/` (excluding the `MEMORY.md` index itself), it records one `{sessionId, memoryFileName}` pair, deduplicated per session, and appends any not already present to `./memory/usage.jsonl` — one JSON object per line. Existing lines are kept byte-for-byte and never reordered; only new records are added at the end. Since `usage.jsonl` is git-tracked and shared, this keeps concurrent runs (different people, different branches) append-only at the tail, which git merges cleanly — a full rewrite/re-sort would touch nearly every line and turn every concurrent run into a merge conflict. The trade-off: a record for a memory file that's later renamed or deleted just goes unused rather than being cleaned up (the ranking below simply never looks it up).
 
+The first time `./memory/usage.jsonl` is created, the script also adds `memory/usage.jsonl merge=union` to the project's `.gitattributes` (creating it if absent), so git auto-resolves any conflicting append with the built-in `union` merge driver instead of leaving conflict markers — a leftover marker would otherwise corrupt every line downstream readers parse. This only runs on that first creation, not on every invocation, so the script's side effects stay limited to a one-time setup step.
+
 ```
 /record-memory-usage
 ```
