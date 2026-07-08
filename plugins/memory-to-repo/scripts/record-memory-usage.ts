@@ -24,8 +24,13 @@ interface UsageRecord {
   memoryFileName: string;
 }
 
+// Mirror Claude Code's project-slug convention: every path separator and dot
+// collapses to a dash. Cover the Windows shapes too — a drive-letter colon and
+// backslash separators — so "C:\\src\\proj" slugs to "C--src-proj" (matching
+// ~/.claude/projects/C--src-proj), not the "C:\\src\\proj" that a POSIX-only
+// regex leaves untouched, which would match zero session dirs on Windows.
 function slugify(path: string): string {
-  return path.replace(/[/.]/g, "-");
+  return path.replace(/[/\\.:]/g, "-");
 }
 
 // Session transcripts for this project live under a slug directory; sessions
