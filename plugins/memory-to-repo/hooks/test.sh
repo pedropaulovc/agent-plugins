@@ -108,6 +108,22 @@ ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
 echo "$ctx" | grep -q "only titles shown" && pass "empty usage.jsonl falls back to titles-only" || die "empty usage.jsonl mishandled: $ctx"
 rm -f "$tmp/memory/usage.jsonl"
 
+# 9b. Regression for a Codex-caught bug: many very short titles in the plain
+# title-only fallback (no usage.jsonl) used to blow the additionalContext cap
+# because the budget check counted each title's own bytes but not the
+# newline joining it to the next one -- 3,000 one-character titles produced
+# 11,384 bytes despite the 1,500-byte safety margin.
+: > "$tmp/memory/MEMORY.md"
+i=1
+while [ "$i" -le 3000 ]; do
+  printf -- '- [A](a%d.md) — d\n' "$i" >> "$tmp/memory/MEMORY.md"
+  i=$((i + 1))
+done
+out=$(ss)
+ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
+ctx_len=$(printf '%s' "$ctx" | wc -c)
+[ "$ctx_len" -lt 10000 ] && pass "many-short-titles fallback stays under the 10k cap ($ctx_len bytes)" || die "exceeded cap: $ctx_len bytes"
+
 # 10. A store much larger than the additionalContext cap: the top 3 always
 # keep a description (ellipsis-truncated if one is oversized), the rest
 # degrade to title-only, and anything that still doesn't fit is folded into a

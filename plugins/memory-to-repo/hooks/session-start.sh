@@ -93,13 +93,18 @@ Memory index from $mem, sorted by usage — most-consulted-first:
     [ -z "$line" ] && continue
 
     if [ "$phase" = desc ]; then
+      # +1 for the newline that joins this entry to the growing body — wc -c
+      # on the bare line doesn't count it, and left uncounted across enough
+      # entries it can push the real output past total_budget.
       line_len=$(printf '%s' "$line" | wc -c)
+      line_len=$((line_len + 1))
       if [ "$n_described" -lt "$min_described" ] || [ $((desc_used + line_len)) -le "$desc_budget" ]; then
         if [ $((desc_used + line_len)) -gt "$desc_budget" ]; then
           remaining=$((desc_budget - desc_used))
           [ "$remaining" -lt 20 ] && remaining=20
           line="$(printf '%s' "$line" | cut -b "1-$remaining" | iconv -f utf-8 -t utf-8 -c)…"
           line_len=$(printf '%s' "$line" | wc -c)
+          line_len=$((line_len + 1))
         fi
         body="${body:+$body
 }$line"
@@ -114,6 +119,7 @@ Memory index from $mem, sorted by usage — most-consulted-first:
 
     title=$(printf '%s\n' "$line" | sed -n 's/^- \[\([^]]*\)\](.*/- \1/p')
     title_len=$(printf '%s' "$title" | wc -c)
+    title_len=$((title_len + 1))
     if [ "$omitted" -eq 0 ] && [ $((title_used + title_len)) -le "$title_budget" ]; then
       body="${body:+$body
 }$title"
@@ -147,7 +153,10 @@ Memory titles from $mem (only titles shown; read MEMORY.md for full contents):
   omitted=0
   while IFS= read -r title; do
     [ -z "$title" ] && continue
+    # +1 for the newline that joins this entry to the growing body (see the
+    # matching comment in the ranked branch above).
     title_len=$(printf '%s' "$title" | wc -c)
+    title_len=$((title_len + 1))
     if [ "$omitted" -eq 0 ] && [ $((title_used + title_len)) -le "$total_budget" ]; then
       body="${body:+$body
 }$title"
