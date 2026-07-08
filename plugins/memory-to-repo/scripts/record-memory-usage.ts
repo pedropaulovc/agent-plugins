@@ -14,6 +14,7 @@
 //
 // Run via: node scripts/record-memory-usage.ts (native TS type-stripping,
 // Node >=23.6 — no build step, no dependency install required at runtime).
+import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
@@ -140,8 +141,26 @@ function ensureGitAttributes(projectRoot: string): void {
   console.log(`Appended "${line}" to ${path}`);
 }
 
+// Codex sets no CLAUDE_PROJECT_DIR and may launch from a subdirectory, so fall
+// back to the git top-level (not process.cwd()) to find the repo-root memory
+// store. Mirrors session-start.sh's resolution.
+function gitTopLevel(): string | undefined {
+  try {
+    return (
+      execSync("git rev-parse --show-toplevel", {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() || undefined
+    );
+  } catch {
+    return undefined;
+  }
+}
+
 function main(): void {
-  const projectRoot = resolve(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+  const projectRoot = resolve(
+    process.env.CLAUDE_PROJECT_DIR || gitTopLevel() || process.cwd(),
+  );
   const memoryDir = join(projectRoot, "memory");
   if (!existsSync(memoryDir)) {
     console.log(`No memory/ directory at ${memoryDir}; nothing to record.`);

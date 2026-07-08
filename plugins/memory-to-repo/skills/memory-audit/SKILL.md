@@ -17,9 +17,14 @@ kept, amended, or dropped.
 
 ## Gather context first
 
-The memory directory is `./memory/` under the repository root (your current
-working directory). Before auditing, run these to build context:
+The memory store is the `./memory/` folder at the **repository root**. Codex may
+start a session in a subdirectory (and sets no `CLAUDE_PROJECT_DIR`), so move to
+the repo root first — otherwise `memory/` resolves to `<subdir>/memory` and you
+audit the wrong place (or wrongly conclude there are no memories). Before auditing,
+run these to build context:
 
+- Run `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"` so every `memory/…`
+  path below resolves against the repo root.
 - Run `date +%F` to get today's date.
 - Run `ls -1 memory/*.md 2>/dev/null | grep -v '/MEMORY\.md$'` to list the memory
   files to audit (the index `MEMORY.md` is excluded — it is regenerated, not

@@ -19,14 +19,18 @@ Fetch active (unresolved) comments from a GitHub Pull Request and format them fo
 
 1. Determine the target PR reference from the user's request — a PR URL, `owner/repo#123`, or a bare number. In **Claude Code** it arrives via `$ARGUMENTS` (the harness substitutes it). Under **Codex** there is no argument substitution, so read the ref the user gave in their prompt. Then run the `comments.sh` script that sits **in this skill's own directory** — right next to this `SKILL.md`. You already know that directory's absolute path (it's where you loaded this file from), so invoke the script by that path directly. Pass the ref as a **single quoted argument** — omit it entirely only when the user gave none, to auto-detect the PR from the current branch:
 
+Also pass `--include-resolved` as its own argument whenever the user asked to include resolved threads (it can appear with or without a PR ref); omit it otherwise.
+
 ```bash
 # with an explicit ref:
 bash "<this skill's directory>/comments.sh" "<pr-url-or-ref>"
-# or, no ref → auto-detect from the current branch:
+# no ref → auto-detect from the current branch:
 bash "<this skill's directory>/comments.sh"
+# include resolved threads too (with or without a ref):
+bash "<this skill's directory>/comments.sh" "<pr-url-or-ref>" --include-resolved
 ```
 
-Do **not** locate the script with `find ~/.claude ~/.codex … | head -1`: that scans every cached install and can execute a stale copy from an older plugin version instead of the one next to this `SKILL.md`. Do **not** pass a literal `$ARGUMENTS` under Codex either — an unset shell variable expands to empty and silently auto-detects the wrong PR.
+Do **not** locate the script with `find ~/.claude ~/.codex … | head -1`: that scans every cached install and can execute a stale copy from an older plugin version instead of the one next to this `SKILL.md`. Do **not** pass a literal `$ARGUMENTS` under Codex either — an unset shell variable expands to empty and silently auto-detects the wrong PR, and it drops flags like `--include-resolved`.
 
 2. The script outputs the path to the generated markdown file on stdout. Capture this path and read the file contents.
 

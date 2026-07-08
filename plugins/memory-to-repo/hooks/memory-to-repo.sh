@@ -8,12 +8,29 @@ input=$(cat)
 # machine-specific / secret / non-shareable notes that do NOT belong in version
 # control; not a routine bypass of the redirect below.
 if echo "$input" | grep -q '\[force-memory\]'; then
+  # Codex rejects a bare updatedInput for PreToolUse and requires
+  # permissionDecision:"allow"; Claude Code needs no such field (and it would
+  # wrongly auto-approve there). Codex sets PLUGIN_ROOT for plugin hooks, so
+  # gate the field on it (mirrors the Rust rewrite hooks).
+  #
+  # But that allow also SKIPS Codex's approval prompt — so honoring the marker
+  # would auto-approve any call that merely carries the marker (e.g. the marker
+  # appended to a `rm -rf build`), laundering it past the approval gate. Under
+  # Codex, only emit the allow-rewrite when approval is ALREADY being skipped
+  # (bypassPermissions/dontAsk); in approval-requiring modes, emit nothing and
+  # let the original call go through Codex's normal approval prompt. Claude Code
+  # applies a bare updatedInput without approving, so it always strips.
+  if [ -n "$PLUGIN_ROOT" ]; then
+    codex=true
+    mode=$(printf '%s' "$input" | grep -o '"permission_mode"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"//; s/"$//')
+    case "$mode" in
+      bypassPermissions|dontAsk) : ;;
+      *) exit 0 ;;
+    esac
+  else
+    codex=false
+  fi
   if command -v jq >/dev/null 2>&1; then
-    # Codex rejects a bare updatedInput for PreToolUse and requires
-    # permissionDecision:"allow"; Claude Code needs no such field (and it
-    # would wrongly auto-approve there). Codex sets PLUGIN_ROOT for plugin
-    # hooks, so gate the field on it (mirrors the Rust rewrite hooks).
-    [ -n "$PLUGIN_ROOT" ] && codex=true || codex=false
     printf '%s' "$input" | jq -c --argjson codex "$codex" '{
       hookSpecificOutput: (
         {
