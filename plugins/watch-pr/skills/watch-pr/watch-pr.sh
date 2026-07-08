@@ -94,16 +94,23 @@ while true; do
   rc=$(gh api --paginate "repos/$SLUG/pulls/$NUM/comments" 2>/dev/null \
         | jq -r --arg me "$ME" '.[] | select(.user.login != $me) | .id' 2>/dev/null | wc -l | tr -d ' ')
   # Reactions on top-level comments — Codex acks an `@codex review` mention (👀)
-  # and posts its all-clear (👍) on the comment, not the PR body. Normalize the
-  # API's lowercase keys to the same CONTENT names gh uses for PR-body reactions.
-  creact=$(gh api --paginate --slurp "repos/$SLUG/issues/$NUM/comments" --jq '
-    [.[][]? | (.reactions? // {}) | to_entries[]
-      | select(.key | test("^([+-]1|eyes|laugh|hooray|confused|heart|rocket)$"))
-      | select(.value > 0)]
-    | group_by(.key)
-    | map({k: .[0].key, n: (map(.value) | add)})[]
-    | "comment-reaction \({"+1":"THUMBS_UP","-1":"THUMBS_DOWN","eyes":"EYES","laugh":"LAUGH","hooray":"HOORAY","confused":"CONFUSED","heart":"HEART","rocket":"ROCKET"}[.k] // .k): \(.n)"
-  ' 2>/dev/null || true)
+  # and posts its all-clear (👍) on the comment, not the PR body. We EXCLUDE the
+  # current gh user's own reactions so a 👍 we add via reply.sh --thumbs-up doesn't
+  # masquerade as Codex's all-clear. The comments listing only carries a reaction
+  # *summary* (counts, no reactor), so we first find comments that have any reaction,
+  # then fetch each one's reaction list (which names the user) and re-aggregate.
+  # Normalize the API's lowercase keys to the CONTENT names gh uses for PR-body reactions.
+  reacted_ids=$(gh api --paginate "repos/$SLUG/issues/$NUM/comments" \
+      --jq '.[] | select((.reactions.total_count // 0) > 0) | .id' 2>/dev/null || true)
+  creact=$(
+    for cid in $reacted_ids; do
+      gh api --paginate "repos/$SLUG/issues/comments/$cid/reactions" 2>/dev/null \
+        | jq -r --arg me "$ME" '.[] | select(.user.login != $me) | .content'
+    done | jq -rRn '
+      [inputs] | group_by(.) | map({k: .[0], n: length})[]
+      | "comment-reaction \({"+1":"THUMBS_UP","-1":"THUMBS_DOWN","eyes":"EYES","laugh":"LAUGH","hooray":"HOORAY","confused":"CONFUSED","heart":"HEART","rocket":"ROCKET"}[.k] // .k): \(.n)"
+    ' 2>/dev/null || true
+  )
   # Count of UNRESOLVED review threads. A reviewer re-opening/un-resolving a thread
   # without a new reply changes no comment count ($rc) or review/reaction line, so
   # without this signal the newly-active feedback would stay hidden until some

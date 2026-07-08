@@ -182,8 +182,11 @@ jq -r --arg owner "$OWNER" \
       --slurpfile reviews "$TMPDIR/reviews.json" \
       --slurpfile threads "$TMPDIR/threads.json" '
 # Codex ends every review/comment body with a "Useful? React with 👍 / 👎." trailer
-# (optionally preceded by a `---` separator). It's pure noise here — the reply flow's
-# own instructions cover reactions — so trim it before rendering any body.
+# (optionally preceded by a `---` separator). It is pure noise here — the reply flow
+# already covers reactions in its own instructions — so trim it before rendering a body.
+# NB: keep this whole jq program free of the apostrophe character — it is a
+# single-quoted shell string, so a bare one closes the quote and corrupts the
+# program (jq: "Top-level program not given").
 def strip_codex_trailer:
     sub("\\n+[-\\s]*Useful\\? React with[^\\n]*[ \\t]*$"; "");
 
@@ -264,7 +267,7 @@ output, and (with `--resolve`) resolves the thread a comment belongs to, no thre
 - **Resolve a thread by ID**: `bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread <THREAD_ID>`
 
 Optionally add `--thumbs-up` (👍) or `--thumbs-down` (👎) to an `--comment` call to react
-to that comment — e.g. a quick 👍 to acknowledge feedback you're acting on. It's optional,
+to that comment — e.g. a quick 👍 to acknowledge feedback you are acting on. Optional,
 not required; skip it when a reaction adds nothing.
 
 ---
