@@ -16,10 +16,14 @@ set -uo pipefail
 #                                            makes a same-bucket rerun show as a change
 #   rebase: BEHIND — git pull --rebase origin <base> …   behind the PR's base branch
 #   rebase: DIRTY  — git pull --rebase origin <base> …   merge conflicts with base
-#   review <login>: <state> @<ts>          a reviewer just submitted
-#   comments: <n>                          top-level (issue) comment count changed
+#   review <login>: <state> @<ts>          a reviewer just submitted (the current gh
+#                                          user's own reviews are filtered out)
+#   comments: <n>                          top-level (issue) comment count changed —
+#                                          counts OTHER users only, so a reply you post
+#                                          doesn't bounce back as an event
 #   review-comments: <n>                   inline review-thread comment count changed
-#                                          (catches replies to existing threads)
+#                                          (catches replies to existing threads; excludes
+#                                          the current gh user's own replies)
 #   reaction <CONTENT>: <n>                reaction on the PR BODY (Codex: EYES=👀 reviewing,
 #                                          THUMBS_UP=👍 all-clear). Aggregate count — a human
 #                                          reacting is indistinguishable from Codex (rare).
@@ -70,6 +74,14 @@ if [[ "$origin_url" =~ github\.com[:/]([^/]+)/([^/.]+) && "${BASH_REMATCH[1]}/${
   ORIGIN_IS_BASE=1
 fi
 
+# The current gh user — reviews and comments it authored are OUR own actions (a
+# reply we just posted, a review we left), so we drop them from the count/review
+# signals below. Otherwise posting a reply immediately bounces back as an event and
+# re-trips the feedback fetch on our own message. Empty (gh offline) → no filtering,
+# same behaviour as before. Reactions stay unfiltered: the API's summary counts
+# don't name the reactor, so we can't attribute a 👍 without a per-comment lookup.
+ME=$(gh api user --jq '.login' 2>/dev/null || echo "")
+
 prev=""
 while true; do
   # -R pins every poll to the PR's own repo, so a URL to another repo still works.
@@ -79,7 +91,8 @@ while true; do
   # Inline review-thread comments are pull review comments — separate from issue
   # comments and not always tied to a new submitted review. Track their count so a
   # reply to an existing thread still trips the feedback fetch.
-  rc=$(gh api --paginate "repos/$SLUG/pulls/$NUM/comments" --jq '.[].id' 2>/dev/null | wc -l | tr -d ' ')
+  rc=$(gh api --paginate "repos/$SLUG/pulls/$NUM/comments" 2>/dev/null \
+        | jq -r --arg me "$ME" '.[] | select(.user.login != $me) | .id' 2>/dev/null | wc -l | tr -d ' ')
   # Reactions on top-level comments — Codex acks an `@codex review` mention (👀)
   # and posts its all-clear (👍) on the comment, not the PR body. Normalize the
   # API's lowercase keys to the same CONTENT names gh uses for PR-body reactions.
@@ -111,8 +124,8 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
   cur=$( {
     jq -r '.[] | "check \(.name): \(.bucket)" + (if (.completedAt // "") != "" then " @\(.completedAt)" else "" end)' <<<"$checks"
     jq -r --arg slug "$SLUG" --arg ob "$ORIGIN_IS_BASE" 'select(.mergeStateStatus=="BEHIND" or .mergeStateStatus=="DIRTY") | "rebase: \(.mergeStateStatus) — " + (if $ob=="1" then "git pull --rebase origin \(.baseRefName)" else "base is \($slug):\(.baseRefName); local origin ≠ base repo — rebase against the base remote, not origin" end) + " (BEHIND=fast-forward, DIRTY=resolve conflicts)"' <<<"$meta"
-    jq -r '.reviews[] | "review \(.author.login): \(.state) @\(.submittedAt)"' <<<"$meta"
-    jq -r '"comments: \(.comments | length)"' <<<"$meta"
+    jq -r --arg me "$ME" '.reviews[] | select(.author.login != $me) | "review \(.author.login): \(.state) @\(.submittedAt)"' <<<"$meta"
+    jq -r --arg me "$ME" '"comments: \([.comments[] | select(.author.login != $me)] | length)"' <<<"$meta"
     [[ "$rc" =~ ^[0-9]+$ ]] && echo "review-comments: $rc"
     [[ "$ur" =~ ^[0-9]+$ ]] && echo "unresolved-threads: $ur"
     jq -r '.reactionGroups[]? | select(.users.totalCount>0) | "reaction \(.content): \(.users.totalCount)"' <<<"$meta"
