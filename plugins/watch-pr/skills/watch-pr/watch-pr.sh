@@ -31,10 +31,12 @@ set -uo pipefail
 #                                          Codex acks an `@codex review` mention (👀) and
 #                                          signals its all-clear (👍) when no review is posted.
 #   feedback [<id>] <file>:<lines> @<author> <title>   one compact line per ACTIVE inline
-#                                          review thread (plus `feedback comment [<id>] …`
-#                                          for a top-level comment and `feedback review
-#                                          [review-<id>] …` for a body review). id is the
-#                                          COMMENT id to pass to reply.sh.
+#                                          review thread; <id> is the review-comment id for
+#                                          reply.sh --comment. Also `feedback comment [<id>]`
+#                                          for a top-level comment (reply with --issue, NOT
+#                                          --comment <id>) and `feedback review [review-<id>]`
+#                                          for a body review (no reply target). For the last
+#                                          two, use the exact reply.sh command in <path>.
 #   → full bodies + code context: <path>   the editable markdown file holding every active
 #                                          thread's full body, diff context and ready-to-run
 #                                          reply.sh commands — open it for threads you act on
@@ -90,7 +92,7 @@ fi
 ME=$(gh api user --jq '.login' 2>/dev/null || echo "")
 
 prev=""
-prev_ur=""   # previous unresolved-thread count — a DECREASE never re-fetches (issue #40)
+prev_ur_ids=""   # previous unresolved-thread ID set — only ADDITIONS re-fetch (issue #40)
 while true; do
   # -R pins every poll to the PR's own repo, so a URL to another repo still works.
   meta=$(gh pr view "$NUM" -R "$SLUG" --json state,mergeStateStatus,baseRefName,reviews,reactionGroups,comments 2>/dev/null || echo '{}')
@@ -119,22 +121,26 @@ while true; do
       | "comment-reaction \({"+1":"THUMBS_UP","-1":"THUMBS_DOWN","eyes":"EYES","laugh":"LAUGH","hooray":"HOORAY","confused":"CONFUSED","heart":"HEART","rocket":"ROCKET"}[.k] // .k): \(.n)"
     ' 2>/dev/null || true
   )
-  # Count of UNRESOLVED review threads. A reviewer re-opening/un-resolving a thread
-  # without a new reply changes no comment count ($rc) or review/reaction line, so
-  # without this signal the newly-active feedback would stay hidden until some
-  # unrelated event. --paginate keeps it correct past 100 threads.
-  ur=$(gh api graphql --paginate \
+  # IDs of the UNRESOLVED review threads (sorted). A reviewer re-opening/un-resolving
+  # a thread without a new reply changes no comment count ($rc) or review/reaction
+  # line, so without this signal the newly-active feedback would stay hidden until
+  # some unrelated event. We track the ID *set* (not just a count) so that a reopen
+  # concurrent with a resolve — which leaves the count flat or lower — still fetches,
+  # while a pure resolve (IDs only leave the set) does not. --paginate keeps it
+  # correct past 100 threads.
+  ur_ids=$(gh api graphql --paginate \
     -f owner="${SLUG%/*}" -f repo="${SLUG#*/}" -F pr="$NUM" -f query='
 query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
       reviewThreads(first: 100, after: $endCursor) {
         pageInfo { hasNextPage endCursor }
-        nodes { isResolved }
+        nodes { id isResolved }
       }
     }
   }
-}' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not)' 2>/dev/null | wc -l | tr -d ' ')
+}' --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | .id' 2>/dev/null | sort)
+  ur=$(grep -c . <<<"$ur_ids")   # count of non-empty lines (0 when $ur_ids is empty)
 
   cur=$( {
     jq -r '.[] | "check \(.name): \(.bucket)" + (if (.completedAt // "") != "" then " @\(.completedAt)" else "" end)' <<<"$checks"
@@ -148,81 +154,86 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
   } | sort )
 
   diff_lines=$(comm -13 <(echo "$prev") <(echo "$cur"))
+  # A thread ID JOINING the unresolved set (a reopen, or a new review opening threads)
+  # means fresh feedback. This is computed OUTSIDE the diff_lines guard on purpose: a
+  # reopen concurrent with a resolve leaves the count line flat, so $cur is unchanged
+  # and diff_lines is empty — yet the set changed and we must still fetch. A pure
+  # resolve (IDs only LEAVING the set) is never new feedback and must not re-fetch a
+  # now-settled block (issue #40); those are very often our OWN reply.sh --resolve
+  # calls. Tracking the ID set (not a net count) is what makes both cases correct. On
+  # the first poll prev_ur_ids is empty so every open thread is new — the startup fetch.
+  ur_added=$(comm -13 <(echo "$prev_ur_ids") <(echo "$ur_ids") | grep -v '^$')
+
   advance=1
+  should_fetch=0
+  [[ -n "$ur_added" ]] && should_fetch=1
   if [[ -n "$diff_lines" ]]; then
     echo "$diff_lines"
-    # A new review / comment signal means fresh feedback — fetch + format the active
-    # comments and emit them. First poll (prev empty) always trips this via the count
-    # lines, so open threads are fetched once on startup. Stay silent when none active.
-    should_fetch=0
+    # A new review / comment / review-comment signal is also fresh feedback. First poll
+    # (prev empty) always trips this via the count lines, so open threads are fetched
+    # once on startup regardless of the set check above.
     grep -qE '^(review |comments: |review-comments: )' <<<"$diff_lines" && should_fetch=1
-    # unresolved-threads triggers a fetch ONLY when it INCREASES (a thread reopened, or
-    # a new review opened threads). A DECREASE just means threads got resolved — very
-    # often by our OWN reply.sh --resolve calls — and is never new feedback, so it must
-    # not re-fetch a now-settled block (issue #40). The count line still echoes above.
-    if grep -q '^unresolved-threads: ' <<<"$diff_lines" \
-       && [[ "$ur" =~ ^[0-9]+$ && "$prev_ur" =~ ^[0-9]+$ && "$ur" -gt "$prev_ur" ]]; then
-      should_fetch=1
+  fi
+  if [[ "$should_fetch" == 1 ]]; then
+    # comments.sh prints a Windows path on Git Bash (cygpath -w), a POSIX path
+    # elsewhere. Keep BOTH: $display_path is what the agent sees in the pointer
+    # line — its Read/Edit tools want the native Windows path, not the
+    # /tmp/… POSIX form, which they can't open. $path is the POSIX form used
+    # for the -f/grep/awk reads below, which run in this Git Bash and would
+    # fail on a `C:\…` string.
+    display_path=$(bash "$COMMENTS" "$URL" 2>/dev/null || true)
+    path="$display_path"
+    command -v cygpath &>/dev/null && [[ -n "$path" ]] && path=$(cygpath -u "$path")
+
+    # The formatter now aborts (non-zero, no file) on a transient gh/API/jq
+    # failure rather than emit partial data. Surface it and HOLD prev, so the same
+    # signal re-trips the fetch next poll instead of being silently marked seen.
+    if [[ -z "$path" || ! -f "$path" ]]; then
+      echo "watch-pr: comment formatter failed — will retry next poll"
+      advance=0
     fi
-    if [[ "$should_fetch" == 1 ]]; then
-      # comments.sh prints a Windows path on Git Bash (cygpath -w), a POSIX path
-      # elsewhere. Keep BOTH: $display_path is what the agent sees in the pointer
-      # line — its Read/Edit tools want the native Windows path, not the
-      # /tmp/… POSIX form, which they can't open. $path is the POSIX form used
-      # for the -f/grep/awk reads below, which run in this Git Bash and would
-      # fail on a `C:\…` string.
-      display_path=$(bash "$COMMENTS" "$URL" 2>/dev/null || true)
-      path="$display_path"
-      command -v cygpath &>/dev/null && [[ -n "$path" ]] && path=$(cygpath -u "$path")
 
-      # The formatter now aborts (non-zero, no file) on a transient gh/API/jq
-      # failure rather than emit partial data. Surface it and HOLD prev, so the same
-      # signal re-trips the fetch next poll instead of being silently marked seen.
-      if [[ -z "$path" || ! -f "$path" ]]; then
-        echo "watch-pr: comment formatter failed — will retry next poll"
-        advance=0
-      fi
-
-      if [[ "$advance" == 1 ]]; then
-        active=$(grep -m1 '^active_comments:' "$path" | grep -oE '[0-9]+' || echo 0)
-        # Emit when there are active threads/comments OR a body-only review summary
-        # (comments.sh emits <review-summary> only for reviews with a non-empty body,
-        # which don't count toward active_comments).
-        if [[ "${active:-0}" -gt 0 ]] || grep -q '<review-summary' "$path"; then
-          # ONE compact line per active thread / comment / review summary — never the
-          # whole markdown (Monitor truncates long payloads, issue #32). comments.sh
-          # already filters to active-only threads, so every block in the file is live.
-          # id is the COMMENT id (reply.sh target); the title is the comment's first
-          # body line, trimmed. Full bodies + diff context live in $display_path.
-          awk '
-            function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
-            function attr(line, key,   m){ if (match(line, key "=\"[^\"]*\"")) { m=substr(line, RSTART+length(key)+2, RLENGTH-length(key)-3); return m } return "" }
-            function emit(){
-              if (kind=="thread")  printf "feedback [%s] %s:%s @%s %s\n", id, file, lines, author, snip
-              else if (kind=="comment") printf "feedback comment [%s] @%s %s\n", id, author, snip
-              else if (kind=="summary") printf "feedback review [%s] @%s %s\n", id, author, snip
-              kind=""; id=""; file=""; lines=""; author=""; snip=""; havesnip=0
-            }
-            /^<review-thread /   { emit(); kind="thread" }
-            /^<pr-comment /      { emit(); kind="comment"; id=attr($0,"id"); author=attr($0,"author") }
-            /^<review-summary /  { emit(); kind="summary"; id=attr($0,"id"); author=attr($0,"author") }
-            /^## SUMMARY FOR LLM/ { emit() }
-            kind=="thread" && /^\| \*\*ID\*\* \|/     { split($0,a,"|"); v=trim(a[3]); gsub(/`/,"",v); id=v }
-            kind=="thread" && /^\| \*\*File\*\* \|/   { split($0,a,"|"); v=trim(a[3]); gsub(/`/,"",v); file=v }
-            kind=="thread" && /^\| \*\*Lines\*\* \|/  { split($0,a,"|"); lines=trim(a[3]) }
-            kind=="thread" && /^\| \*\*Author\*\* \|/ { split($0,a,"|"); author=trim(a[3]) }
-            kind!="" && /^> / && !havesnip {
-              s=$0; sub(/^> /,"",s); s=trim(s)
-              if (s!="") { snip=substr(s,1,100); havesnip=1 }
-            }
-            END { emit() }
-          ' "$path"
-          echo "→ full bodies + code context: $display_path"
-        fi
+    if [[ "$advance" == 1 ]]; then
+      active=$(grep -m1 '^active_comments:' "$path" | grep -oE '[0-9]+' || echo 0)
+      # Emit when there are active threads/comments OR a body-only review summary
+      # (comments.sh emits <review-summary> only for reviews with a non-empty body,
+      # which don't count toward active_comments).
+      if [[ "${active:-0}" -gt 0 ]] || grep -q '<review-summary' "$path"; then
+        # ONE compact line per active thread / comment / review summary — never the
+        # whole markdown (Monitor truncates long payloads, issue #32). comments.sh
+        # already filters to active-only threads, so every block in the file is live.
+        # For a bare `feedback [id]` (inline thread) id is the reply.sh --comment id;
+        # `feedback comment [id]` is a top-level comment (--issue) and `feedback review`
+        # a body review (no reply target). Full bodies + the exact reply.sh commands +
+        # diff context live in $display_path.
+        awk '
+          function trim(s){ gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+          function attr(line, key,   m){ if (match(line, key "=\"[^\"]*\"")) { m=substr(line, RSTART+length(key)+2, RLENGTH-length(key)-3); return m } return "" }
+          function emit(){
+            if (kind=="thread")  printf "feedback [%s] %s:%s @%s %s\n", id, file, lines, author, snip
+            else if (kind=="comment") printf "feedback comment [%s] @%s %s\n", id, author, snip
+            else if (kind=="summary") printf "feedback review [%s] @%s %s\n", id, author, snip
+            kind=""; id=""; file=""; lines=""; author=""; snip=""; havesnip=0
+          }
+          /^<review-thread /   { emit(); kind="thread" }
+          /^<pr-comment /      { emit(); kind="comment"; id=attr($0,"id"); author=attr($0,"author") }
+          /^<review-summary /  { emit(); kind="summary"; id=attr($0,"id"); author=attr($0,"author") }
+          /^## SUMMARY FOR LLM/ { emit() }
+          kind=="thread" && /^\| \*\*ID\*\* \|/     { split($0,a,"|"); v=trim(a[3]); gsub(/`/,"",v); id=v }
+          kind=="thread" && /^\| \*\*File\*\* \|/   { split($0,a,"|"); v=trim(a[3]); gsub(/`/,"",v); file=v }
+          kind=="thread" && /^\| \*\*Lines\*\* \|/  { split($0,a,"|"); lines=trim(a[3]) }
+          kind=="thread" && /^\| \*\*Author\*\* \|/ { split($0,a,"|"); author=trim(a[3]) }
+          kind!="" && /^> / && !havesnip {
+            s=$0; sub(/^> /,"",s); s=trim(s)
+            if (s!="") { snip=substr(s,1,100); havesnip=1 }
+          }
+          END { emit() }
+        ' "$path"
+        echo "→ full bodies + code context: $display_path"
       fi
     fi
   fi
-  [[ "$advance" == 1 ]] && { prev=$cur; prev_ur=$ur; }
+  [[ "$advance" == 1 ]] && { prev=$cur; prev_ur_ids=$ur_ids; }
 
   if [[ "$state" =~ ^(MERGED|CLOSED)$ ]]; then
     [[ "$state" == "MERGED" ]] && { echo "merged — running git fetch"; git fetch --all --prune; }
