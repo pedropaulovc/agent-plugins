@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/windows-bash-guard\"; if [ -x \"$b.exe\" ]; then exec \"$b.exe\"; fi; exec \"$b\""
+            "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/windows-bash-guard\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\";; *) exec \"$b\";; esac"
           }
         ]
       }
