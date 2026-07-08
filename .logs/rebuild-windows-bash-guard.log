@@ -1,9 +1,0 @@
-   Compiling windows-bash-guard v0.1.0 (/home/pedro/src/agent-plugins/plugins/windows-bash-guard/hooks/windows-bash-guard)
-    Finished `release` profile [optimized] target(s) in 1.92s
-   Compiling windows-bash-guard v0.1.0 (/home/pedro/src/agent-plugins/plugins/windows-bash-guard/hooks/windows-bash-guard)
-    Finished `release` profile [optimized] target(s) in 1.31s
-Building for x86_64-unknown-linux-gnu (cargo build)...
-Copied /home/pedro/src/agent-plugins/target/x86_64-unknown-linux-gnu/release/windows-bash-guard -> /home/pedro/src/agent-plugins/plugins/windows-bash-guard/hooks/bin/windows-bash-guard
-Building for x86_64-pc-windows-msvc (cargo xwin build)...
-Copied /home/pedro/src/agent-plugins/target/x86_64-pc-windows-msvc/release/windows-bash-guard.exe -> /home/pedro/src/agent-plugins/plugins/windows-bash-guard/hooks/bin/windows-bash-guard.exe
-Done.

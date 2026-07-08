@@ -45,14 +45,19 @@ arrive as a `BEGIN PR FEEDBACK` block in the first poll (silent if none are acti
 ### 2. Launch the watch inside the Monitor tool
 
 Run `watch-pr.sh <PR>` **as the Monitor tool's `command`** with `persistent: true`
-(PR lifecycles can take hours — no timeout). Put the script path directly in the
-command; do NOT use Bash `run_in_background` + a separate Monitor.
+(PR lifecycles can take hours — no timeout). Use the `watch-pr.sh` that sits **in
+this skill's own directory** — right next to this `SKILL.md`, whose absolute path
+you already know (it's where you loaded this file from) — and put that path
+directly in the command. Do NOT use Bash `run_in_background` + a separate Monitor,
+and do **not** locate the script with `find ~/.claude ~/.codex … | head -1`: that
+scans every cached install and can launch a stale copy from an older plugin
+version instead of the one next to this `SKILL.md`.
 
 ```
 Monitor:
   persistent: true
   description: "PR <PR> lifecycle"
-  command: bash "$(find ~/.claude ~/.codex -path '*/watch-pr/skills/watch-pr/watch-pr.sh' 2>/dev/null | head -1)" <PR>
+  command: bash "<this skill's directory>/watch-pr.sh" <PR>
 ```
 
 The loop diffs state each poll and emits **one line per change**, staying silent

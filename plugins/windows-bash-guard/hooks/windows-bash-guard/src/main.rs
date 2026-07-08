@@ -52,10 +52,21 @@ fn main() {
     };
 
     if let Some(fixed) = fix_command(command) {
+        // Under Codex, applying updatedInput requires permissionDecision:"allow",
+        // which also skips the approval prompt — so rewriting would launder the
+        // command past the user's approval gate. Only rewrite when the session is
+        // already in an approval-skipping mode (bypassPermissions/dontAsk); in an
+        // approval-requiring mode, stay inert rather than auto-approve. Claude
+        // Code applies a bare updatedInput without approving, so it always rewrites.
+        let codex = under_codex();
+        if codex && !codex_approval_already_skipped(&data) {
+            process::exit(0);
+        }
+
         let mut updated = tool_input.as_object().cloned().unwrap_or_default();
         updated.insert("command".into(), Value::String(fixed.command));
 
-        println!("{}", build_hook_output(updated, fixed.context, under_codex()));
+        println!("{}", build_hook_output(updated, fixed.context, codex));
     }
 
     process::exit(0);
@@ -66,6 +77,19 @@ fn main() {
 /// so its presence distinguishes the two harnesses.
 fn under_codex() -> bool {
     std::env::var_os("PLUGIN_ROOT").is_some()
+}
+
+/// True when the Codex session is already in a permission mode that skips the
+/// approval prompt, so emitting `permissionDecision:"allow"` for our rewrite
+/// grants nothing the session wasn't already granting. Codex reports the mode as
+/// `permission_mode`; only `bypassPermissions` and `dontAsk` bypass approval.
+/// Any other value — or a missing field — is treated as approval-required, so
+/// the hook fails safe (no rewrite, no auto-approve).
+fn codex_approval_already_skipped(data: &Value) -> bool {
+    matches!(
+        data.get("permission_mode").and_then(|v| v.as_str()),
+        Some("bypassPermissions") | Some("dontAsk")
+    )
 }
 
 /// Build the `PreToolUse` hook response carrying the rewritten command.
@@ -283,6 +307,25 @@ mod tests {
         let h = &out["hookSpecificOutput"];
         assert_eq!(h["permissionDecision"], "allow");
         assert_eq!(h["updatedInput"]["command"], "ls -la C:/src");
+    }
+
+    #[test]
+    fn codex_approval_gate_only_opens_for_bypass_modes() {
+        for mode in ["bypassPermissions", "dontAsk"] {
+            assert!(
+                codex_approval_already_skipped(&json!({ "permission_mode": mode })),
+                "mode {mode} should be gated open"
+            );
+        }
+        for mode in ["default", "acceptEdits", "plan"] {
+            assert!(
+                !codex_approval_already_skipped(&json!({ "permission_mode": mode })),
+                "mode {mode} must not skip approval"
+            );
+        }
+        // Missing / null field → fail safe (approval required).
+        assert!(!codex_approval_already_skipped(&json!({})));
+        assert!(!codex_approval_already_skipped(&json!({ "permission_mode": null })));
     }
 
     // -- Fix 1: /dev/stdin ---------------------------------------------------

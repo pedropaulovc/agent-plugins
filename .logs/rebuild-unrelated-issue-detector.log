@@ -1,9 +1,0 @@
-   Compiling unrelated-issue-detector v0.4.0 (/home/pedro/src/agent-plugins/plugins/unrelated-issue-detector/hooks/unrelated-issue-detector)
-    Finished `release` profile [optimized] target(s) in 2.18s
-   Compiling unrelated-issue-detector v0.4.0 (/home/pedro/src/agent-plugins/plugins/unrelated-issue-detector/hooks/unrelated-issue-detector)
-    Finished `release` profile [optimized] target(s) in 1.36s
-Building for x86_64-unknown-linux-gnu (cargo build)...
-Copied /home/pedro/src/agent-plugins/target/x86_64-unknown-linux-gnu/release/unrelated-issue-detector -> /home/pedro/src/agent-plugins/plugins/unrelated-issue-detector/hooks/bin/unrelated-issue-detector
-Building for x86_64-pc-windows-msvc (cargo xwin build)...
-Copied /home/pedro/src/agent-plugins/target/x86_64-pc-windows-msvc/release/unrelated-issue-detector.exe -> /home/pedro/src/agent-plugins/plugins/unrelated-issue-detector/hooks/bin/unrelated-issue-detector.exe
-Done.

@@ -62,13 +62,28 @@ fn main() {
         process::exit(0);
     };
 
+    // Under Codex, applying `updatedInput` REQUIRES `permissionDecision:"allow"`,
+    // and that allow also skips Codex's approval prompt. Rewriting every chained
+    // Bash command would therefore launder it past the user's approval gate — a
+    // command that would normally need approval (e.g. `rm -rf build && npm test`)
+    // would auto-run just because we spliced in a cosmetic separator. So only
+    // rewrite under Codex when the session is ALREADY in a mode that skips
+    // approval, where the allow grants nothing new; otherwise stay inert and let
+    // the original command go through Codex's normal approval flow untouched.
+    // Claude Code applies a bare `updatedInput` WITHOUT approving, so it always
+    // rewrites (see `under_codex`).
+    let codex = under_codex();
+    if codex && !codex_approval_already_skipped(&data) {
+        process::exit(0);
+    }
+
     let mut updated = tool_input.as_object().cloned().unwrap_or_default();
     updated.insert("command".into(), Value::String(rw.command));
 
     let plural = if rw.count == 1 { "" } else { "s" };
     let mut hook_output = serde_json::Map::new();
     hook_output.insert("hookEventName".into(), Value::String("PreToolUse".into()));
-    if under_codex() {
+    if codex {
         hook_output.insert("permissionDecision".into(), Value::String("allow".into()));
     }
     hook_output.insert("updatedInput".into(), Value::Object(updated));
@@ -88,10 +103,25 @@ fn main() {
 /// so its presence distinguishes the two harnesses. Codex requires
 /// `permissionDecision:"allow"` alongside `updatedInput` — a bare `updatedInput`
 /// is rejected as an error — and honoring that also auto-approves the rewritten
-/// call (there is no rewrite-without-approval path). Claude Code needs no such
-/// field and would wrongly auto-approve if we sent it, so it is Codex-only.
+/// call (there is no rewrite-without-approval path in Codex). Claude Code needs
+/// no such field and would wrongly auto-approve if we sent it, so it is
+/// Codex-only, and even under Codex it is gated by `codex_approval_already_skipped`.
 fn under_codex() -> bool {
     std::env::var_os("PLUGIN_ROOT").is_some()
+}
+
+/// True when the Codex session is already in a permission mode that skips the
+/// approval prompt, so emitting `permissionDecision:"allow"` for our rewrite
+/// grants nothing the session wasn't already granting. Codex reports the mode as
+/// `permission_mode` (`default`, `acceptEdits`, `plan`, `dontAsk`,
+/// `bypassPermissions`); only `bypassPermissions` and `dontAsk` bypass approval
+/// for Bash. Any other value — or a missing field — is treated as
+/// approval-required, so the hook fails safe (no rewrite, no auto-approve).
+fn codex_approval_already_skipped(data: &Value) -> bool {
+    matches!(
+        data.get("permission_mode").and_then(|v| v.as_str()),
+        Some("bypassPermissions") | Some("dontAsk")
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -650,5 +680,30 @@ mod tests {
         // `rewrite` returns None, so the binary emits nothing — but the cmd
         // should be untouched in any path that doesn't go through main().
         assert!(rewrite("just-one-command").is_none());
+    }
+
+    // -- Codex approval gate -------------------------------------------------
+
+    #[test]
+    fn codex_gate_allows_bypass_modes() {
+        for mode in ["bypassPermissions", "dontAsk"] {
+            let d = json!({ "permission_mode": mode });
+            assert!(codex_approval_already_skipped(&d), "mode {mode} should be gated open");
+        }
+    }
+
+    #[test]
+    fn codex_gate_blocks_approval_required_modes() {
+        for mode in ["default", "acceptEdits", "plan"] {
+            let d = json!({ "permission_mode": mode });
+            assert!(!codex_approval_already_skipped(&d), "mode {mode} must not skip approval");
+        }
+    }
+
+    #[test]
+    fn codex_gate_fails_safe_when_mode_missing() {
+        // No permission_mode field → treat as approval-required (no auto-approve).
+        assert!(!codex_approval_already_skipped(&json!({})));
+        assert!(!codex_approval_already_skipped(&json!({ "permission_mode": null })));
     }
 }

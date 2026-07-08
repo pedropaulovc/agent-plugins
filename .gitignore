@@ -2,3 +2,6 @@
 /target/
 /dist/
 .env
+
+# Build/rebuild logs (see AGENTS.md build-hooks.py)
+.logs/
