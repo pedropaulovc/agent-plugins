@@ -9,12 +9,20 @@ input=$(cat)
 # control; not a routine bypass of the redirect below.
 if echo "$input" | grep -q '\[force-memory\]'; then
   if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$input" | jq -c '{
-      hookSpecificOutput: {
+    # Codex rejects a bare updatedInput for PreToolUse and requires
+    # permissionDecision:"allow"; Claude Code needs no such field (and it
+    # would wrongly auto-approve there). Codex sets PLUGIN_ROOT for plugin
+    # hooks, so gate the field on it (mirrors the Rust rewrite hooks).
+    [ -n "$PLUGIN_ROOT" ] && codex=true || codex=false
+    printf '%s' "$input" | jq -c --argjson codex "$codex" '{
+      hookSpecificOutput: (
+        {
         hookEventName: "PreToolUse",
         updatedInput: (.tool_input | walk(if type == "string" then gsub(" ?\\[force-memory\\] ?"; "") else . end)),
         additionalContext: "memory-to-repo: [force-memory] escape hatch honored; the marker was stripped from the request before the operation runs."
-      }
+        }
+        + (if $codex then {permissionDecision: "allow"} else {} end)
+      )
     }'
   fi
   exit 0

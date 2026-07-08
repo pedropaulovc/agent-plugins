@@ -20,7 +20,7 @@ Fetch active (unresolved) comments from a GitHub Pull Request and format them fo
 1. Run the comments.sh script to gather and format the comments. The script is located next to this SKILL.md file:
 
 ```bash
-bash "$(find ~/.claude -path '*/pr-comments/skills/comments/comments.sh' 2>/dev/null | head -1)" $ARGUMENTS
+bash "$(find ~/.claude ~/.codex -path '*/pr-comments/skills/comments/comments.sh' 2>/dev/null | head -1)" $ARGUMENTS
 ```
 
 2. The script outputs the path to the generated markdown file on stdout. Capture this path and read the file contents.

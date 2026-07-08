@@ -49,12 +49,21 @@ command; do NOT use Bash `run_in_background` + a separate Monitor.
 Monitor:
   persistent: true
   description: "PR <PR> lifecycle"
-  command: bash "$(find ~/.claude -path '*/watch-pr/skills/watch-pr/watch-pr.sh' 2>/dev/null | head -1)" <PR>
+  command: bash "$(find ~/.claude ~/.codex -path '*/watch-pr/skills/watch-pr/watch-pr.sh' 2>/dev/null | head -1)" <PR>
 ```
 
 The loop diffs state each poll and emits **one line per change**, staying silent
 while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — you
 never stop it manually.
+
+**Under Codex (no `Monitor` tool):** Codex has no persistent Monitor primitive,
+so run the *same* `watch-pr.sh <PR>` as a **background terminal** instead
+(`unified_exec` / the harness's background-shell mechanism — not a blocking
+foreground call). The script's stdout is identical; poll it with `/ps` (or read
+the background terminal's captured output) and act on each new line exactly as in
+the table below. Everything else — the event lines, the inline `BEGIN PR FEEDBACK`
+blocks, the reply flow — is harness-agnostic. Do **not** foreground the script; it
+runs until MERGED/CLOSED.
 
 ### 3. Act on each emitted event line
 

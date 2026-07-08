@@ -217,16 +217,59 @@ fn scan_entry(entry: &Value, findings: &mut Vec<String>, seen: &mut HashSet<Stri
         "function_call" => {
             // Mirror Claude, which scanned only file-content fields (Write.content,
             // Edit.new_string), not arbitrary shell commands. In Codex, file edits
-            // go through apply_patch; scan its arguments (the patch body). Skip
-            // shell/exec calls so command text doesn't cause false positives.
+            // go through apply_patch; scan only the ADDED lines of the patch. Skip
+            // shell/exec calls, and never scan deleted/context lines — a cleanup
+            // that removes `// TODO`/`placeholder` must not trip the hook.
             let name = payload["name"].as_str().unwrap_or("");
-            if matches!(name, "apply_patch" | "Edit" | "Write" | "MultiEdit") {
-                if let Some(args) = payload["arguments"].as_str() {
-                    scan_text(args, findings, seen);
+            if !matches!(name, "apply_patch" | "Edit" | "Write" | "MultiEdit") {
+                return;
+            }
+            let Some(args) = payload["arguments"].as_str() else {
+                return;
+            };
+            // `arguments` is a JSON-encoded string. Prefer structured edit fields
+            // (content / new_string); for apply_patch scan the added lines of the
+            // patch it carries under `input`/`patch`. Fall back to treating the raw
+            // arguments as a patch when no known field is present.
+            match serde_json::from_str::<Value>(args) {
+                Ok(av) => {
+                    let mut matched = false;
+                    if let Some(t) = av["content"].as_str() {
+                        scan_text(t, findings, seen);
+                        matched = true;
+                    }
+                    if let Some(t) = av["new_string"].as_str() {
+                        scan_text(t, findings, seen);
+                        matched = true;
+                    }
+                    if let Some(p) = av["input"].as_str().or_else(|| av["patch"].as_str()) {
+                        scan_added_lines(p, findings, seen);
+                        matched = true;
+                    }
+                    if !matched {
+                        scan_added_lines(args, findings, seen);
+                    }
                 }
+                Err(_) => scan_added_lines(args, findings, seen),
             }
         }
         _ => {}
+    }
+}
+
+/// Scan only the ADDED lines of an apply_patch / unified diff — lines that begin
+/// with a single `+` (not the `+++` file header). Deleted (`-`) and context
+/// (` `) lines are ignored so removing flagged text is treated as a cleanup, not
+/// a finding — matching the Claude path, which only ever sees added content.
+fn scan_added_lines(patch: &str, findings: &mut Vec<String>, seen: &mut HashSet<String>) {
+    for line in patch.lines() {
+        let Some(rest) = line.strip_prefix('+') else {
+            continue;
+        };
+        if rest.starts_with("++") {
+            continue; // `+++ b/file` header
+        }
+        scan_text(rest, findings, seen);
     }
 }
 
@@ -411,6 +454,24 @@ mod tests {
         scan_entry(&entry, &mut findings, &mut seen);
         assert!(findings.iter().any(|f| f.contains("TODO")));
         assert!(findings.iter().any(|f| f.contains("revisit later")));
+    }
+
+    #[test]
+    fn codex_apply_patch_ignores_deleted_lines() {
+        // A cleanup that DELETES flagged text must not trip the hook; only added
+        // lines count. Here the added line is clean, the removed line has markers.
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        let entry = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "apply_patch",
+                "arguments": "{\"input\":\"*** Begin Patch\\n- // TODO: remove this placeholder for now\\n+ let value = config.resolve();\\n*** End Patch\"}"
+            }
+        });
+        scan_entry(&entry, &mut findings, &mut seen);
+        assert!(findings.is_empty(), "deleted-line markers must not trip: {findings:?}");
     }
 
     #[test]
