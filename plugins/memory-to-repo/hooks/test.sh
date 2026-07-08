@@ -64,4 +64,45 @@ echo "$ctx" | grep -q '^- foo$' && pass "SessionStart includes the memory title"
 echo "$ctx" | grep -q 'bar baz' && die "description leaked into context: $ctx" || pass "drops the one-line description"
 echo "$ctx" | grep -q 'foo.md' && die "link target leaked into context: $ctx" || pass "drops the link target"
 
+# 8. With usage.jsonl present: index is sorted by usage descending, top 5 get
+# the full line (title + description), the rest stay title-only.
+cat > "$tmp/memory/MEMORY.md" << 'MD'
+# Index
+- [Alpha](alpha.md) — alpha desc
+- [Bravo](bravo.md) — bravo desc
+- [Charlie](charlie.md) — charlie desc
+- [Delta](delta.md) — delta desc
+- [Echo](echo.md) — echo desc
+- [Foxtrot](foxtrot.md) — foxtrot desc
+- [Golf](golf.md) — golf desc
+MD
+cat > "$tmp/memory/usage.jsonl" << 'JSONL'
+{"sessionId":"s1","memoryFileName":"foxtrot.md"}
+{"sessionId":"s2","memoryFileName":"foxtrot.md"}
+{"sessionId":"s3","memoryFileName":"foxtrot.md"}
+{"sessionId":"s1","memoryFileName":"alpha.md"}
+{"sessionId":"s2","memoryFileName":"alpha.md"}
+{"sessionId":"s1","memoryFileName":"charlie.md"}
+JSONL
+out=$(ss)
+ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
+order=$(echo "$ctx" | grep -E '^- ')
+expected="- [Foxtrot](foxtrot.md) — foxtrot desc
+- [Alpha](alpha.md) — alpha desc
+- [Charlie](charlie.md) — charlie desc
+- [Bravo](bravo.md) — bravo desc
+- [Delta](delta.md) — delta desc
+- Echo
+- Golf"
+[ "$order" = "$expected" ] && pass "sorts by usage, top 5 full + rest title-only" || die "ranked order mismatch: $order"
+rm -f "$tmp/memory/usage.jsonl"
+
+# 9. usage.jsonl present but empty: behaves like no usage.jsonl (falls back,
+# doesn't crash on an empty counts extraction).
+: > "$tmp/memory/usage.jsonl"
+out=$(ss)
+ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
+echo "$ctx" | grep -q "only titles shown" && pass "empty usage.jsonl falls back to titles-only" || die "empty usage.jsonl mishandled: $ctx"
+rm -f "$tmp/memory/usage.jsonl"
+
 exit $fail
