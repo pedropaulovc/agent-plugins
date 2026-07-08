@@ -205,3 +205,32 @@ fn rewrite_produces_valid_chain_structure() {
     // Exactly one printf separator
     assert_eq!(cmd.matches("printf '\\n\\n'").count(), 1);
 }
+
+/// Under Codex (signalled by `PLUGIN_ROOT`), the rewrite must carry
+/// `permissionDecision:"allow"`, or Codex rejects the `updatedInput` and runs
+/// the original command. The Claude Code path (tested above) must NOT include it.
+#[test]
+fn codex_emits_permission_decision_allow() {
+    let bin = env!("CARGO_BIN_EXE_command-chain-separator");
+    let mut child = Command::new(bin)
+        .env("PLUGIN_ROOT", "/plugin/root")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn hook binary");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(br#"{"tool_name":"Bash","tool_input":{"command":"echo a && echo b"}}"#)
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let h = hook_output(&stdout);
+    assert_eq!(h["permissionDecision"], "allow");
+    assert!(h["updatedInput"]["command"]
+        .as_str()
+        .unwrap()
+        .contains("printf"));
+}

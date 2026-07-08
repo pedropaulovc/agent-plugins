@@ -1,0 +1,7 @@
+    Finished `release` profile [optimized] target(s) in 0.01s
+    Finished `release` profile [optimized] target(s) in 0.01s
+Building for x86_64-unknown-linux-gnu (cargo build)...
+Copied /home/pedro/src/agent-plugins/target/x86_64-unknown-linux-gnu/release/command-chain-separator -> /home/pedro/src/agent-plugins/plugins/command-chain-separator/hooks/bin/command-chain-separator
+Building for x86_64-pc-windows-msvc (cargo xwin build)...
+Copied /home/pedro/src/agent-plugins/target/x86_64-pc-windows-msvc/release/command-chain-separator.exe -> /home/pedro/src/agent-plugins/plugins/command-chain-separator/hooks/bin/command-chain-separator.exe
+Done.

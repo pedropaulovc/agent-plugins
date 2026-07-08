@@ -229,3 +229,34 @@ fn updated_input_preserves_other_tool_input_fields() {
     assert_eq!(updated["description"], "drive playwright");
     assert_eq!(updated["timeout"], 30000);
 }
+
+/// Under Codex (signalled by `PLUGIN_ROOT`), a rewrite must carry
+/// `permissionDecision:"allow"` so Codex applies the `--headed` injection
+/// instead of rejecting the `updatedInput`.
+#[test]
+fn codex_rewrite_emits_permission_decision_allow() {
+    let bin = env!("CARGO_BIN_EXE_playwright-cli-headed");
+    let mut child = Command::new(bin)
+        .env("PLUGIN_ROOT", "/plugin/root")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn hook binary");
+    let needle = format!("playwright{} open https://example.com", "-cli");
+    let input = json!({"tool_name": "Bash", "tool_input": {"command": needle}}).to_string();
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(input.as_bytes())
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let h = hook_output(&stdout);
+    assert_eq!(h["permissionDecision"], "allow");
+    assert!(h["updatedInput"]["command"]
+        .as_str()
+        .unwrap()
+        .contains("--headed"));
+}

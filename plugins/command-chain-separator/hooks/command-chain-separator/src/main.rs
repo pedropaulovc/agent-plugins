@@ -66,18 +66,32 @@ fn main() {
     updated.insert("command".into(), Value::String(rw.command));
 
     let plural = if rw.count == 1 { "" } else { "s" };
-    let output = json!({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "updatedInput": updated,
-            "additionalContext": format!(
-                "command-chain-separator: inserted {} output separator{} between commands joined by `&&` or `;`. Each prints two blank lines so per-command output is visually segmented. To bypass, add [no-rewrite] to the tool description.",
-                rw.count, plural
-            )
-        }
-    });
-    println!("{}", output);
+    let mut hook_output = serde_json::Map::new();
+    hook_output.insert("hookEventName".into(), Value::String("PreToolUse".into()));
+    if under_codex() {
+        hook_output.insert("permissionDecision".into(), Value::String("allow".into()));
+    }
+    hook_output.insert("updatedInput".into(), Value::Object(updated));
+    hook_output.insert(
+        "additionalContext".into(),
+        Value::String(format!(
+            "command-chain-separator: inserted {} output separator{} between commands joined by `&&` or `;`. Each prints two blank lines so per-command output is visually segmented. To bypass, add [no-rewrite] to the tool description.",
+            rw.count, plural
+        )),
+    );
+    println!("{}", json!({ "hookSpecificOutput": hook_output }));
     process::exit(0);
+}
+
+/// True when running as a Codex plugin hook. Codex sets the `PLUGIN_ROOT` env
+/// var for plugin hook commands (Claude Code sets only `CLAUDE_PLUGIN_ROOT`),
+/// so its presence distinguishes the two harnesses. Codex requires
+/// `permissionDecision:"allow"` alongside `updatedInput` — a bare `updatedInput`
+/// is rejected as an error — and honoring that also auto-approves the rewritten
+/// call (there is no rewrite-without-approval path). Claude Code needs no such
+/// field and would wrongly auto-approve if we sent it, so it is Codex-only.
+fn under_codex() -> bool {
+    std::env::var_os("PLUGIN_ROOT").is_some()
 }
 
 // ---------------------------------------------------------------------------

@@ -98,6 +98,33 @@ fn extract_assistant_text(entry: &Value) -> String {
     let role = entry.get("role").and_then(|v| v.as_str()).unwrap_or("");
     let msg_type = entry.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
+    // Codex rollout: an assistant message is a `response_item` whose `payload`
+    // carries `role:"assistant"` and a `content` array of `output_text` blocks.
+    if msg_type == "response_item" {
+        let payload = entry.get("payload");
+        let is_assistant = payload
+            .and_then(|p| p.get("role"))
+            .and_then(|v| v.as_str())
+            == Some("assistant");
+        if !is_assistant {
+            return String::new();
+        }
+        let Some(arr) = payload
+            .and_then(|p| p.get("content"))
+            .and_then(|c| c.as_array())
+        else {
+            return String::new();
+        };
+        return arr
+            .iter()
+            .filter_map(|item| match item.get("type")?.as_str()? {
+                "output_text" | "text" => item.get("text")?.as_str().map(String::from),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+    }
+
     let content = if role == "assistant" {
         entry.get("content")
     } else if msg_type == "assistant" {
@@ -331,6 +358,41 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- Codex rollout transcript format ------------------------------------
+
+    #[test]
+    fn extracts_codex_assistant_text() {
+        let entry = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "output_text", "text": "That failing test is "},
+                    {"type": "output_text", "text": "unrelated to my change."}
+                ]
+            }
+        });
+        let text = extract_assistant_text(&entry);
+        assert!(text.contains("unrelated to my change"), "got: {text:?}");
+    }
+
+    #[test]
+    fn ignores_codex_user_and_reasoning() {
+        let user = json!({
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user",
+                "content": [{"type": "input_text", "text": "the bug is unrelated to my change"}]}
+        });
+        assert!(extract_assistant_text(&user).is_empty());
+
+        let reasoning = json!({
+            "type": "response_item",
+            "payload": {"type": "reasoning", "content": []}
+        });
+        assert!(extract_assistant_text(&reasoning).is_empty());
+    }
 
     #[test]
     fn detects_pre_existing_issue() {

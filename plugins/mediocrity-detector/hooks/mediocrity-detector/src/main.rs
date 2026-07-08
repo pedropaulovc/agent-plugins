@@ -87,39 +87,7 @@ fn main() {
             Ok(v) => v,
             Err(_) => continue,
         };
-
-        if entry["type"].as_str() != Some("assistant") {
-            continue;
-        }
-
-        let content = match entry["message"]["content"].as_array() {
-            Some(c) => c,
-            None => continue,
-        };
-
-        for block in content {
-            let block_type = block["type"].as_str().unwrap_or("");
-
-            match block_type {
-                "text" => {
-                    if let Some(text) = block["text"].as_str() {
-                        scan_text(text, &mut findings, &mut seen);
-                    }
-                }
-                "tool_use" => {
-                    let input = &block["input"];
-                    // Write tool: content field
-                    if let Some(t) = input["content"].as_str() {
-                        scan_text(t, &mut findings, &mut seen);
-                    }
-                    // Edit tool: new_string field
-                    if let Some(t) = input["new_string"].as_str() {
-                        scan_text(t, &mut findings, &mut seen);
-                    }
-                }
-                _ => {}
-            }
-        }
+        scan_entry(&entry, &mut findings, &mut seen);
     }
 
     if findings.is_empty() {
@@ -156,8 +124,10 @@ fn main() {
 /// tool_result array). Everything after it belongs to the current turn.
 fn find_turn_start(lines: &[&str]) -> usize {
     for i in (0..lines.len()).rev() {
-        // Quick pre-filter before JSON parsing
-        if !lines[i].contains("\"user\"") {
+        // Quick pre-filter before JSON parsing. Covers the Claude Code user turn
+        // marker and the Codex rollout turn boundary (an event_msg/task_started
+        // line, or a user response_item).
+        if !lines[i].contains("\"user\"") && !lines[i].contains("task_started") {
             continue;
         }
 
@@ -166,12 +136,98 @@ fn find_turn_start(lines: &[&str]) -> usize {
             Err(_) => continue,
         };
 
+        // Claude Code: {"type":"user","message":{"content":"<string>"}}
         if entry["type"].as_str() == Some("user") && entry["message"]["content"].is_string() {
+            return i;
+        }
+
+        // Codex rollout: the turn opens with an event_msg/task_started line, or
+        // (fallback) a user-authored response_item message.
+        let payload = &entry["payload"];
+        if entry["type"].as_str() == Some("event_msg")
+            && payload["type"].as_str() == Some("task_started")
+        {
+            return i;
+        }
+        if entry["type"].as_str() == Some("response_item")
+            && payload["type"].as_str() == Some("message")
+            && payload["role"].as_str() == Some("user")
+        {
             return i;
         }
     }
 
     0
+}
+
+/// Scan one transcript line's assistant-authored text for hedging, supporting
+/// both the Claude Code transcript schema and the Codex rollout schema.
+///
+/// Claude Code: `{"type":"assistant","message":{"content":[ {type:text,text}
+/// | {type:tool_use,input:{content,new_string}} ]}}`.
+///
+/// Codex rollout: `{"type":"response_item","payload": {type:message,
+/// role:assistant, content:[{type:output_text,text}]} | {type:function_call,
+/// name, arguments:"<json string>"}}`.
+fn scan_entry(entry: &Value, findings: &mut Vec<String>, seen: &mut HashSet<String>) {
+    // ---- Claude Code ----
+    if entry["type"].as_str() == Some("assistant") {
+        let Some(content) = entry["message"]["content"].as_array() else {
+            return;
+        };
+        for block in content {
+            match block["type"].as_str().unwrap_or("") {
+                "text" => {
+                    if let Some(t) = block["text"].as_str() {
+                        scan_text(t, findings, seen);
+                    }
+                }
+                "tool_use" => {
+                    let input = &block["input"];
+                    if let Some(t) = input["content"].as_str() {
+                        scan_text(t, findings, seen);
+                    }
+                    if let Some(t) = input["new_string"].as_str() {
+                        scan_text(t, findings, seen);
+                    }
+                }
+                _ => {}
+            }
+        }
+        return;
+    }
+
+    // ---- Codex rollout ----
+    if entry["type"].as_str() != Some("response_item") {
+        return;
+    }
+    let payload = &entry["payload"];
+    match payload["type"].as_str().unwrap_or("") {
+        "message" if payload["role"].as_str() == Some("assistant") => {
+            if let Some(content) = payload["content"].as_array() {
+                for block in content {
+                    if matches!(block["type"].as_str(), Some("output_text") | Some("text")) {
+                        if let Some(t) = block["text"].as_str() {
+                            scan_text(t, findings, seen);
+                        }
+                    }
+                }
+            }
+        }
+        "function_call" => {
+            // Mirror Claude, which scanned only file-content fields (Write.content,
+            // Edit.new_string), not arbitrary shell commands. In Codex, file edits
+            // go through apply_patch; scan its arguments (the patch body). Skip
+            // shell/exec calls so command text doesn't cause false positives.
+            let name = payload["name"].as_str().unwrap_or("");
+            if matches!(name, "apply_patch" | "Edit" | "Write" | "MultiEdit") {
+                if let Some(args) = payload["arguments"].as_str() {
+                    scan_text(args, findings, seen);
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -319,6 +375,86 @@ fn extract_phrase(text: &str, match_start: usize, match_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- Codex rollout transcript format ------------------------------------
+
+    #[test]
+    fn scans_codex_assistant_message() {
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        let entry = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "I hardcoded it as a placeholder for now."}]
+            }
+        });
+        scan_entry(&entry, &mut findings, &mut seen);
+        assert!(findings.iter().any(|f| f.contains("hardcoded")));
+        assert!(findings.iter().any(|f| f.contains("placeholder")));
+        assert!(findings.iter().any(|f| f.contains("for now")));
+    }
+
+    #[test]
+    fn scans_codex_apply_patch_arguments() {
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        let entry = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "apply_patch",
+                "arguments": "{\"input\":\"*** Begin Patch\\n+ // TODO: revisit later\\n*** End Patch\"}"
+            }
+        });
+        scan_entry(&entry, &mut findings, &mut seen);
+        assert!(findings.iter().any(|f| f.contains("TODO")));
+        assert!(findings.iter().any(|f| f.contains("revisit later")));
+    }
+
+    #[test]
+    fn ignores_codex_shell_function_call() {
+        // Mirror Claude: shell commands are not scanned, only file-content edits.
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        let entry = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "shell",
+                "arguments": "{\"command\":\"rm placeholder_tmp && echo hardcoded\"}"
+            }
+        });
+        scan_entry(&entry, &mut findings, &mut seen);
+        assert!(findings.is_empty(), "shell command text must not trigger: {findings:?}");
+    }
+
+    #[test]
+    fn ignores_codex_user_message() {
+        let mut findings = Vec::new();
+        let mut seen = HashSet::new();
+        let entry = json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "just use a placeholder for now"}]
+            }
+        });
+        scan_entry(&entry, &mut findings, &mut seen);
+        assert!(findings.is_empty(), "user text must not trigger: {findings:?}");
+    }
+
+    #[test]
+    fn find_turn_start_codex_task_started() {
+        let lines = vec![
+            r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"old"}]}}"#,
+            r#"{"type":"event_msg","payload":{"type":"task_started"}}"#,
+            r#"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"new"}]}}"#,
+        ];
+        assert_eq!(find_turn_start(&lines), 1);
+    }
 
     #[test]
     fn detects_for_now() {

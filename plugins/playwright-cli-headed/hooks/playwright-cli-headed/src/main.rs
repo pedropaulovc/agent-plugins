@@ -67,6 +67,12 @@ fn main() {
     if analysis.rewrites > 0 {
         let mut updated = tool_input.as_object().cloned().unwrap_or_default();
         updated.insert("command".into(), Value::String(analysis.command));
+        // Codex requires permissionDecision:"allow" alongside updatedInput (a
+        // bare updatedInput is rejected as an error). Only emit it when we are
+        // actually rewriting; a context-only response needs no decision.
+        if under_codex() {
+            hook_output.insert("permissionDecision".into(), Value::String("allow".into()));
+        }
         hook_output.insert("updatedInput".into(), Value::Object(updated));
     }
 
@@ -77,6 +83,13 @@ fn main() {
 
     println!("{}", json!({ "hookSpecificOutput": hook_output }));
     process::exit(0);
+}
+
+/// True when running as a Codex plugin hook. Codex sets the `PLUGIN_ROOT` env
+/// var for plugin hook commands (Claude Code sets only `CLAUDE_PLUGIN_ROOT`),
+/// so its presence distinguishes the two harnesses.
+fn under_codex() -> bool {
+    std::env::var_os("PLUGIN_ROOT").is_some()
 }
 
 // ---------------------------------------------------------------------------
