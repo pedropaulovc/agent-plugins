@@ -9,9 +9,10 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion, Monitor
 
 Babysit a pull request end to end with a single script: `watch-pr.sh` watches the
 lifecycle AND, whenever fresh feedback lands, fetches + formats the active comments
-itself (via the vendored sibling `comments.sh`) and prints the formatted markdown
-**inline in the Monitor stdout** — no follow-up `Read`. You react to its event
-lines; when a `BEGIN PR FEEDBACK` block appears, you drive the reply flow.
+itself (via the vendored sibling `comments.sh`) and emits **one compact `feedback …`
+line per active thread** (id / location / author / title) followed by a `→ full
+bodies …: <path>` pointer. You react to its event lines; when `feedback …` lines
+appear, you open `<path>` for the threads you will act on and drive the reply flow.
 
 ## Arguments
 
@@ -40,7 +41,7 @@ which can miss or mis-target a PR when the branch's PR lives in another repo (e.
 fork checkout), whereas the URL is unambiguous.
 
 The watch loop fetches once on startup, so any threads already open when you start
-arrive as a `BEGIN PR FEEDBACK` block in the first poll (silent if none are active).
+arrive as `feedback …` lines in the first poll (silent if none are active).
 
 ### 2. Launch the watch inside the Monitor tool
 
@@ -69,8 +70,8 @@ so run the *same* `watch-pr.sh <PR>` as a **background terminal** instead
 (`unified_exec` / the harness's background-shell mechanism — not a blocking
 foreground call). The script's stdout is identical; poll it with `/ps` (or read
 the background terminal's captured output) and act on each new line exactly as in
-the table below. Everything else — the event lines, the inline `BEGIN PR FEEDBACK`
-blocks, the reply flow — is harness-agnostic. Do **not** foreground the script; it
+the table below. Everything else — the event lines, the `feedback …` lines, the
+reply flow — is harness-agnostic. Do **not** foreground the script; it
 runs until MERGED/CLOSED.
 
 ### 3. Act on each emitted event line
@@ -82,12 +83,13 @@ runs until MERGED/CLOSED.
 | `check <name>: pass [@<ts>]` (or `success`) | CI went green | nothing to do |
 | `rebase: BEHIND — git pull --rebase origin <base> …` | branch fell behind the PR's **base** branch | run the emitted command (fast-forwards cleanly), then push |
 | `rebase: DIRTY — git pull --rebase origin <base> …` | merge conflicts with the base branch | run the emitted command, resolve conflicts during the rebase, then force-push with `--force-with-lease` |
-| `review <login>: <state> @<ts>` | a reviewer just submitted | a `BEGIN PR FEEDBACK` block follows with the comments inline → **step 4** |
-| `comments: <n>` | top-level (issue) comment count changed | same — a `BEGIN PR FEEDBACK` block follows → **step 4** |
-| `review-comments: <n>` | inline review-thread comment count changed (e.g. a reply to an existing thread) | same — a `BEGIN PR FEEDBACK` block follows → **step 4** |
-| `===== BEGIN PR FEEDBACK (<path>) =====` … `===== END PR FEEDBACK =====` | the active comments, already fetched + formatted, printed inline | **go to step 4**: handle the feedback from the block; `<path>` is the file to write drafts into |
+| `review <login>: <state> @<ts>` | a reviewer just submitted | `feedback …` lines follow with the active comments → **step 4** |
+| `comments: <n>` | top-level (issue) comment count changed | same — `feedback …` lines follow → **step 4** |
+| `review-comments: <n>` | inline review-thread comment count changed (e.g. a reply to an existing thread) | same — `feedback …` lines follow → **step 4** |
+| `unresolved-threads: <n>` | count of unresolved review threads changed | informational only; a fetch (→ `feedback …` lines) fires **only when a thread newly joins the unresolved set** (a reopen or new thread) — a pure resolve (often your own `--resolve`) never re-fetches, even when a reopen and a resolve land together and keep the count flat |
+| `feedback [<id>] <file>:<lines> @<author> <title>` (or `feedback comment […]` / `feedback review […]`) … `→ full bodies + code context: <path>` | one compact line per active thread/comment/review summary, plus the file path | **go to step 4**: for a bare `feedback [<id>]` (inline thread) `<id>` is the `reply.sh --comment` id; `feedback comment [<id>]` is a top-level comment (reply with `--issue`, **not** `--comment <id>`) and `feedback review […]` is a body review (no reply target). Open `<path>` for full bodies + diff context and the exact `reply.sh` command per thread, and to write drafts into |
 | `reaction EYES: 1` (👀) | Codex acked a **push**-triggered review on the PR body, reviewing | informational — wait for its verdict |
-| `reaction THUMBS_UP: 1` (👍) | Codex finished a push-triggered review, found **nothing** | informational — its all-clear (when it *does* find something it posts a review → `review …` + a `BEGIN PR FEEDBACK` block → step 4) |
+| `reaction THUMBS_UP: 1` (👍) | Codex finished a push-triggered review, found **nothing** | informational — its all-clear (when it *does* find something it posts a review → `review …` + `feedback …` lines → step 4) |
 | `comment-reaction EYES: 1` (👀) | Codex acked an **`@codex review`** mention on a comment, reviewing | informational — wait for its verdict |
 | `comment-reaction THUMBS_UP: 1` (👍) | Codex finished an at-mention review, found **nothing** | informational — its all-clear for the mention (no review object is posted in this case) |
 | `PR <PR> finished: MERGED` | merged (loop ran `git fetch --all --prune`) | done — confirm to the user |
@@ -95,9 +97,10 @@ runs until MERGED/CLOSED.
 
 ### 4. Handle incoming review comments
 
-When a `BEGIN PR FEEDBACK` block lands, the active comments are already in front of
-you inline — no `Read` needed. `<path>` in the marker is the markdown file the
-script wrote (edit it to stash drafts). Then follow the `comments` skill's flow:
+When `feedback …` lines land, each is one active thread/comment (id / location /
+author / title) — enough to triage at a glance. `Read` `<path>` (the markdown file
+the script wrote) for the full bodies + diff context of the threads you will act on;
+edit that same file to stash drafts. Then follow the `comments` skill's flow:
 for each open comment, reflect on whether it's pertinent,
 draft a reply (confirm with the user on any real design/coding decision), write
 draft replies + needed code changes into the markdown file, and present them. Once
@@ -115,7 +118,8 @@ new events until the PR reaches MERGED/CLOSED.
 ## Notes
 
 - One script does both jobs: the watch loop drives `comments.sh` internally, so you
-  only ever launch `watch-pr.sh` — the feedback arrives inline in stdout, no `Read`.
+  only ever launch `watch-pr.sh` — the feedback arrives as compact `feedback …` lines
+  in stdout, and you `Read` the pointed-to file only for threads you act on.
 - The 👀→👍 sequence is the clean-review path for Codex (auto-reviews every push).
 - Force-pushes on this feature branch use `--force-with-lease`; no confirmation needed.
 - Set the PR to auto-merge when appropriate per your workflow, then let the loop
