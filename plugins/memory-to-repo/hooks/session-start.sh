@@ -9,9 +9,10 @@
 #
 # If ./memory/usage.jsonl exists (written by the /record-memory-usage command),
 # the index is instead sorted descending by how many distinct past sessions
-# actually Read each memory file, and the top 5 get their full index line
-# (title + description) instead of just the title — so the memories this
-# project reaches for most are the ones with the richest context up front.
+# actually Read each memory file, and the most-used entries get their full
+# index line (title + description) instead of just the title — so the
+# memories this project reaches for most are the ones with the richest
+# context up front. See the budget block below for how much and how many.
 cat >/dev/null   # drain the SessionStart payload on stdin; we don't read it
 
 dir="${CLAUDE_PROJECT_DIR:-$PWD}"
@@ -19,6 +20,21 @@ mem="$dir/memory/MEMORY.md"
 usage="$dir/memory/usage.jsonl"
 
 reminder="Ignore the default auto-memory destination and use \`$dir/memory\` instead. Memories must be kept under version control."
+
+# Claude Code's SessionStart additionalContext is capped at 10,000 characters
+# (https://code.claude.com/docs/en/hooks) — content past that is swapped for a
+# file preview + path, not a clean cut, which could sever this list mid-entry.
+# Auto memory's own MEMORY.md load uses a similar idea (first 200 lines or
+# 25KB, whichever comes first): a fixed, predictable budget beats a cutoff
+# imposed after the fact. safety_margin covers jq's JSON-escaping overhead
+# (mainly newlines -> \n) plus slop; lengths below are counted in bytes via
+# `wc -c`/`cut -b` for consistency, which for UTF-8 content is a conservative
+# (i.e. never-exceeds) proxy for the character-based cap, since every
+# multi-byte character is >= 1 byte.
+hard_cap=10000
+safety_margin=1500
+min_described=3
+desc_share_pct=30
 
 if [ -f "$mem" ] && [ -s "$usage" ]; then
   # usage.jsonl lines look like: {"sessionId":"...","memoryFileName":"memory/foo.md"}
@@ -50,37 +66,103 @@ if [ -f "$mem" ] && [ -s "$usage" ]; then
     }
   ' "$mem" | sort -t "$tab" -k1,1rn -k2,2rn | cut -f3-)
 
-  titles=""
-  i=0
+  header="
+
+Memory index from $mem, sorted by usage — most-consulted-first:
+
+"
+  prefix_len=$(printf '%s%s' "$reminder" "$header" | wc -c)
+  total_budget=$((hard_cap - safety_margin - prefix_len))
+  [ "$total_budget" -lt 200 ] && total_budget=200
+  desc_budget=$((total_budget * desc_share_pct / 100))
+
+  # Walk ranked entries in order: the top `min_described` always get their
+  # full index line (title + description), ellipsis-truncated to fit only if
+  # desc_budget is too tight to hold them whole. Once that budget is spent,
+  # remaining entries fall back to title-only, spending whatever of
+  # total_budget the descriptions didn't use. If even titles overrun what's
+  # left, the rest are dropped and counted in a trailing "N omitted" line
+  # rather than silently disappearing.
+  body=""
+  desc_used=0
+  n_described=0
+  title_used=0
+  omitted=0
+  phase=desc
   while IFS= read -r line; do
     [ -z "$line" ] && continue
-    i=$((i + 1))
-    if [ "$i" -le 5 ]; then
-      entry="$line"
-    else
-      entry=$(printf '%s\n' "$line" | sed -n 's/^- \[\([^]]*\)\](.*/- \1/p')
+
+    if [ "$phase" = desc ]; then
+      line_len=$(printf '%s' "$line" | wc -c)
+      if [ "$n_described" -lt "$min_described" ] || [ $((desc_used + line_len)) -le "$desc_budget" ]; then
+        if [ $((desc_used + line_len)) -gt "$desc_budget" ]; then
+          remaining=$((desc_budget - desc_used))
+          [ "$remaining" -lt 20 ] && remaining=20
+          line="$(printf '%s' "$line" | cut -b "1-$remaining" | iconv -f utf-8 -t utf-8 -c)…"
+          line_len=$(printf '%s' "$line" | wc -c)
+        fi
+        body="${body:+$body
+}$line"
+        desc_used=$((desc_used + line_len))
+        n_described=$((n_described + 1))
+        continue
+      fi
+      phase=title
+      title_budget=$((total_budget - desc_used))
+      [ "$title_budget" -lt 0 ] && title_budget=0
     fi
-    titles="${titles:+$titles
-}$entry"
+
+    title=$(printf '%s\n' "$line" | sed -n 's/^- \[\([^]]*\)\](.*/- \1/p')
+    title_len=$(printf '%s' "$title" | wc -c)
+    if [ "$omitted" -eq 0 ] && [ $((title_used + title_len)) -le "$title_budget" ]; then
+      body="${body:+$body
+}$title"
+      title_used=$((title_used + title_len))
+    else
+      omitted=$((omitted + 1))
+    fi
   done <<EOF
 $ranked
 EOF
+  [ "$omitted" -gt 0 ] && body="$body
 
-  reminder="$reminder
+…and $omitted more memories omitted (see $mem for the full index)"
 
-Memory index from $mem, sorted by usage — most-consulted-first (top 5 shown in full, read MEMORY.md for the rest):
-
-$titles"
+  reminder="$reminder$header$body"
 elif [ -f "$mem" ]; then
   # MEMORY.md index lines look like:
   #   - [Title](file.md) — one-line description
   # Emit just "- Title" per line; for the full contents read MEMORY.md.
-  titles=$(sed -n 's/^- \[\([^]]*\)\](.*/- \1/p' "$mem")
-  reminder="$reminder
+  header="
 
 Memory titles from $mem (only titles shown; read MEMORY.md for full contents):
 
-$titles"
+"
+  prefix_len=$(printf '%s%s' "$reminder" "$header" | wc -c)
+  total_budget=$((hard_cap - safety_margin - prefix_len))
+  [ "$total_budget" -lt 200 ] && total_budget=200
+
+  body=""
+  title_used=0
+  omitted=0
+  while IFS= read -r title; do
+    [ -z "$title" ] && continue
+    title_len=$(printf '%s' "$title" | wc -c)
+    if [ "$omitted" -eq 0 ] && [ $((title_used + title_len)) -le "$total_budget" ]; then
+      body="${body:+$body
+}$title"
+      title_used=$((title_used + title_len))
+    else
+      omitted=$((omitted + 1))
+    fi
+  done <<EOF
+$(sed -n 's/^- \[\([^]]*\)\](.*/- \1/p' "$mem")
+EOF
+  [ "$omitted" -gt 0 ] && body="$body
+
+…and $omitted more memories omitted (see $mem for the full index)"
+
+  reminder="$reminder$header$body"
 fi
 
 context="<system-reminder>

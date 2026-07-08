@@ -64,8 +64,11 @@ echo "$ctx" | grep -q '^- foo$' && pass "SessionStart includes the memory title"
 echo "$ctx" | grep -q 'bar baz' && die "description leaked into context: $ctx" || pass "drops the one-line description"
 echo "$ctx" | grep -q 'foo.md' && die "link target leaked into context: $ctx" || pass "drops the link target"
 
-# 8. With usage.jsonl present: index is sorted by usage descending, top 5 get
-# the full line (title + description), the rest stay title-only.
+# 8. With usage.jsonl present: index is sorted by usage descending. All 7
+# entries here are short enough to fit the description budget whole, so all
+# get the full line (title + description) -- the budget logic (tested below)
+# only starts trimming once content actually threatens the additionalContext
+# cap, not at a fixed rank cutoff.
 cat > "$tmp/memory/MEMORY.md" << 'MD'
 # Index
 - [Alpha](alpha.md) — alpha desc
@@ -92,9 +95,9 @@ expected="- [Foxtrot](foxtrot.md) — foxtrot desc
 - [Charlie](charlie.md) — charlie desc
 - [Bravo](bravo.md) — bravo desc
 - [Delta](delta.md) — delta desc
-- Echo
-- Golf"
-[ "$order" = "$expected" ] && pass "sorts by usage, top 5 full + rest title-only" || die "ranked order mismatch: $order"
+- [Echo](echo.md) — echo desc
+- [Golf](golf.md) — golf desc"
+[ "$order" = "$expected" ] && pass "sorts by usage, all entries fit so all stay full" || die "ranked order mismatch: $order"
 rm -f "$tmp/memory/usage.jsonl"
 
 # 9. usage.jsonl present but empty: behaves like no usage.jsonl (falls back,
@@ -103,6 +106,47 @@ rm -f "$tmp/memory/usage.jsonl"
 out=$(ss)
 ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
 echo "$ctx" | grep -q "only titles shown" && pass "empty usage.jsonl falls back to titles-only" || die "empty usage.jsonl mishandled: $ctx"
+rm -f "$tmp/memory/usage.jsonl"
+
+# 10. A store much larger than the additionalContext cap: the top 3 always
+# keep a description (ellipsis-truncated if one is oversized), the rest
+# degrade to title-only, and anything that still doesn't fit is folded into a
+# trailing "N omitted" count instead of the harness silently truncating the
+# JSON mid-entry. Exact byte counts vary with $tmp's path length, so these
+# assert budget invariants rather than an exact transcript.
+: > "$tmp/memory/MEMORY.md"
+huge=$(printf 'X%.0s' $(seq 1 5000))
+printf -- '- [Huge](huge.md) — %s\n' "$huge" >> "$tmp/memory/MEMORY.md"
+i=2
+while [ "$i" -le 900 ]; do
+  printf -- '- [Mem%d](mem%d.md) — description number %d with some padding text to add up\n' "$i" "$i" "$i" >> "$tmp/memory/MEMORY.md"
+  i=$((i + 1))
+done
+: > "$tmp/memory/usage.jsonl"
+s=1
+while [ "$s" -le 999 ]; do
+  printf '{"sessionId":"h%d","memoryFileName":"huge.md"}\n' "$s" >> "$tmp/memory/usage.jsonl"
+  s=$((s + 1))
+done
+i=2
+while [ "$i" -le 900 ]; do
+  reps=$((900 - i))
+  s=1
+  while [ "$s" -le "$reps" ]; do
+    printf '{"sessionId":"s%d-%d","memoryFileName":"mem%d.md"}\n' "$i" "$s" "$i" >> "$tmp/memory/usage.jsonl"
+    s=$((s + 1))
+  done
+  i=$((i + 1))
+done
+out=$(ss)
+ctx=$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')
+ctx_len=$(printf '%s' "$ctx" | wc -c)
+[ "$ctx_len" -lt 10000 ] && pass "large store stays under the 10k additionalContext cap ($ctx_len bytes)" || die "exceeded cap: $ctx_len bytes"
+printf '%s' "$out" | jq -e . >/dev/null 2>&1 && pass "large-store output is valid JSON" || die "invalid JSON output"
+described=$(printf '%s\n' "$ctx" | grep -c '^- \[')
+[ "$described" -ge 3 ] && pass "at least 3 entries keep a full description ($described)" || die "fewer than 3 described entries: $described"
+printf '%s\n' "$ctx" | grep -q '^- \[Huge\](huge.md) — X*…$' && pass "oversized top entry is ellipsis-truncated" || die "huge entry not truncated as expected"
+printf '%s\n' "$ctx" | grep -qE '^…and [0-9]{1,} more memories omitted' && pass "overflow beyond the title budget is counted, not dropped silently" || die "no omitted-count line found"
 rm -f "$tmp/memory/usage.jsonl"
 
 exit $fail
