@@ -1,0 +1,21 @@
+{
+  "name": "unrelated-issue-detector",
+  "version": "0.4.2",
+  "description": "Stop hook that detects when Claude dismisses issues as unrelated or pre-existing and asks for evidence on each dismissal",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agents-plugins",
+  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "license": "MIT",
+  "keywords": [
+    "hook",
+    "code-quality",
+    "diligence"
+  ],
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Unrelated Issue Detector"
+  }
+}

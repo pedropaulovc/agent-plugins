@@ -15,7 +15,10 @@
 # context up front. See the budget block below for how much and how many.
 cat >/dev/null   # drain the SessionStart payload on stdin; we don't read it
 
-dir="${CLAUDE_PROJECT_DIR:-$PWD}"
+# Claude Code sets CLAUDE_PROJECT_DIR to the project root. Codex sets no such var,
+# so fall back to the git top-level rather than $PWD — otherwise a session launched
+# from a subdirectory resolves ./memory/ under that subdir instead of the repo root.
+dir="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 mem="$dir/memory/MEMORY.md"
 usage="$dir/memory/usage.jsonl"
 

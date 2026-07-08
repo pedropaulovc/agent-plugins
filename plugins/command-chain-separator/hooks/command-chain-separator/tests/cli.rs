@@ -205,3 +205,68 @@ fn rewrite_produces_valid_chain_structure() {
     // Exactly one printf separator
     assert_eq!(cmd.matches("printf '\\n\\n'").count(), 1);
 }
+
+fn run_hook_codex(stdin_json: &str) -> (String, i32) {
+    let bin = env!("CARGO_BIN_EXE_command-chain-separator");
+    let mut child = Command::new(bin)
+        .env("PLUGIN_ROOT", "/plugin/root")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn hook binary");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(stdin_json.as_bytes())
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    (
+        String::from_utf8(out.stdout).expect("utf8"),
+        out.status.code().unwrap_or(-1),
+    )
+}
+
+/// Under Codex (signalled by `PLUGIN_ROOT`) in a mode that already skips approval
+/// (`bypassPermissions`/`dontAsk`), the rewrite must carry
+/// `permissionDecision:"allow"`, or Codex rejects the `updatedInput` and runs the
+/// original command. The Claude Code path (tested above) must NOT include it.
+#[test]
+fn codex_bypass_mode_emits_permission_decision_allow() {
+    for mode in ["bypassPermissions", "dontAsk"] {
+        let input = json!({
+            "tool_name":"Bash",
+            "permission_mode": mode,
+            "tool_input":{"command":"echo a && echo b"}
+        });
+        let (stdout, code) = run_hook_codex(&input.to_string());
+        assert_eq!(code, 0, "mode={mode}");
+        let h = hook_output(&stdout);
+        assert_eq!(h["permissionDecision"], "allow", "mode={mode}");
+        assert!(h["updatedInput"]["command"].as_str().unwrap().contains("printf"));
+    }
+}
+
+/// Security gate: under Codex in an approval-requiring mode (or with no
+/// `permission_mode` reported), the hook must stay inert — emitting nothing — so
+/// it never auto-approves (via `permissionDecision:"allow"`) a command the user
+/// would otherwise be asked to approve.
+#[test]
+fn codex_approval_required_mode_stays_inert() {
+    for mode in ["default", "acceptEdits", "plan"] {
+        let input = json!({
+            "tool_name":"Bash",
+            "permission_mode": mode,
+            "tool_input":{"command":"echo a && echo b"}
+        });
+        let (stdout, code) = run_hook_codex(&input.to_string());
+        assert_eq!(code, 0, "mode={mode}");
+        assert!(stdout.is_empty(), "mode={mode}: expected inert, got {stdout:?}");
+    }
+    // No permission_mode field at all → also inert (fail safe).
+    let input = json!({"tool_name":"Bash","tool_input":{"command":"echo a && echo b"}});
+    let (stdout, code) = run_hook_codex(&input.to_string());
+    assert_eq!(code, 0);
+    assert!(stdout.is_empty(), "missing mode: expected inert, got {stdout:?}");
+}

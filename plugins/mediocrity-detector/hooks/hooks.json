@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/mediocrity-detector\"; if [ -x \"$b.exe\" ]; then exec \"$b.exe\"; fi; exec \"$b\""
+            "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/mediocrity-detector\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\";; Linux) exec \"$b\";; *) exit 0;; esac",
+            "commandWindows": "\"%CLAUDE_PLUGIN_ROOT%\\hooks\\bin\\mediocrity-detector.exe\""
           }
         ]
       }

@@ -1,0 +1,7 @@
+# Codex has no equivalent to Claude Code's `disable-model-invocation: true`, and
+# implicit invocation is ON by default. This skill performs a DESTRUCTIVE reset
+# (git reset --hard, git clean), so keep it explicit-only ($m) — Codex must never
+# auto-select it from the description for prompts like "clean/reset the workspace".
+# https://developers.openai.com/codex/skills#optional-metadata
+policy:
+  allow_implicit_invocation: false

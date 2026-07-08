@@ -1,11 +1,17 @@
 {
   "name": "memory-to-repo",
   "description": "Blocks CRUD on the machine-local auto-memory directory and redirects the agent to the repo's ./memory/ folder so memory is git-tracked and shared across users",
-  "version": "0.9.2",
+  "version": "0.9.6",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
   },
   "license": "MIT",
-  "keywords": ["memory", "auto-memory", "git", "shared", "hook"]
+  "keywords": [
+    "memory",
+    "auto-memory",
+    "git",
+    "shared",
+    "hook"
+  ]
 }

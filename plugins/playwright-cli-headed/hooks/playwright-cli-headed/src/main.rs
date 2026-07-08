@@ -58,6 +58,17 @@ fn main() {
         process::exit(0);
     }
 
+    // Under Codex, applying updatedInput requires permissionDecision:"allow",
+    // which also skips the approval prompt — so rewriting would launder the
+    // command past the user's approval gate. Only rewrite when the session is
+    // already in an approval-skipping mode (bypassPermissions/dontAsk); in an
+    // approval-requiring mode, stay inert rather than auto-approve. Claude Code
+    // applies a bare updatedInput without approving, so it always rewrites.
+    let codex = under_codex();
+    if analysis.rewrites > 0 && codex && !codex_approval_already_skipped(&data) {
+        process::exit(0);
+    }
+
     let mut hook_output = Map::new();
     hook_output.insert(
         "hookEventName".into(),
@@ -67,6 +78,12 @@ fn main() {
     if analysis.rewrites > 0 {
         let mut updated = tool_input.as_object().cloned().unwrap_or_default();
         updated.insert("command".into(), Value::String(analysis.command));
+        // Codex requires permissionDecision:"allow" alongside updatedInput (a
+        // bare updatedInput is rejected as an error). Only emit it when we are
+        // actually rewriting; a context-only response needs no decision.
+        if codex {
+            hook_output.insert("permissionDecision".into(), Value::String("allow".into()));
+        }
         hook_output.insert("updatedInput".into(), Value::Object(updated));
     }
 
@@ -77,6 +94,26 @@ fn main() {
 
     println!("{}", json!({ "hookSpecificOutput": hook_output }));
     process::exit(0);
+}
+
+/// True when running as a Codex plugin hook. Codex sets the `PLUGIN_ROOT` env
+/// var for plugin hook commands (Claude Code sets only `CLAUDE_PLUGIN_ROOT`),
+/// so its presence distinguishes the two harnesses.
+fn under_codex() -> bool {
+    std::env::var_os("PLUGIN_ROOT").is_some()
+}
+
+/// True when the Codex session is already in a permission mode that skips the
+/// approval prompt, so emitting `permissionDecision:"allow"` for our rewrite
+/// grants nothing the session wasn't already granting. Codex reports the mode as
+/// `permission_mode`; only `bypassPermissions` and `dontAsk` bypass approval.
+/// Any other value — or a missing field — is treated as approval-required, so
+/// the hook fails safe (no rewrite, no auto-approve).
+fn codex_approval_already_skipped(data: &Value) -> bool {
+    matches!(
+        data.get("permission_mode").and_then(|v| v.as_str()),
+        Some("bypassPermissions") | Some("dontAsk")
+    )
 }
 
 // ---------------------------------------------------------------------------

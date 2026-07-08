@@ -25,6 +25,14 @@ Without `--force`, keep the confirmation behaviour described in each step.
 
 ## 1. Tear down agent state
 
+> **Under Codex:** the primitives below (task list, scheduled timers, teammates,
+> subagents, monitors, `/loop`, PR-activity subscriptions) are Claude Code
+> concepts with no Codex equivalent — the listed tools (`TaskStop`, `Monitor`,
+> `CronDelete`, `unsubscribe_pr_activity`, …) do not exist there. In a Codex
+> session, **skip this section entirely** except for **Background jobs** (stop any
+> background terminals via the harness's mechanism, e.g. `/stop`), and proceed to
+> the git steps below — the worktree reset + dep reinstall is the portable core.
+
 Clear each of the following. Then **positively validate that each list is actually
 empty — do not assume the clear succeeded, re-query and confirm**. If a list still has
 entries after a clear, retry the clear and re-check; if something still cannot be

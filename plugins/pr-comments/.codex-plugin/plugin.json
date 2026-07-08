@@ -1,0 +1,22 @@
+{
+  "name": "pr-comments",
+  "version": "0.1.10",
+  "description": "Skill that fetches active (unresolved) PR comments from GitHub and formats them for LLM review and reply",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agents-plugins",
+  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "license": "MIT",
+  "keywords": [
+    "skill",
+    "github",
+    "pull-request",
+    "code-review"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Pr Comments"
+  }
+}

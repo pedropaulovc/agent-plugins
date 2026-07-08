@@ -15,16 +15,19 @@ lines; when a `BEGIN PR FEEDBACK` block appears, you drive the reply flow.
 
 ## Arguments
 
-- `$ARGUMENTS` (optional): a PR number, full URL, or branch name — the forms
+- PR ref (optional): a PR number, full URL, or branch name — the forms
   `gh pr view` accepts. (`owner/repo#123` is **not** accepted; pass the URL for a
-  PR in another repo.) If omitted, auto-detects the PR from the current branch.
-  The script validates the ref up front and exits loudly on a bad one.
+  PR in another repo.) In Claude Code this arrives as `$ARGUMENTS`; under **Codex**
+  there is no argument substitution, so take the ref from the user's prompt. If
+  none is given, auto-detects the PR from the current branch. The script validates
+  the ref up front and exits loudly on a bad one.
 
 ## Instructions
 
 ### 1. Resolve the PR
 
-If `$ARGUMENTS` is empty, resolve the current branch's PR:
+If the user gave no PR ref (i.e. `$ARGUMENTS` is empty under Claude Code, or the
+prompt named none under Codex), resolve the current branch's PR:
 
 ```bash
 gh pr view --json number,url -q '"#\(.number) \(.url)"'
@@ -42,19 +45,33 @@ arrive as a `BEGIN PR FEEDBACK` block in the first poll (silent if none are acti
 ### 2. Launch the watch inside the Monitor tool
 
 Run `watch-pr.sh <PR>` **as the Monitor tool's `command`** with `persistent: true`
-(PR lifecycles can take hours — no timeout). Put the script path directly in the
-command; do NOT use Bash `run_in_background` + a separate Monitor.
+(PR lifecycles can take hours — no timeout). Use the `watch-pr.sh` that sits **in
+this skill's own directory** — right next to this `SKILL.md`, whose absolute path
+you already know (it's where you loaded this file from) — and put that path
+directly in the command. Do NOT use Bash `run_in_background` + a separate Monitor,
+and do **not** locate the script with `find ~/.claude ~/.codex … | head -1`: that
+scans every cached install and can launch a stale copy from an older plugin
+version instead of the one next to this `SKILL.md`.
 
 ```
 Monitor:
   persistent: true
   description: "PR <PR> lifecycle"
-  command: bash "$(find ~/.claude -path '*/watch-pr/skills/watch-pr/watch-pr.sh' 2>/dev/null | head -1)" <PR>
+  command: bash "<this skill's directory>/watch-pr.sh" <PR>
 ```
 
 The loop diffs state each poll and emits **one line per change**, staying silent
 while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — you
 never stop it manually.
+
+**Under Codex (no `Monitor` tool):** Codex has no persistent Monitor primitive,
+so run the *same* `watch-pr.sh <PR>` as a **background terminal** instead
+(`unified_exec` / the harness's background-shell mechanism — not a blocking
+foreground call). The script's stdout is identical; poll it with `/ps` (or read
+the background terminal's captured output) and act on each new line exactly as in
+the table below. Everything else — the event lines, the inline `BEGIN PR FEEDBACK`
+blocks, the reply flow — is harness-agnostic. Do **not** foreground the script; it
+runs until MERGED/CLOSED.
 
 ### 3. Act on each emitted event line
 

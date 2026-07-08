@@ -1,11 +1,17 @@
 {
   "name": "gstack-entrepreneur",
   "description": "Entrepreneurship toolkit adapted from gstack: idea validation, market research, strategy review, and multi-AI second opinions. No code, just thinking.",
-  "version": "0.2.0",
+  "version": "0.2.3",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
   },
   "license": "MIT",
-  "keywords": ["entrepreneurship", "brainstorming", "market-research", "strategy", "product-market-fit"]
+  "keywords": [
+    "entrepreneurship",
+    "brainstorming",
+    "market-research",
+    "strategy",
+    "product-market-fit"
+  ]
 }

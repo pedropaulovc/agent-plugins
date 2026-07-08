@@ -229,3 +229,59 @@ fn updated_input_preserves_other_tool_input_fields() {
     assert_eq!(updated["description"], "drive playwright");
     assert_eq!(updated["timeout"], 30000);
 }
+
+fn run_hook_codex(stdin_json: &str) -> String {
+    let bin = env!("CARGO_BIN_EXE_playwright-cli-headed");
+    let mut child = Command::new(bin)
+        .env("PLUGIN_ROOT", "/plugin/root")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn hook binary");
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(stdin_json.as_bytes())
+        .expect("write stdin");
+    let out = child.wait_with_output().expect("wait");
+    String::from_utf8(out.stdout).expect("utf8")
+}
+
+/// Under Codex (signalled by `PLUGIN_ROOT`) in an approval-skipping mode, a
+/// rewrite must carry `permissionDecision:"allow"` so Codex applies the
+/// `--headed` injection instead of rejecting the `updatedInput`.
+#[test]
+fn codex_bypass_mode_rewrite_emits_permission_decision_allow() {
+    let needle = format!("playwright{} open https://example.com", "-cli");
+    for mode in ["bypassPermissions", "dontAsk"] {
+        let input = json!({
+            "tool_name": "Bash",
+            "permission_mode": mode,
+            "tool_input": {"command": needle}
+        }).to_string();
+        let h = hook_output(&run_hook_codex(&input));
+        assert_eq!(h["permissionDecision"], "allow", "mode={mode}");
+        assert!(h["updatedInput"]["command"].as_str().unwrap().contains("--headed"));
+    }
+}
+
+/// Security gate: under Codex in an approval-requiring mode (or with no
+/// `permission_mode`), the hook must stay inert rather than auto-approve the
+/// `--headed` rewrite past the user's approval gate.
+#[test]
+fn codex_approval_required_mode_stays_inert() {
+    let needle = format!("playwright{} open https://example.com", "-cli");
+    for mode in ["default", "acceptEdits", "plan"] {
+        let input = json!({
+            "tool_name": "Bash",
+            "permission_mode": mode,
+            "tool_input": {"command": &needle}
+        }).to_string();
+        let stdout = run_hook_codex(&input);
+        assert!(stdout.is_empty(), "mode={mode}: expected inert, got {stdout:?}");
+    }
+    let input = json!({"tool_name": "Bash", "tool_input": {"command": needle}}).to_string();
+    assert!(run_hook_codex(&input).is_empty(), "missing mode: expected inert");
+}

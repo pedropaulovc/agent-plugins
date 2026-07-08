@@ -1,0 +1,176 @@
+{
+  "name": "agent-plugins",
+  "interface": {
+    "displayName": "Pedro's Agent Plugins"
+  },
+  "plugins": [
+    {
+      "name": "alt-text",
+      "source": {
+        "source": "local",
+        "path": "./plugins/alt-text"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "command-chain-separator",
+      "source": {
+        "source": "local",
+        "path": "./plugins/command-chain-separator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "developing-solidworks",
+      "source": {
+        "source": "local",
+        "path": "./plugins/developing-solidworks"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "gh-issue",
+      "source": {
+        "source": "local",
+        "path": "./plugins/gh-issue"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "gstack-entrepreneur",
+      "source": {
+        "source": "local",
+        "path": "./plugins/gstack-entrepreneur"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "mediocrity-detector",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mediocrity-detector"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "memory-to-repo",
+      "source": {
+        "source": "local",
+        "path": "./plugins/memory-to-repo"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "playwright-cli-headed",
+      "source": {
+        "source": "local",
+        "path": "./plugins/playwright-cli-headed"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "pr-comments",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pr-comments"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "superpowers",
+      "source": {
+        "source": "local",
+        "path": "./plugins/superpowers"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "unrelated-issue-detector",
+      "source": {
+        "source": "local",
+        "path": "./plugins/unrelated-issue-detector"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "watch-pr",
+      "source": {
+        "source": "local",
+        "path": "./plugins/watch-pr"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "windows-bash-guard",
+      "source": {
+        "source": "local",
+        "path": "./plugins/windows-bash-guard"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "worktree-reset",
+      "source": {
+        "source": "local",
+        "path": "./plugins/worktree-reset"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

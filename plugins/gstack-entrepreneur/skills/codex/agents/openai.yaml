@@ -1,0 +1,8 @@
+# This skill gets a cross-model second opinion by shelling out to `codex exec`.
+# Under Codex that would be a recursive self-call (same model, not independent),
+# so it must never be auto-selected here — keep it explicit-only ($codex). The
+# SKILL.md "Running under Codex" section explains how to get a genuine
+# cross-model opinion (via the `claude` CLI) when the host is Codex.
+# https://developers.openai.com/codex/skills#optional-metadata
+policy:
+  allow_implicit_invocation: false

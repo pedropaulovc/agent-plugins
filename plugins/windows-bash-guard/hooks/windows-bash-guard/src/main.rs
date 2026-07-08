@@ -52,20 +52,65 @@ fn main() {
     };
 
     if let Some(fixed) = fix_command(command) {
+        // Under Codex, applying updatedInput requires permissionDecision:"allow",
+        // which also skips the approval prompt — so rewriting would launder the
+        // command past the user's approval gate. Only rewrite when the session is
+        // already in an approval-skipping mode (bypassPermissions/dontAsk); in an
+        // approval-requiring mode, stay inert rather than auto-approve. Claude
+        // Code applies a bare updatedInput without approving, so it always rewrites.
+        let codex = under_codex();
+        if codex && !codex_approval_already_skipped(&data) {
+            process::exit(0);
+        }
+
         let mut updated = tool_input.as_object().cloned().unwrap_or_default();
         updated.insert("command".into(), Value::String(fixed.command));
 
-        let output = json!({
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "updatedInput": updated,
-                "additionalContext": fixed.context
-            }
-        });
-        println!("{}", output);
+        println!("{}", build_hook_output(updated, fixed.context, codex));
     }
 
     process::exit(0);
+}
+
+/// True when running as a Codex plugin hook. Codex sets the `PLUGIN_ROOT` env
+/// var for plugin hook commands (Claude Code sets only `CLAUDE_PLUGIN_ROOT`),
+/// so its presence distinguishes the two harnesses.
+fn under_codex() -> bool {
+    std::env::var_os("PLUGIN_ROOT").is_some()
+}
+
+/// True when the Codex session is already in a permission mode that skips the
+/// approval prompt, so emitting `permissionDecision:"allow"` for our rewrite
+/// grants nothing the session wasn't already granting. Codex reports the mode as
+/// `permission_mode`; only `bypassPermissions` and `dontAsk` bypass approval.
+/// Any other value — or a missing field — is treated as approval-required, so
+/// the hook fails safe (no rewrite, no auto-approve).
+fn codex_approval_already_skipped(data: &Value) -> bool {
+    matches!(
+        data.get("permission_mode").and_then(|v| v.as_str()),
+        Some("bypassPermissions") | Some("dontAsk")
+    )
+}
+
+/// Build the `PreToolUse` hook response carrying the rewritten command.
+///
+/// Codex requires `permissionDecision:"allow"` alongside `updatedInput` — a bare
+/// `updatedInput` is rejected as an error and the original command runs. Claude
+/// Code needs no such field and would wrongly auto-approve the command if we sent
+/// it, so it is emitted only under Codex.
+fn build_hook_output(
+    updated: serde_json::Map<String, Value>,
+    context: String,
+    codex: bool,
+) -> Value {
+    let mut hook_output = serde_json::Map::new();
+    hook_output.insert("hookEventName".into(), Value::String("PreToolUse".into()));
+    if codex {
+        hook_output.insert("permissionDecision".into(), Value::String("allow".into()));
+    }
+    hook_output.insert("updatedInput".into(), Value::Object(updated));
+    hook_output.insert("additionalContext".into(), Value::String(context));
+    json!({ "hookSpecificOutput": hook_output })
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +280,53 @@ fn is_path_char(b: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- Harness-aware output (Codex vs Claude Code) -------------------------
+
+    fn sample_updated() -> serde_json::Map<String, Value> {
+        let mut m = serde_json::Map::new();
+        m.insert("command".into(), Value::String("ls -la C:/src".into()));
+        m
+    }
+
+    #[test]
+    fn claude_output_omits_permission_decision() {
+        let out = build_hook_output(sample_updated(), "ctx".into(), false);
+        let h = &out["hookSpecificOutput"];
+        assert_eq!(h["hookEventName"], "PreToolUse");
+        assert_eq!(h["updatedInput"]["command"], "ls -la C:/src");
+        assert!(
+            h.get("permissionDecision").is_none(),
+            "Claude Code path must not auto-approve via permissionDecision"
+        );
+    }
+
+    #[test]
+    fn codex_output_includes_permission_decision_allow() {
+        let out = build_hook_output(sample_updated(), "ctx".into(), true);
+        let h = &out["hookSpecificOutput"];
+        assert_eq!(h["permissionDecision"], "allow");
+        assert_eq!(h["updatedInput"]["command"], "ls -la C:/src");
+    }
+
+    #[test]
+    fn codex_approval_gate_only_opens_for_bypass_modes() {
+        for mode in ["bypassPermissions", "dontAsk"] {
+            assert!(
+                codex_approval_already_skipped(&json!({ "permission_mode": mode })),
+                "mode {mode} should be gated open"
+            );
+        }
+        for mode in ["default", "acceptEdits", "plan"] {
+            assert!(
+                !codex_approval_already_skipped(&json!({ "permission_mode": mode })),
+                "mode {mode} must not skip approval"
+            );
+        }
+        // Missing / null field → fail safe (approval required).
+        assert!(!codex_approval_already_skipped(&json!({})));
+        assert!(!codex_approval_already_skipped(&json!({ "permission_mode": null })));
+    }
 
     // -- Fix 1: /dev/stdin ---------------------------------------------------
 
@@ -426,3 +518,4 @@ mod tests {
         assert!(fixed.context.contains("backslash"));
     }
 }
+

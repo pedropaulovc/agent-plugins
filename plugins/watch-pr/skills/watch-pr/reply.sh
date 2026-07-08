@@ -25,10 +25,19 @@ set -euo pipefail
 #       Resolve a thread directly by its GraphQL node ID.
 #
 # <pr> is a PR URL, `owner/repo#123`, or a bare number (uses the current repo) —
-# the same forms the comments formatter accepts. The Claude Code signature is
-# appended to every body and all API output is silenced automatically.
+# the same forms the comments formatter accepts. A harness-appropriate signature
+# is appended to every body and all API output is silenced automatically.
 
-SIGNATURE=$'\n\n-- 🤖 [Claude Code](https://claude.ai/claude-code)'
+# Attribute the reply to the harness actually running this script, rather than
+# hardcoding "Claude Code". Plugins install under the harness home — Codex uses
+# ~/.codex (or $CODEX_HOME) and sets PLUGIN_ROOT into that tree; Claude Code uses
+# ~/.claude. Fall back to a neutral signature when neither is detectable (e.g. a
+# source checkout).
+case "${BASH_SOURCE[0]:-$0}:${PLUGIN_ROOT:-}:${CODEX_HOME:-}" in
+    *.codex/*|*/.codex:*)  SIGNATURE=$'\n\n-- 🤖 [Codex](https://developers.openai.com/codex)' ;;
+    *.claude/*)            SIGNATURE=$'\n\n-- 🤖 [Claude Code](https://claude.ai/claude-code)' ;;
+    *)                     SIGNATURE=$'\n\n-- 🤖 automated reply' ;;
+esac
 
 PR_REF=""
 COMMENT_ID=""
