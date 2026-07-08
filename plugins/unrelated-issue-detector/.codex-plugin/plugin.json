@@ -1,7 +1,7 @@
 {
-  "name": "mediocrity-detector",
-  "description": "Stop hook that detects hedging language suggesting shortcuts or deferred work and prompts Claude to surface assumptions",
+  "name": "unrelated-issue-detector",
   "version": "0.4.1",
+  "description": "Stop hook that detects when Claude dismisses issues as unrelated or pre-existing and asks for evidence on each dismissal",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
@@ -13,5 +13,9 @@
     "hook",
     "code-quality",
     "diligence"
-  ]
+  ],
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "Unrelated Issue Detector"
+  }
 }

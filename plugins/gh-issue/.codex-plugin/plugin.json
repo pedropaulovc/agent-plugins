@@ -1,7 +1,7 @@
 {
-  "name": "pr-comments",
-  "description": "Skill that fetches active (unresolved) PR comments from GitHub and formats them for LLM review and reply",
-  "version": "0.1.7",
+  "name": "gh-issue",
+  "version": "0.1.1",
+  "description": "Skill that transforms terse bug reports into well-structured GitHub issues via gh CLI",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
@@ -12,7 +12,10 @@
   "keywords": [
     "skill",
     "github",
-    "pull-request",
-    "code-review"
-  ]
+    "issues"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Gh Issue"
+  }
 }

@@ -1,11 +1,17 @@
 {
   "name": "alt-text",
   "description": "Skill that writes accessibility-focused alt text for images about to be posted on social media (Twitter/X, Bluesky, Instagram, LinkedIn, Mastodon, Threads, Facebook).",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
   },
   "license": "MIT",
-  "keywords": ["skill", "accessibility", "a11y", "alt-text", "social-media"]
+  "keywords": [
+    "skill",
+    "accessibility",
+    "a11y",
+    "alt-text",
+    "social-media"
+  ]
 }
