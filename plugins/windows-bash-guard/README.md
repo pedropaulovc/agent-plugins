@@ -50,3 +50,7 @@ Other Windows+bash pitfalls:
 - **MSYS2 paths don't work in Node**: `node run.js /c/Users/pedro/file.js` fails — use `C:/Users/pedro/file.js` instead.
 - **Inside JS/TS source files**, use forward-slash paths: `'C:/Users/pedro/file.txt'`. Node.js handles them natively on Windows.
 ````
+
+## Codex support
+
+Windows only (both harnesses). **Codex:** rewriting requires `permissionDecision: "allow"` (which skips approval), so the hook only rewrites in `bypassPermissions`/`dontAsk` modes; it also ships a `commandWindows` override so Codex-on-Windows launches the binary directly.

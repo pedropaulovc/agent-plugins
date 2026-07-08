@@ -7,3 +7,7 @@ A single script (`watch-pr.sh`) runs inside the **Monitor** tool and diffs PR st
 On new feedback the script fetches + formats the active comments itself and prints them **inline in the Monitor stdout** (no extra tool call). It fetches once on startup and stays silent when there are no active comments. Self-terminates on MERGED/CLOSED.
 
 Self-contained: it ships a vendored copy of the comment formatter (`comments.sh`, alongside `watch-pr.sh`), so it works without any other plugin installed. That copy is kept in sync with the `pr-comments` plugin's original.
+
+## Codex support
+
+Works in both. Codex has no `Monitor` tool, so under Codex the same `watch-pr.sh` runs as a background terminal and you poll its output; the event lines, inline feedback blocks, and reply flow are identical.

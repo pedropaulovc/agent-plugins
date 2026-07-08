@@ -15,3 +15,7 @@ Provides the `alt-text` skill: writes alt text for images about to be posted on 
 **Triggers on:** the user sharing an image with requests like "alt text", "alt", "image description", "a11y description", "screen reader description", or posting/sharing phrasing like "for my Bluesky post" or "about to tweet this" — even when the request is minimal (just "alt?").
 
 **Does not trigger on:** requests to understand an image for the user themselves ("what's in this picture?") or requests for visible captions rather than alt text.
+
+## Codex support
+
+Works in both Claude Code and Codex — a plain instruction skill with no harness-specific behavior.

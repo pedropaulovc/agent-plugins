@@ -38,3 +38,7 @@ python3 hooks/build-hooks.py
 ```
 
 Cross-compiles the Rust binary for Linux x86_64 and Windows x86_64 and copies the outputs to `hooks/bin/`. Run after any change to the Rust source or when bumping the plugin version.
+
+## Codex support
+
+Claude Code: rewrites unconditionally. **Codex:** rewriting a Bash command requires `permissionDecision: "allow"`, which also skips Codex's approval prompt — so to avoid slipping a chained command past that prompt, the hook only rewrites in `bypassPermissions`/`dontAsk` modes and stays inert (no separators) in approval-requiring modes.
