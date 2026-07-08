@@ -50,21 +50,36 @@ file_path=$(printf '%s' "$decoded" | grep -o '"file_path"[[:space:]]*:[[:space:]
 path=$(printf '%s' "$decoded" | grep -o '"path"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"//; s/"$//')
 command=$(printf '%s' "$decoded" | grep -o '"command"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"//; s/"$//')
 
+# Under Codex, Write/Edit are aliased to the `apply_patch` tool, whose entire
+# patch (headers + added/removed lines) arrives in tool_input.command — the same
+# field a Bash command uses. Grepping that wholesale would deny a patch that
+# merely *adds documentation mentioning* the auto-memory path, defeating the
+# "we scan target paths, never content" guarantee. So when `command` carries a
+# patch, reduce it to just the target file headers (*** Add/Update/Delete File:,
+# *** Move to:) before matching. The patch text is a JSON string with escaped
+# newlines (literal backslash-n), so [^\\]* captures each path up to its "\n".
+case "$command" in
+  *'*** Begin Patch'*|*'*** Add File:'*|*'*** Update File:'*|*'*** Delete File:'*|*'*** Move to:'*)
+    command=$(printf '%s' "$command" | grep -oE '\*\*\* (Add|Update|Delete) File: [^\\]*|\*\*\* Move to: [^\\]*') ;;
+esac
+
 candidates="$file_path
 $path
 $command"
 
-# Match the default machine-local auto-memory directory and nothing else:
-#   ~/.claude/projects/<slug>/memory/...   (POSIX and Windows backslash forms)
-# Requiring the trailing "memory" segment keeps us from matching transcript_path
+# Match the default machine-local auto-memory directories and nothing else:
+#   ~/.claude/projects/<slug>/memory/...   (Claude Code auto memory)
+#   ~/.codex/memories/...                  (Codex Memories, ~/.codex/memories/)
+# in both POSIX and Windows backslash forms. Requiring the trailing "memory"/
+# "memories" segment keeps us from matching transcript_path
 # (~/.claude/projects/<slug>/<uuid>.jsonl), which lives under the same projects
 # dir but has no memory segment.
 #
-# NOTE: this anchors to the DEFAULT location only. A custom auto-memory store set
-# via the autoMemoryDirectory setting (e.g. ~/my-memory-dir) is NOT auto-detected
-# — we deliberately do not match a bare ".../memory" segment, since that would
-# also block the repo's own ./memory/ folder, which is the redirect target. If
-# you relocate auto memory, extend the pattern below to include that path.
-echo "$candidates" | grep -qiE '\.claude[\\/]+projects[\\/]+[^\\/]+[\\/]+memory([\\/"]|$|[[:space:]])' || exit 0
+# NOTE: this anchors to the DEFAULT locations only. A custom Claude auto-memory
+# store (autoMemoryDirectory) or a relocated Codex home (CODEX_HOME) is NOT
+# auto-detected — we deliberately do not match a bare ".../memory" segment, since
+# that would also block the repo's own ./memory/ folder, which is the redirect
+# target. If you relocate either store, extend the pattern below to include it.
+echo "$candidates" | grep -qiE '\.claude[\\/]+projects[\\/]+[^\\/]+[\\/]+memory([\\/"]|$|[[:space:]])|\.codex[\\/]+memories([\\/"]|$|[[:space:]])' || exit 0
 
-printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked: this targets the machine-local auto-memory directory (~/.claude/projects/<slug>/memory/). It is NOT tracked in git and NOT shared across users, machines, or cloud sessions, so anything stored there is invisible to teammates and lost on a fresh checkout.\n\nMake the EXACT same change in the repository ./memory/ folder instead (relative to the repo root), then commit it so the knowledge is version-controlled and shared with everyone:\n- Create / Update: write the same file under ./memory/ with identical content (e.g. ./memory/MEMORY.md, ./memory/debugging.md).\n- Read: read the corresponding file under ./memory/ instead.\n- Delete / Rename: do it under ./memory/.\nCreate ./memory/ if it does not exist, and keep ./memory/MEMORY.md as the index, mirroring the auto-memory layout.\n\nEscape hatch: if a note is genuinely machine-specific, secret, or otherwise must NOT be shared, add [force-memory] to the call'\''s main string field (the Bash command, or the file_path for a file tool) to bypass this block — the marker is stripped before the operation runs. Do not use it to avoid the redirect above."}}'
+printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked: this targets a machine-local auto-memory directory (~/.claude/projects/<slug>/memory/ or the Codex store ~/.codex/memories/). It is NOT tracked in git and NOT shared across users, machines, or cloud sessions, so anything stored there is invisible to teammates and lost on a fresh checkout.\n\nMake the EXACT same change in the repository ./memory/ folder instead (relative to the repo root), then commit it so the knowledge is version-controlled and shared with everyone:\n- Create / Update: write the same file under ./memory/ with identical content (e.g. ./memory/MEMORY.md, ./memory/debugging.md).\n- Read: read the corresponding file under ./memory/ instead.\n- Delete / Rename: do it under ./memory/.\nCreate ./memory/ if it does not exist, and keep ./memory/MEMORY.md as the index, mirroring the auto-memory layout.\n\nEscape hatch: if a note is genuinely machine-specific, secret, or otherwise must NOT be shared, add [force-memory] to the call'\''s main string field (the Bash command, or the file_path for a file tool) to bypass this block — the marker is stripped before the operation runs. Do not use it to avoid the redirect above."}}'

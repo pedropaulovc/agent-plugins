@@ -1,7 +1,7 @@
 {
   "name": "worktree-reset",
   "description": "Skill (/m) that tears down agent state (tasks, timers, teammates, subagents, monitors, loops, PR subscriptions), aborts in-progress git operations, resets the current worktree to origin/main, cleans stale branches, and reinstalls dependencies. Supports --force.",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

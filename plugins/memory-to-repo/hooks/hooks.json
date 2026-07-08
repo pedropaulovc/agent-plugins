@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-to-repo.sh\""
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/memory-to-repo.sh\"",
+            "commandWindows": "sh \"%CLAUDE_PLUGIN_ROOT%\\hooks\\memory-to-repo.sh\""
           }
         ]
       }
@@ -16,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\""
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"",
+            "commandWindows": "sh \"%CLAUDE_PLUGIN_ROOT%\\hooks\\session-start.sh\""
           }
         ]
       }

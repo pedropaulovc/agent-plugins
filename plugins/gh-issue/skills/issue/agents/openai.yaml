@@ -1,0 +1,7 @@
+# Codex has no equivalent to Claude Code's `disable-model-invocation: true`, and
+# implicit invocation is ON by default. This skill was an explicit slash command
+# ($issue) in Claude Code; keep it explicit-only so Codex doesn't auto-file a
+# GitHub issue from a loosely matching prompt.
+# https://developers.openai.com/codex/skills#optional-metadata
+policy:
+  allow_implicit_invocation: false
