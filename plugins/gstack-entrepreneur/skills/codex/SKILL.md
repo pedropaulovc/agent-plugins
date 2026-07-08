@@ -29,11 +29,22 @@ a *different* model (Codex) that hasn't seen the conversation. When the host is
 itself **Codex**, `codex exec` is a recursive self-call — the same model, not an
 independent second opinion — so that premise breaks.
 
-Detect the host before Step 0: if `PLUGIN_ROOT` or `CODEX_HOME` is set (i.e. you
-are running inside Codex), get the cross-model opinion from the OTHER model
-instead — invoke the `claude` CLI in headless print mode and treat its output
-exactly as the steps below treat Codex's, substituting Claude for Codex
-throughout (present it verbatim as `CLAUDE SAYS`, then synthesize):
+Detect the host before Step 0. Do **not** rely on environment variables:
+`PLUGIN_ROOT` is only exported to plugin *hook* commands (not a skill's Bash),
+and `CODEX_HOME` is usually unset (it defaults to `~/.codex` without being
+exported). Use signals you actually have:
+
+1. **You know which agent you are.** If *you*, the model reading this, are Codex,
+   the host is Codex — full stop.
+2. **The skill's load path confirms it.** You loaded this `SKILL.md` from a
+   concrete path; a Codex home (`~/.codex/…`, `.codex/plugins/…`) means Codex,
+   a Claude tree (`~/.claude/…`) means Claude Code.
+
+If the host is Codex, `codex exec` below is a recursive self-call — not an
+independent opinion. Get the cross-model opinion from the OTHER model instead:
+invoke the `claude` CLI in headless print mode and treat its output exactly as
+the steps below treat Codex's, substituting Claude for Codex throughout (present
+it verbatim as `CLAUDE SAYS`, then synthesize):
 
 ```bash
 command -v claude >/dev/null 2>&1 && echo "CLAUDE_AVAILABLE" || echo "CLAUDE_NOT_AVAILABLE"
