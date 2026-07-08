@@ -21,8 +21,15 @@ pair found, it writes one JSON line to `memory/usage.jsonl`:
 {"sessionId": "025df9d0-...", "memoryFileName": "memory/gstack-entrepreneur-vendoring.md"}
 ```
 
-The file is fully regenerated each run (not appended to), so it stays
-correct if a memory file was renamed or removed. The `SessionStart` hook
+Existing lines are preserved byte-for-byte and never reordered — only
+genuinely new records are appended at the end. `usage.jsonl` is git-tracked
+and shared, so two people (or two branches) running this command
+independently should each only add lines at the tail, which git merges
+cleanly; a full rewrite/re-sort would touch nearly every line and turn every
+concurrent run into a merge conflict. One consequence: a record for a memory
+file that was later renamed or deleted just sits there unused (it's simply
+never looked up by the ranking below) rather than being cleaned up — that's
+the deliberate trade-off for merge-friendliness. The `SessionStart` hook
 (`hooks/session-start.sh`) reads it, if present, to sort the `MEMORY.md`
 index by how many distinct sessions have actually consulted each memory —
 most-used first — and includes the **full index line** (title + description)
