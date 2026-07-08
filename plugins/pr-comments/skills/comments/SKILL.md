@@ -12,16 +12,21 @@ Fetch active (unresolved) comments from a GitHub Pull Request and format them fo
 
 ## Arguments
 
-- `$ARGUMENTS` (optional): The PR URL (e.g., `https://github.com/owner/repo/pull/123`) or PR reference (e.g., `owner/repo#123` or just `123` if in a repo). If not provided, automatically detects the PR from the current git branch.
+- PR ref (optional): The PR URL (e.g., `https://github.com/owner/repo/pull/123`) or PR reference (e.g., `owner/repo#123` or just `123` if in a repo). In Claude Code this is `$ARGUMENTS`; under Codex, take it from the user's prompt (see step 1). If not provided, automatically detects the PR from the current git branch.
 - `--include-resolved` (optional): Include resolved threads in the output. By default, only active (unresolved) threads are exported.
 
 ## Instructions
 
-1. Run the comments.sh script to gather and format the comments. The script is located next to this SKILL.md file:
+1. Determine the target PR reference from the user's request — a PR URL, `owner/repo#123`, or a bare number. In **Claude Code** it arrives via `$ARGUMENTS` (the harness substitutes it). Under **Codex** there is no argument substitution, so read the ref the user gave in their prompt. Then run the comments.sh script (located next to this SKILL.md), passing the ref as a **single quoted argument** — omit it entirely only when the user gave none, to auto-detect the PR from the current branch:
 
 ```bash
-bash "$(find ~/.claude ~/.codex -path '*/pr-comments/skills/comments/comments.sh' 2>/dev/null | head -1)" $ARGUMENTS
+# with an explicit ref:
+bash "$(find ~/.claude ~/.codex -path '*/pr-comments/skills/comments/comments.sh' 2>/dev/null | head -1)" "<pr-url-or-ref>"
+# or, no ref → auto-detect from the current branch:
+bash "$(find ~/.claude ~/.codex -path '*/pr-comments/skills/comments/comments.sh' 2>/dev/null | head -1)"
 ```
+
+Do **not** pass a literal `$ARGUMENTS` under Codex — an unset shell variable expands to empty and silently auto-detects the wrong PR.
 
 2. The script outputs the path to the generated markdown file on stdout. Capture this path and read the file contents.
 

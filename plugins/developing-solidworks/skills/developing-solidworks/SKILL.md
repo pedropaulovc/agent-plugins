@@ -32,13 +32,17 @@ ls ./types/ ./enums/ 2>/dev/null | head
 
 **If empty or missing, you (the agent) MUST invoke the bundled download skill yourself before doing anything else. Do not hand this off to the user. Do not ask for permission. Do not skip it and continue with guessed API calls.**
 
-Invoke it via the Skill tool, passing the absolute path of **this** skill directory (the folder containing this `SKILL.md`) as the argument:
+Invoke the bundled **download-solidworks-docs** skill, passing the absolute path of **this** skill directory (the folder containing this `SKILL.md`) so the download script knows where to unpack. How you invoke it depends on the harness:
 
-```
-Skill(skill="developing-solidworks:download-solidworks-docs", args="<absolute path to this skill directory>")
-```
+- **Claude Code** — call the Skill tool:
 
-Pass the path explicitly because `CLAUDE_PLUGIN_ROOT` is **not** exported into tool-spawned shells — the download script cannot discover its own location on its own. If you omit the argument, the script falls back to searching the Claude plugins install tree, which is slower and may pick the wrong copy if multiple are installed.
+  ```
+  Skill(skill="developing-solidworks:download-solidworks-docs", args="<absolute path to this skill directory>")
+  ```
+
+- **Codex** — there is no `Skill` tool, and the skill is named just `download-solidworks-docs` (not namespaced). Either invoke it with a `$download-solidworks-docs` mention, or simply open its `SKILL.md` (the sibling `skills/download-solidworks-docs/` directory) and run the PowerShell block it documents directly, with `$targetDir` set to **this** skill directory.
+
+Pass the path explicitly because `CLAUDE_PLUGIN_ROOT` / `PLUGIN_ROOT` is **not** exported into tool-spawned shells — the download script cannot discover its own location on its own. If you omit it, the script falls back to searching the plugins install tree (`~/.claude/plugins` and `~/.codex/plugins`), which is slower and may pick the wrong copy if multiple are installed.
 
 The corresponding slash command `/download-solidworks-docs` is for *humans* to run manually when working without an agent — pass the skill path as an argument there too, or let the fallback search find it.
 
@@ -55,7 +59,7 @@ cat ./.bundle-version 2>/dev/null   # e.g. v3.2.0 — missing/empty means an old
 curl -s https://api.github.com/repos/pedropaulovc/offline-solidworks-api-docs/releases/latest | grep '"tag_name"'
 ```
 
-If the latest `tag_name` differs from `./.bundle-version` (or the file is missing), a newer bundle is available — re-invoke the download skill to refresh in place. It overwrites the doc folders and rewrites `./.bundle-version`:
+If the latest `tag_name` differs from `./.bundle-version` (or the file is missing), a newer bundle is available — re-invoke the download skill to refresh in place (Skill tool under Claude Code; a `$download-solidworks-docs` mention or its PowerShell block directly under Codex — see "First-time setup" above). It overwrites the doc folders and rewrites `./.bundle-version`:
 
 ```
 Skill(skill="developing-solidworks:download-solidworks-docs")

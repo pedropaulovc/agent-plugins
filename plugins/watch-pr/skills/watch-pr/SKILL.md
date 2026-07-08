@@ -15,16 +15,19 @@ lines; when a `BEGIN PR FEEDBACK` block appears, you drive the reply flow.
 
 ## Arguments
 
-- `$ARGUMENTS` (optional): a PR number, full URL, or branch name — the forms
+- PR ref (optional): a PR number, full URL, or branch name — the forms
   `gh pr view` accepts. (`owner/repo#123` is **not** accepted; pass the URL for a
-  PR in another repo.) If omitted, auto-detects the PR from the current branch.
-  The script validates the ref up front and exits loudly on a bad one.
+  PR in another repo.) In Claude Code this arrives as `$ARGUMENTS`; under **Codex**
+  there is no argument substitution, so take the ref from the user's prompt. If
+  none is given, auto-detects the PR from the current branch. The script validates
+  the ref up front and exits loudly on a bad one.
 
 ## Instructions
 
 ### 1. Resolve the PR
 
-If `$ARGUMENTS` is empty, resolve the current branch's PR:
+If the user gave no PR ref (i.e. `$ARGUMENTS` is empty under Claude Code, or the
+prompt named none under Codex), resolve the current branch's PR:
 
 ```bash
 gh pr view --json number,url -q '"#\(.number) \(.url)"'

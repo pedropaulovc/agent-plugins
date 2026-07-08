@@ -255,7 +255,7 @@ shown_threads: \($shown_thread_count)
 
 ## How to Reply
 
-Use the `reply.sh` wrapper — it appends the `🤖 [Claude Code]` signature, silences
+Use the `reply.sh` wrapper — it appends a harness-appropriate signature (Claude Code or Codex), silences
 output, and (with `--resolve`) resolves the thread a comment belongs to, no thread ID needed:
 - **Inline comment**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\"`
 - **Inline comment + resolve its thread**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\" --resolve`
