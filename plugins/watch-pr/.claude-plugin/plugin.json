@@ -1,7 +1,7 @@
 {
   "name": "watch-pr",
   "description": "Skill that watches a GitHub PR's full lifecycle (CI, rebase, reviews, reactions, merge) via the Monitor tool and, on new feedback, fetches + prints the active comments inline for the reply-drafting flow. Self-contained (vendors its own comment formatter).",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

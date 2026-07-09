@@ -270,8 +270,17 @@ shown_threads: \($shown_thread_count)
 ## REVIEW SUMMARIES
 " +
 
-# Add review summaries (sorted by submitted_at ascending)
-([$reviews_list[] | select(.body != null and .body != "")] | sort_by(.submitted_at) |
+# Add review summaries (sorted by submitted_at ascending). Hide a summary once its
+# review is fully settled — every inline thread it opened is resolved — so addressed
+# reviews stop sending the agent back to already-closed feedback. A review with no
+# inline comments (a bare approval or standalone summary) has nothing to resolve, so
+# it is always shown. --include-resolved shows every summary regardless.
+([$reviews_list[] | select(.body != null and .body != "") |
+    . as $rev |
+    ([$all_root_comments[] | select(.pull_request_review_id == $rev.id)]) as $rev_roots |
+    ([$rev_roots[] | select($thread_lookup[(.id | tostring)].isResolved != true)] | length) as $rev_unresolved |
+    select($include_resolved == "true" or ($rev_roots | length) == 0 or $rev_unresolved > 0)
+  ] | sort_by(.submitted_at) |
     if length > 0 then
         map("<review-summary id=\"review-\(.id)\" author=\"\(.user.login)\" created=\"\(.submitted_at)\">
 | ID | Type | Source | Created |
