@@ -1,11 +1,14 @@
 {
   "name": "memory-to-repo",
-  "version": "0.9.6",
+  "version": "0.10.0",
   "description": "Blocks CRUD on the machine-local auto-memory directory and redirects the agent to the repo's ./memory/ folder so memory is git-tracked and shared across users",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
-    "email": "pedro@vezza.com.br"
+    "email": "pedro@vezza.com.br",
+    "url": "https://github.com/pedropaulovc"
   },
+  "homepage": "https://github.com/pedropaulovc/agent-plugins/tree/main/plugins/memory-to-repo",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
   "license": "MIT",
   "keywords": [
     "memory",
@@ -15,8 +18,19 @@
     "hook"
   ],
   "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
   "interface": {
-    "displayName": "Memory To Repo"
+    "displayName": "Memory To Repo",
+    "shortDescription": "Keep agent memory version-controlled and shared",
+    "longDescription": "Redirects Claude Code and Codex from machine-local memory stores to the repository's ./memory directory using native cross-platform lifecycle hooks.",
+    "developerName": "Pedro Paulo Vezza Campos",
+    "category": "Productivity",
+    "capabilities": [
+      "Lifecycle hooks",
+      "Shared repository memory"
+    ],
+    "defaultPrompt": [
+      "Audit the repository memory store for stale facts.",
+      "Refresh memory usage rankings from past sessions."
+    ]
   }
 }

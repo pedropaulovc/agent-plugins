@@ -29,8 +29,8 @@ cleanly; a full rewrite/re-sort would touch nearly every line and turn every
 concurrent run into a merge conflict. One consequence: a record for a memory
 file that was later renamed or deleted just sits there unused (it's simply
 never looked up by the ranking below) rather than being cleaned up — that's
-the deliberate trade-off for merge-friendliness. The `SessionStart` hook
-(`hooks/session-start.sh`) reads it, if present, to sort the `MEMORY.md`
+the deliberate trade-off for merge-friendliness. The native `SessionStart` hook
+(`hooks/memory-to-repo/src/main.rs`) reads it, if present, to sort the `MEMORY.md`
 index by how many distinct sessions have actually consulted each memory —
 most-used first — and includes the **full index line** (title + description)
 for the top 5, while the rest still get title-only, as before.

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "plugins/command-chain-separator/hooks/command-chain-separator",
     "plugins/mediocrity-detector/hooks/mediocrity-detector",
+    "plugins/memory-to-repo/hooks/memory-to-repo",
     "plugins/playwright-cli-headed/hooks/playwright-cli-headed",
     "plugins/unrelated-issue-detector/hooks/unrelated-issue-detector",
     "plugins/windows-bash-guard/hooks/windows-bash-guard",
