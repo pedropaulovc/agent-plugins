@@ -1,6 +1,6 @@
 {
   "name": "pr-comments",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Skill that fetches active (unresolved) PR comments from GitHub and formats them for LLM review and reply",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

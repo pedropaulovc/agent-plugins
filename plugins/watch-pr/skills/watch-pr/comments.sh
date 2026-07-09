@@ -259,7 +259,7 @@ shown_threads: \($shown_thread_count)
 
 ## How to Reply
 
-`reply.sh` appends a harness signature (Claude Code or Codex), silences output, and (with `--resolve`) resolves the comment's thread — no thread ID needed:
+`reply.sh` appends a harness signature (Claude Code or Codex), silences output, and (with `--resolve`) resolves the comment thread — no thread ID needed:
 - **Inline reply**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\"` (add `--resolve` to close its thread)
 - **Top-level comment**: `bash \($reply) \($owner)/\($repo)#\($pr) --issue --body \"<reply>\"`
 - **Resolve thread by ID**: `bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread <THREAD_ID>`

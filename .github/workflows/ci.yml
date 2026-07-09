@@ -36,3 +36,10 @@ jobs:
             fail=1
           fi
           exit $fail
+
+  check-jq-programs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compile-check embedded jq programs in PR-comment formatters
+        run: bash tools/check-jq-programs.sh
