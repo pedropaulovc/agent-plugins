@@ -255,16 +255,11 @@ shown_threads: \($shown_thread_count)
 
 ## How to Reply
 
-Use the `reply.sh` wrapper — it appends a harness-appropriate signature (Claude Code or Codex), silences
-output, and (with `--resolve`) resolves the thread a comment belongs to, no thread ID needed:
-- **Inline comment**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\"`
-- **Inline comment + resolve its thread**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\" --resolve`
+`reply.sh` appends a harness signature (Claude Code or Codex), silences output, and (with `--resolve`) resolves the comment's thread — no thread ID needed:
+- **Inline reply**: `bash \($reply) \($owner)/\($repo)#\($pr) --comment <COMMENT_ID> --body \"<reply>\"` (add `--resolve` to close its thread)
 - **Top-level comment**: `bash \($reply) \($owner)/\($repo)#\($pr) --issue --body \"<reply>\"`
-- **Resolve a thread by ID**: `bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread <THREAD_ID>`
-
-Optionally add `--thumbs-up` (👍) or `--thumbs-down` (👎) to an `--comment` call to react
-to that comment — e.g. a quick 👍 to acknowledge feedback you are acting on. Optional,
-not required; skip it when a reaction adds nothing.
+- **Resolve thread by ID**: `bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread <THREAD_ID>`
+- **React**: add `--thumbs-up` (👍) / `--thumbs-down` (👎) to a `--comment` call; skip when it adds nothing.
 
 ---
 
