@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/memory-to-repo\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\" pre-tool-use;; Linux) exec \"$b\" pre-tool-use;; *) exit 0;; esac",
-            "commandWindows": "$root = if ($env:PLUGIN_ROOT) { $env:PLUGIN_ROOT } else { $env:CLAUDE_PLUGIN_ROOT }; & \"$root\\hooks\\bin\\memory-to-repo.exe\" pre-tool-use"
+            "commandWindows": "cmd.exe /d /c call \"%CLAUDE_PLUGIN_ROOT%\\hooks\\bin\\memory-to-repo.exe\" pre-tool-use"
           }
         ]
       }
@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/memory-to-repo\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\" session-start;; Linux) exec \"$b\" session-start;; *) exit 0;; esac",
-            "commandWindows": "$root = if ($env:PLUGIN_ROOT) { $env:PLUGIN_ROOT } else { $env:CLAUDE_PLUGIN_ROOT }; & \"$root\\hooks\\bin\\memory-to-repo.exe\" session-start"
+            "commandWindows": "cmd.exe /d /c call \"%CLAUDE_PLUGIN_ROOT%\\hooks\\bin\\memory-to-repo.exe\" session-start"
           }
         ]
       }
