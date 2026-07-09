@@ -1,6 +1,6 @@
 # memory-to-repo plugin
 
-Two hooks that move Claude Code's auto memory off the **machine-local auto-memory directory** (`~/.claude/projects/<slug>/memory/`) and onto the **repository's `./memory/` folder** — so accumulated memory is git-tracked and shared across every user, machine, and cloud session:
+Two hooks that move Claude Code and Codex memory off their **machine-local directories** (`~/.claude/projects/<slug>/memory/` and `~/.codex/memories/`) and onto the **repository's `./memory/` folder** — so accumulated memory is git-tracked and shared across every user, machine, and cloud session:
 
 - a `PreToolUse` hook that blocks CRUD on the machine-local directory and redirects the agent to make the **exact same change** under `./memory/` instead;
 - a `SessionStart` hook that, at the start of every session, tells the agent to use `./memory/` as the auto-memory destination and surfaces the repo's `./memory/MEMORY.md` index up front — emitting just the memory **titles** (not the full one-line descriptions) to keep context lean, mirroring how Claude Code normally surfaces the auto-memory `MEMORY.md`, but from the version-controlled location. When `./memory/usage.jsonl` is present, the index is instead sorted by how often each memory has actually been consulted (see [below](#record-memory-usage-command)).
@@ -15,7 +15,7 @@ This hook converts every memory operation into a hard block with guidance to per
 
 ## Behavior
 
-The hook matches the tools Claude uses to manipulate memory files — `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, `Grep`, `Glob`, `ListDir`, and `Bash` — and inspects the **target path** (Claude reads/writes auto memory with its standard file tools; there is no dedicated "memory" tool). It decodes JSON string escapes first, so a double-quoted path inside a `Bash` command (`rm "~/.claude/.../memory/x.md"`) is matched rather than truncated. Shell deletes/renames — including PowerShell `Remove-Item`/`Move-Item` — run through the `Bash` tool and are matched path-agnostically; there is no separate PowerShell tool. If the path resolves to `~/.claude/projects/<slug>/memory/` (POSIX or Windows backslash form), it returns a `deny` decision instructing the agent to:
+The hook matches the tools the harnesses use to manipulate memory files — `Write`, `Edit`, `MultiEdit`, `NotebookEdit`, `Read`, `Grep`, `Glob`, `ListDir`, and `Bash` — and inspects the **target path** (there is no dedicated "memory" tool). JSON input is parsed natively, so quoted paths are handled without shell escaping ambiguities. Shell deletes/renames — including PowerShell `Remove-Item`/`Move-Item` — are matched path-agnostically. If the path resolves to `~/.claude/projects/<slug>/memory/` or `~/.codex/memories/` (POSIX or Windows backslash form), it returns a `deny` decision instructing the agent to:
 
 - **Create / Update** → write the same file under `./memory/` with identical content (e.g. `./memory/MEMORY.md`, `./memory/debugging.md`)
 - **Read** → read the corresponding file under `./memory/` instead
@@ -25,7 +25,7 @@ The hook matches the tools Claude uses to manipulate memory files — `Write`, `
 
 ### SessionStart injection
 
-At session start (including resume, clear, and compact) the `SessionStart` hook emits a `<system-reminder>` instructing the agent to ignore the default auto-memory destination and use `<project>/memory` instead. When `<project>/memory/MEMORY.md` exists, only the memory **titles** are appended — each index line (`- [Title](file.md) — description`) is reduced to `- Title`, so the index is in context from the first turn without the full descriptions bloating it. The reminder points the agent at `MEMORY.md` to read the complete contents on demand. The project root is taken from `$CLAUDE_PROJECT_DIR` (falling back to the working directory).
+At session start (including resume, clear, and compact) the `SessionStart` hook emits a `<system-reminder>` instructing the agent to ignore the default auto-memory destination and use `<project>/memory` instead. When `<project>/memory/MEMORY.md` exists, only the memory **titles** are appended — each index line (`- [Title](file.md) — description`) is reduced to `- Title`, so the index is in context from the first turn without the full descriptions bloating it. The reminder points the agent at `MEMORY.md` to read the complete contents on demand. The project root is taken from `$CLAUDE_PROJECT_DIR`, falling back to the nearest ancestor containing `.git` and then the working directory.
 
 If `<project>/memory/usage.jsonl` exists and is non-empty, this changes: the index is sorted **descending by usage** (how many distinct past sessions actually `Read` that memory file — see [`/record-memory-usage`](#record-memory-usage-command)), and the most-used entries get their full index line (title + description) instead of just the title, since those are the memories most worth having in full up front. Ties (including the common all-zero case before `usage.jsonl` has meaningful data) keep `MEMORY.md`'s original order.
 
@@ -39,7 +39,19 @@ Only the path-bearing fields (`file_path`, `path`, `command`) are inspected — 
 
 ## Limitation: custom memory locations
 
-The hook anchors to the **default** auto-memory location, `~/.claude/projects/<slug>/memory/`. If you relocate auto memory with the [`autoMemoryDirectory`](https://code.claude.com/docs/en/memory) setting (e.g. `~/my-memory-dir`), that path is **not** auto-detected. This is deliberate: matching a bare `.../memory` segment anywhere would also block the repo's own `./memory/` folder — the very target this hook redirects to. To cover a relocated store, extend the regex in `hooks/memory-to-repo.sh` to include that path.
+The hook anchors to the **default** machine-local locations. If you relocate Claude auto memory with [`autoMemoryDirectory`](https://code.claude.com/docs/en/memory), or relocate Codex with `CODEX_HOME`, that path is **not** auto-detected. This is deliberate: matching a bare `.../memory` segment anywhere would also block the repo's own `./memory/` folder — the very target this hook redirects to. To cover a relocated store, extend `targets_machine_local_memory` in `hooks/memory-to-repo/src/main.rs`.
+
+## Native cross-platform hook
+
+Both lifecycle events are implemented by one Rust program and shipped as prebuilt Linux x86_64 and Windows x86_64 binaries under `hooks/bin/`. Claude Code and Codex therefore execute the same logic on both operating systems without requiring `sh`, `jq`, PowerShell, Python, or Node on the hook process `PATH`.
+
+After changing the Rust source or plugin version, rebuild both binaries from the repository root:
+
+```text
+python plugins/memory-to-repo/hooks/build-hooks.py
+```
+
+Run the source-level protocol tests with `cargo test -p memory-to-repo`.
 
 ## Escape hatch
 
@@ -89,4 +101,4 @@ MIT
 
 ## Codex support
 
-Works in both. Redirects each harness's machine-local auto-memory to the repo `./memory/` store — `~/.claude/projects/<slug>/memory/` under Claude Code and `~/.codex/memories/` under Codex. The `[force-memory]` escape hatch auto-approves under Codex only in `bypassPermissions`/`dontAsk` modes; otherwise it defers to the normal approval prompt.
+Works in Claude Code and Codex on Windows and Linux. Redirects each harness's machine-local auto-memory to the repo `./memory/` store — `~/.claude/projects/<slug>/memory/` under Claude Code and `~/.codex/memories/` under Codex. The `[force-memory]` escape hatch auto-approves under Codex only in `bypassPermissions`/`dontAsk` modes; otherwise it defers to the normal approval prompt.

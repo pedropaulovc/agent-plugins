@@ -3,7 +3,7 @@
 // git worktrees) for Read tool calls that targeted a file under ./memory/,
 // and APPENDS any newly-discovered {sessionId, memoryFileName} records to
 // ./memory/usage.jsonl — one record per distinct (session, memory file) pair.
-// session-start.sh reads this file to rank memories by how often they've
+// The native SessionStart hook reads this file to rank memories by how often they've
 // actually been consulted.
 //
 // Existing lines are preserved byte-for-byte and never reordered: this file
@@ -143,7 +143,7 @@ function ensureGitAttributes(projectRoot: string): void {
 
 // Codex sets no CLAUDE_PROJECT_DIR and may launch from a subdirectory, so fall
 // back to the git top-level (not process.cwd()) to find the repo-root memory
-// store. Mirrors session-start.sh's resolution.
+// store. Mirrors the native SessionStart hook's resolution.
 function gitTopLevel(): string | undefined {
   try {
     return (

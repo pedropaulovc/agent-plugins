@@ -8,7 +8,7 @@
   python3 plugins/superpowers/hooks/build-hooks.py
   ```
   This bakes the current `skills/using-superpowers/SKILL.md` into `hooks/hooks.json`.
-- When bumping any Rust-hook plugin version (**windows-bash-guard**, **unrelated-issue-detector**, **mediocrity-detector**, **command-chain-separator**, **playwright-cli-headed**), also rebuild the hook binary:
+- When bumping any Rust-hook plugin version (**windows-bash-guard**, **unrelated-issue-detector**, **mediocrity-detector**, **command-chain-separator**, **playwright-cli-headed**, **memory-to-repo**), also rebuild the hook binary:
   ```
   python3 plugins/<plugin>/hooks/build-hooks.py
   ```

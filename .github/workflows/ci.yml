@@ -43,3 +43,10 @@ jobs:
       - uses: actions/checkout@v6
       - name: Compile-check embedded jq programs in PR-comment formatters
         run: bash tools/check-jq-programs.sh
+
+  test-rust-hooks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test native hook implementations
+        run: cargo test -p memory-to-repo
