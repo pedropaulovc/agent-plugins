@@ -49,7 +49,7 @@ fn hook_output(stdout: &str) -> Value {
 }
 
 #[test]
-fn windows_hook_commands_use_powershell_environment_syntax() {
+fn windows_hook_commands_fall_back_to_claude_plugin_root() {
     let hooks_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../hooks.json");
     let hooks: Value =
         serde_json::from_str(&fs::read_to_string(hooks_path).expect("read hooks.json"))
@@ -64,11 +64,11 @@ fn windows_hook_commands_use_powershell_environment_syntax() {
 
     assert_eq!(
         pre_tool_use,
-        r#"& "$env:PLUGIN_ROOT\hooks\bin\memory-to-repo.exe" pre-tool-use"#
+        r#"$root = if ($env:PLUGIN_ROOT) { $env:PLUGIN_ROOT } else { $env:CLAUDE_PLUGIN_ROOT }; & "$root\hooks\bin\memory-to-repo.exe" pre-tool-use"#
     );
     assert_eq!(
         session_start,
-        r#"& "$env:PLUGIN_ROOT\hooks\bin\memory-to-repo.exe" session-start"#
+        r#"$root = if ($env:PLUGIN_ROOT) { $env:PLUGIN_ROOT } else { $env:CLAUDE_PLUGIN_ROOT }; & "$root\hooks\bin\memory-to-repo.exe" session-start"#
     );
 }
 
