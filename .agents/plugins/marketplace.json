@@ -89,6 +89,18 @@
       "category": "Productivity"
     },
     {
+      "name": "onepassword",
+      "source": {
+        "source": "local",
+        "path": "./plugins/onepassword"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
       "name": "playwright-cli-headed",
       "source": {
         "source": "local",

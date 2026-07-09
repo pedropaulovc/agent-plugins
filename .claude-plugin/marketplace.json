@@ -65,6 +65,10 @@
     {
       "name": "memory-to-repo",
       "source": "./plugins/memory-to-repo"
+    },
+    {
+      "name": "onepassword",
+      "source": "./plugins/onepassword"
     }
   ]
 }
