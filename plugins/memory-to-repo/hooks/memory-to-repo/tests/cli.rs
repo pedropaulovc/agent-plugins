@@ -48,6 +48,30 @@ fn hook_output(stdout: &str) -> Value {
     value["hookSpecificOutput"].clone()
 }
 
+#[test]
+fn windows_hook_commands_use_powershell_environment_syntax() {
+    let hooks_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../hooks.json");
+    let hooks: Value =
+        serde_json::from_str(&fs::read_to_string(hooks_path).expect("read hooks.json"))
+            .expect("parse hooks.json");
+
+    let pre_tool_use = hooks["hooks"]["PreToolUse"][0]["hooks"][0]["commandWindows"]
+        .as_str()
+        .expect("PreToolUse commandWindows");
+    let session_start = hooks["hooks"]["SessionStart"][0]["hooks"][0]["commandWindows"]
+        .as_str()
+        .expect("SessionStart commandWindows");
+
+    assert_eq!(
+        pre_tool_use,
+        r#"& "$env:PLUGIN_ROOT\hooks\bin\memory-to-repo.exe" pre-tool-use"#
+    );
+    assert_eq!(
+        session_start,
+        r#"& "$env:PLUGIN_ROOT\hooks\bin\memory-to-repo.exe" session-start"#
+    );
+}
+
 fn session_context(root: &Path) -> String {
     let (stdout, stderr, code) = run_hook("session-start", &json!({}), Some(root), false);
     assert_eq!(code, 0, "stderr={stderr}");
