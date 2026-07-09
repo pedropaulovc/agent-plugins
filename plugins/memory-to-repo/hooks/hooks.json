@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/memory-to-repo\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\" pre-tool-use;; Linux) exec \"$b\" pre-tool-use;; *) exit 0;; esac",
-            "commandWindows": "\"%CLAUDE_PLUGIN_ROOT%\\hooks\\bin\\memory-to-repo.exe\" pre-tool-use"
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"if ([Environment]::GetEnvironmentVariable('PLUGIN_ROOT')) { & (Join-Path ([Environment]::GetEnvironmentVariable('PLUGIN_ROOT')) 'hooks\\bin\\memory-to-repo.exe') pre-tool-use } else { & (Join-Path ([Environment]::GetEnvironmentVariable('CLAUDE_PLUGIN_ROOT')) 'hooks\\bin\\memory-to-repo.exe') pre-tool-use }\""
           }
         ]
       }
@@ -18,7 +18,7 @@
           {
             "type": "command",
             "command": "b=\"${CLAUDE_PLUGIN_ROOT}/hooks/bin/memory-to-repo\"; case \"$(uname -s 2>/dev/null)\" in MINGW*|MSYS*|CYGWIN*|Windows*) exec \"$b.exe\" session-start;; Linux) exec \"$b\" session-start;; *) exit 0;; esac",
-            "commandWindows": "\"%CLAUDE_PLUGIN_ROOT%\\hooks\\bin\\memory-to-repo.exe\" session-start"
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -Command \"if ([Environment]::GetEnvironmentVariable('PLUGIN_ROOT')) { & (Join-Path ([Environment]::GetEnvironmentVariable('PLUGIN_ROOT')) 'hooks\\bin\\memory-to-repo.exe') session-start } else { & (Join-Path ([Environment]::GetEnvironmentVariable('CLAUDE_PLUGIN_ROOT')) 'hooks\\bin\\memory-to-repo.exe') session-start }\""
           }
         ]
       }
