@@ -199,7 +199,7 @@ fn session_start_without_index_emits_redirect_only() {
 }
 
 #[test]
-fn session_start_surfaces_titles_without_descriptions() {
+fn session_start_surfaces_descriptions_without_usage() {
     let temp = TempDir::new().expect("tempdir");
     fs::create_dir(temp.path().join("memory")).expect("memory dir");
     fs::write(
@@ -208,9 +208,14 @@ fn session_start_surfaces_titles_without_descriptions() {
     )
     .expect("write index");
     let context = session_context(temp.path());
-    assert!(context.lines().any(|line| line == "- foo"));
-    assert!(!context.contains("bar baz"));
-    assert!(!context.contains("foo.md)"));
+    assert!(
+        context.contains("- [foo](foo.md) — bar baz"),
+        "context={context}"
+    );
+    assert!(
+        context.contains("/record-memory-usage"),
+        "missing usage.jsonl should nudge record-memory-usage: context={context}"
+    );
 }
 
 #[test]
@@ -233,6 +238,10 @@ fn session_start_ranks_used_memories_stably() {
     let alpha = context.find("[Alpha]").expect("Alpha entry");
     let bravo = context.find("[Bravo]").expect("Bravo entry");
     assert!(charlie < alpha && alpha < bravo, "context={context}");
+    assert!(
+        !context.contains("/record-memory-usage"),
+        "a freshly written usage.jsonl is not stale: context={context}"
+    );
 }
 
 #[test]
@@ -279,7 +288,7 @@ fn session_start_discovers_git_root_from_nested_directory() {
         .unwrap()
         .to_owned();
     assert!(
-        context.lines().any(|line| line == "- Root"),
+        context.contains("- [Root](root.md) — desc"),
         "context={context}"
     );
 }
