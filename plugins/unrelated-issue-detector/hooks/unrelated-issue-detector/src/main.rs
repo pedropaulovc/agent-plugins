@@ -358,6 +358,24 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn windows_hook_command_uses_explicit_powershell_launcher() {
+        let hooks_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../hooks.json");
+        let hooks: Value =
+            serde_json::from_str(&fs::read_to_string(hooks_path).expect("read hooks.json"))
+                .expect("parse hooks.json");
+
+        let command = hooks["hooks"]["Stop"][0]["hooks"][0]["commandWindows"]
+            .as_str()
+            .expect("Stop commandWindows");
+
+        assert_eq!(
+            command,
+            r#"powershell.exe -NoLogo -NoProfile -NonInteractive -Command "if ([Environment]::GetEnvironmentVariable('PLUGIN_ROOT')) { & (Join-Path ([Environment]::GetEnvironmentVariable('PLUGIN_ROOT')) 'hooks\bin\unrelated-issue-detector.exe') } else { & (Join-Path ([Environment]::GetEnvironmentVariable('CLAUDE_PLUGIN_ROOT')) 'hooks\bin\unrelated-issue-detector.exe') }""#
+        );
+    }
 
     // -- Codex rollout transcript format ------------------------------------
 

@@ -1,6 +1,6 @@
 {
   "name": "unrelated-issue-detector",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Stop hook that detects when Claude dismisses issues as unrelated or pre-existing and asks for evidence on each dismissal",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
