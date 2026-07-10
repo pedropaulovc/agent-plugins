@@ -80,7 +80,7 @@ All paths below are relative to this `SKILL.md` (the skill directory). They are 
 | Folder            | What's in it                                                              | When to read                                                  |
 | ----------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------- |
 | `./types/`        | Per-interface folders (e.g. `IModelDoc2/`) with one `.md` per method/prop | Looking up a method signature, parameters, or return type     |
-| `./enums/`        | Per-enum folders with `_overview.md` and one `.md` per value             | Resolving `sw*_e` values to pass as `int` parameters          |
+| `./enums/`        | One `.md` file per enum, each listing every member and its `int` value    | Resolving `sw*_e` values to pass as `int` parameters          |
 | `./docs/`         | Programming Guide topics                                                  | Conceptual questions, patterns, end-to-end workflows          |
 | `./examples/`     | Proven, runnable code snippets                                            | Need a working template to adapt                              |
 | `./learnings/`    | Postmortems on real failures (symptom -> root cause -> fix)               | **First stop when something breaks unexpectedly**             |
@@ -116,11 +116,10 @@ grep "^\*\*Signature\*\*:" ./types/IModelDoc2/*.md
 grep -r "category: Application Interfaces" ./types/
 grep -r "kind: method"                       ./types/
 
-# Resolve an enum value
+# Resolve an enum value — one self-contained file per enum, listing every member and its int value
 ls ./enums/ | grep -i "endconditions"
-cat ./enums/swEndConditions_e/_overview.md
-grep -r "swEndCondBlind" ./enums/
-cat ./enums/swEndConditions_e/swEndCondBlind.md
+cat ./enums/swEndConditions_e.md    # whole enum: all members + values in one table
+grep -rl "swEndCondBlind" ./enums/  # find which enum file a member lives in
 
 # See where an enum is actually used
 grep -r "swEndConditions_e" ./examples/
