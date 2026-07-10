@@ -12,7 +12,7 @@ The SolidWorks COM API is large, inconsistently named, weakly typed, and poorly 
 
 ## Before anything: anchor to this skill directory
 
-Every `ls`/`grep`/`cat` recipe below uses paths relative to this skill's own directory (the folder containing this `SKILL.md`). Those paths only resolve if your shell's working directory **is** that folder — and it usually isn't by default.
+Every `ls`/`rg`/`cat` recipe below uses paths relative to this skill's own directory (the folder containing this `SKILL.md`). Those paths only resolve if your shell's working directory **is** that folder — and it usually isn't by default.
 
 `CLAUDE_PLUGIN_ROOT` does **not** help here: Claude Code exports it only to hook/MCP/LSP subprocesses, never to the shell you run tool calls in. So resolve the directory yourself, from the absolute path of this `SKILL.md` that you were given when the skill loaded, and `cd` into it before running any recipe:
 
@@ -93,36 +93,38 @@ If `./types/` or `./enums/` ever looks empty mid-session, jump back to **First-t
 
 > **The `Glob` and `Grep` tools do not work on this bundle. Do not use them.** They silently return "No files found" / "No matches found" even though the files exist — regardless of the path you pass them.
 >
-> These docs live in the plugin cache (`~/.claude/plugins/cache/...`), **outside the project workspace**. `Glob` and `Grep` only search registered *working roots* (the project directory plus any `--add-dir` paths), so they cannot reach the bundle. This is structural — not a `.gitignore` issue, and no plugin setting can change it. (The `cd` from the anchor section above does **not** fix it either: the working-root gate is independent of the shell's cwd.)
+> These docs live in the plugin cache (`~/.claude/plugins/cache/...`), **outside the project workspace**. `Glob` and `Grep` only search registered *working roots* (the project directory plus any `--add-dir` paths), so they cannot reach the bundle. This is structural — not a `.gitignore` issue, and no plugin setting can change it. (The `cd` from the anchor section above does **not** fix it either: the working-root gate is independent of the shell's cwd.) This restriction is specific to the **Grep tool**; the `rg` **CLI** run inside the **Bash tool** has no such gate and is what the recipes below use.
 >
 > What works on the bundle with zero configuration:
-> - **Search / discover files → the `Bash` tool** (`grep`, `ls`, `find`). The shell is not restricted to working roots — every recipe below uses it.
+> - **Search / discover files → the `Bash` tool.** Prefer `rg` (ripgrep) over `grep` — it's faster and its output integrates better. The shell is not restricted to working roots. `ls` / `find` work too.
 > - **Read a file's content → the `Read` tool** on the file's absolute path (preferred; `cat` in `Bash` also works).
 
-The doc layout is grep-optimised. Drive it with `Bash` grep instead of reading whole folders.
+**Always pass `rg --no-ignore` on this bundle.** The doc folders (`types/`, `enums/`, `docs/`, `examples/`, `index/`) are listed in the skill's `.gitignore`, and ripgrep honours `.gitignore` whenever it runs inside a git repository. In the plugin cache (not a git repo) plain `rg` happens to work, but if the bundle ever sits under a git checkout, plain `rg` silently skips **every** doc folder and returns nothing. `--no-ignore` makes the recipes correct in both places; it's harmless when there's nothing to un-ignore. (`grep` has no such gotcha, so it stays a valid fallback if `rg` isn't installed.)
+
+The doc layout is line-oriented — drive it with `rg` instead of reading whole folders.
 
 ```bash
 # Find a method on a specific interface
-grep -rl "CreateArc" ./types/IModelDoc2/
-cat  ./types/IModelDoc2/CreateArc2.md   # or: Read tool on the absolute path
+rg --no-ignore -l "CreateArc" ./types/IModelDoc2/
+cat ./types/IModelDoc2/CreateArc2.md    # or: Read tool on the absolute path
 
 # List all members of an interface (excluding the overview file)
-ls ./types/IModelDoc2/*.md | grep -v "_overview"
+ls ./types/IModelDoc2/*.md | rg -v "_overview"
 
 # Pull every method signature
-grep "^\*\*Signature\*\*:" ./types/IModelDoc2/*.md
+rg --no-ignore "^\*\*Signature\*\*:" ./types/IModelDoc2/
 
 # Search by frontmatter metadata
-grep -r "category: Application Interfaces" ./types/
-grep -r "kind: method"                       ./types/
+rg --no-ignore "category: Application Interfaces" ./types/
+rg --no-ignore "kind: method"                     ./types/
 
 # Resolve an enum value — one self-contained file per enum, listing every member and its int value
-ls ./enums/ | grep -i "endconditions"
-cat ./enums/swEndConditions_e.md    # whole enum: all members + values in one table
-grep -rl "swEndCondBlind" ./enums/  # find which enum file a member lives in
+ls ./enums/ | rg -i "endconditions"
+cat ./enums/swEndConditions_e.md          # whole enum: all members + values in one table
+rg --no-ignore -l "swEndCondBlind" ./enums/  # find which enum file a member lives in
 
 # See where an enum is actually used
-grep -r "swEndConditions_e" ./examples/
+rg --no-ignore "swEndConditions_e" ./examples/
 
 # Browse by category, or check coverage stats
 cat ./index/by_category.md
@@ -131,7 +133,7 @@ cat ./index/statistics.md
 
 ## Required workflow
 
-1. **Identify the interfaces and methods involved.** Use `./index/by_category.md` if unsure where to start, then `grep` inside `./types/`.
+1. **Identify the interfaces and methods involved.** Use `./index/by_category.md` if unsure where to start, then `rg --no-ignore` inside `./types/`.
 2. **Read the per-method `.md` file.** Confirm parameter names, types, return type, and whether `null`/`false` indicates failure.
 3. **Check `./examples/` for a similar pattern** before writing from scratch.
 4. **Write the code** following the patterns in the next section.
