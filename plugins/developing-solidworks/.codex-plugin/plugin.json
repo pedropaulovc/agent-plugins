@@ -1,6 +1,6 @@
 {
   "name": "developing-solidworks",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "C# + SolidWorks API skill: documentation-first workflow, code-quality patterns, learnings, and a helper script to locate the SolidWorks Interop redistributable assemblies.",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
