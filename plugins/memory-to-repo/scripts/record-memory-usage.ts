@@ -34,12 +34,22 @@ function slugify(path: string): string {
   return path.replace(/[/\\.:]/g, "-");
 }
 
+// The command may itself be run FROM a worktree, in which case projectRoot is
+// the worktree checkout ("<mainRoot>/.claude/worktrees/<name>"), not the main
+// project root. Strip that suffix so session-dir discovery keys on the MAIN
+// project slug — otherwise we'd only ever find the current worktree's own
+// session dir and miss the main checkout plus every sibling worktree.
+function mainProjectRoot(projectRoot: string): string {
+  const m = projectRoot.match(/^(.*?)[/\\]\.claude[/\\]worktrees[/\\][^/\\]+[/\\]?$/);
+  return m ? m[1] : projectRoot;
+}
+
 // Session transcripts for this project live under a slug directory; sessions
 // run in a worktree of this project get their own slug directory named
 // "<mainSlug>--claude-worktrees-<name>" (Claude Code's EnterWorktree
 // convention: worktrees live at "<projectRoot>/.claude/worktrees/<name>").
 function findSessionDirs(claudeProjectsDir: string, projectRoot: string): string[] {
-  const mainSlug = slugify(projectRoot);
+  const mainSlug = slugify(mainProjectRoot(projectRoot));
   const worktreePrefix = `${mainSlug}--claude-worktrees-`;
   return readdirSync(claudeProjectsDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && (e.name === mainSlug || e.name.startsWith(worktreePrefix)))
