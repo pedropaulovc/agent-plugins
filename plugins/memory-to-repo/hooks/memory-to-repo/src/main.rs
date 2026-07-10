@@ -18,11 +18,15 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::SystemTime;
 
 const HARD_CAP: usize = 10_000;
 const SAFETY_MARGIN: usize = 1_500;
 const MIN_DESCRIBED: usize = 3;
 const DESCRIPTION_SHARE_PERCENT: usize = 30;
+const USAGE_STALE_SECS: u64 = 24 * 60 * 60;
+
+const STALE_USAGE_NOTE: &str = "\n\nThe usage ranking (memory/usage.jsonl) is missing or over a day old — run the /record-memory-usage command to refresh it so this index is ordered by which memories are actually being consulted.";
 
 const FORCE_CONTEXT: &str = "memory-to-repo: [force-memory] escape hatch honored; the marker was stripped from the request before the operation runs.";
 
@@ -180,17 +184,17 @@ fn session_start() -> Value {
     );
 
     if let Ok(contents) = fs::read_to_string(&memory_index) {
-        let entries = parse_memory_entries(&contents);
+        let mut entries = parse_memory_entries(&contents);
         let usage = fs::read_to_string(&usage_path).unwrap_or_default();
-        if !usage.is_empty() {
-            reminder.push_str(&ranked_memory_context(
-                &reminder,
-                &memory_display,
-                entries,
-                &usage,
-            ));
+        let header = if usage.is_empty() {
+            format!("\n\nMemory index from {memory_display} (read MEMORY.md for the full contents of each):\n\n")
         } else {
-            reminder.push_str(&title_memory_context(&reminder, &memory_display, &entries));
+            sort_by_usage(&mut entries, &usage);
+            format!("\n\nMemory index from {memory_display}, sorted by usage — most-consulted-first:\n\n")
+        };
+        reminder.push_str(&memory_context(&reminder, &memory_display, entries, &header));
+        if usage_is_stale(&usage_path) {
+            reminder.push_str(STALE_USAGE_NOTE);
         }
     }
 
@@ -262,12 +266,20 @@ fn usage_counts(contents: &str) -> HashMap<String, usize> {
     counts
 }
 
-fn ranked_memory_context(
-    reminder: &str,
-    memory_display: &str,
-    mut entries: Vec<MemoryEntry>,
-    usage: &str,
-) -> String {
+/// True when the usage log is missing or its last update was over a day ago —
+/// a cue for the agent to re-run `/record-memory-usage` so the ranking reflects
+/// recent sessions. A missing file counts as stale (usage was never recorded).
+fn usage_is_stale(path: &Path) -> bool {
+    let Ok(modified) = fs::metadata(path).and_then(|meta| meta.modified()) else {
+        return true;
+    };
+    match SystemTime::now().duration_since(modified) {
+        Ok(age) => age.as_secs() >= USAGE_STALE_SECS,
+        Err(_) => false,
+    }
+}
+
+fn sort_by_usage(entries: &mut [MemoryEntry], usage: &str) {
     let counts = usage_counts(usage);
     entries.sort_by(|a, b| {
         counts
@@ -277,11 +289,18 @@ fn ranked_memory_context(
             .cmp(&counts.get(&a.file).copied().unwrap_or(0))
             .then_with(|| a.original_index.cmp(&b.original_index))
     });
+}
 
-    let header = format!(
-        "\n\nMemory index from {memory_display}, sorted by usage — most-consulted-first:\n\n"
-    );
-    let total_budget = context_budget(reminder, &header);
+/// Render the index: the leading entries get their full `- [Title](file) — description`
+/// line, then remaining entries fall back to bare titles so the whole index still fits
+/// under the hook's character cap. Callers pass entries already in display order.
+fn memory_context(
+    reminder: &str,
+    memory_display: &str,
+    entries: Vec<MemoryEntry>,
+    header: &str,
+) -> String {
+    let total_budget = context_budget(reminder, header);
     let description_budget = total_budget * DESCRIPTION_SHARE_PERCENT / 100;
     let mut description_used = 0usize;
     let mut title_used = 0usize;
@@ -318,30 +337,6 @@ fn ranked_memory_context(
         if omitted == 0 && title_used.saturating_add(title_len) <= title_budget {
             lines.push(title);
             title_used += title_len;
-        } else {
-            omitted += 1;
-        }
-    }
-
-    append_omitted(&mut lines, omitted, memory_display);
-    format!("{header}{}", lines.join("\n"))
-}
-
-fn title_memory_context(reminder: &str, memory_display: &str, entries: &[MemoryEntry]) -> String {
-    let header = format!(
-        "\n\nMemory titles from {memory_display} (only titles shown; read MEMORY.md for full contents):\n\n"
-    );
-    let total_budget = context_budget(reminder, &header);
-    let mut used = 0usize;
-    let mut lines = Vec::new();
-    let mut omitted = 0usize;
-
-    for entry in entries {
-        let title = format!("- {}", entry.title);
-        let title_len = title.len() + 1;
-        if omitted == 0 && used.saturating_add(title_len) <= total_budget {
-            lines.push(title);
-            used += title_len;
         } else {
             omitted += 1;
         }
