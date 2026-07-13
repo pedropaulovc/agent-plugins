@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/pr-comments",
+  "version": "0.1.14",
+  "description": "Pull request comments skill for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/pr-comments.js"
+}

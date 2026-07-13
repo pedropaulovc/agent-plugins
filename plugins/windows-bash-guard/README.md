@@ -51,6 +51,8 @@ Other Windows+bash pitfalls:
 - **Inside JS/TS source files**, use forward-slash paths: `'C:/Users/pedro/file.txt'`. Node.js handles them natively on Windows.
 ````
 
-## Codex support
+## Codex and OpenCode support
 
 Windows only (both harnesses). **Codex:** rewriting requires `permissionDecision: "allow"` (which skips approval), so the hook only rewrites in `bypassPermissions`/`dontAsk` modes; it also ships a `commandWindows` override so Codex-on-Windows launches the binary directly.
+
+**OpenCode:** runs the Windows binary from `tool.execute.before`, mutates Bash arguments without bypassing permissions, and appends the rewrite explanation to the result.

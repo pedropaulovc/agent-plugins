@@ -1,6 +1,6 @@
 {
   "name": "playwright-cli-headed",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "PreToolUse hook that auto-injects --headed into `playwright-cli open` invocations in Bash/PowerShell commands and recommends a standard viewport size",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

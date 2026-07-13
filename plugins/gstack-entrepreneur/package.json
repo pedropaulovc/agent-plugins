@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/gstack-entrepreneur",
+  "version": "0.2.4",
+  "description": "Entrepreneurship strategy skills for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/gstack-entrepreneur.js"
+}

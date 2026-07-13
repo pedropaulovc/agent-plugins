@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/playwright-cli-headed",
+  "version": "0.2.4",
+  "description": "Headed Playwright CLI enforcement for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/playwright-cli-headed.js"
+}

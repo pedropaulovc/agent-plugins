@@ -4,6 +4,8 @@ Provides the `/m` skill: tears down in-flight agent state (task list, scheduled 
 
 Pass `--force` (`/m --force`) to discard everything — agent state, uncommitted, untracked, git-ignored files (`git clean -fdx .`), and stashes (`git stash clear`) — without asking.
 
-## Codex support
+## Codex and OpenCode support
 
 Works in both. Explicit-only (`/m` or `$m`). Under Codex the agent-state teardown primitives (task list, monitors, timers, subagents, PR subscriptions) don't exist, so that section is skipped — the git reset + dependency reinstall is the portable core.
+
+OpenCode exposes `/m` and follows the same portable fallback as Codex.

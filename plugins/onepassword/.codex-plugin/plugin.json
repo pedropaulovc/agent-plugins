@@ -1,6 +1,6 @@
 {
   "name": "onepassword",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Skill that establishes a 1Password CLI (op) session interactively via tmux when service-account auth fails",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

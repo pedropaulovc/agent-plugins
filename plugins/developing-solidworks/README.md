@@ -1,6 +1,6 @@
 # developing-solidworks
 
-A Claude Code skill for writing, modifying, and debugging C# code that talks to the SolidWorks API via COM interop.
+An agent skill for writing, modifying, and debugging C# code that talks to the SolidWorks API via COM interop.
 
 ## What it does
 
@@ -30,6 +30,8 @@ The doc tree (`types/`, `enums/`, `docs/`, `examples/`, `index/`) is excluded fr
 
 Extracted from [pedropaulovc/harmonic-analyzer](https://github.com/pedropaulovc/harmonic-analyzer)'s `cad/.claude/skills/developing-solidworks/`.
 
-## Codex support
+## Codex and OpenCode support
 
 Works in both. Under Codex, invoke the bundled `download-solidworks-docs` skill with `$download-solidworks-docs` (or run its PowerShell block directly) — the Claude `Skill()` tool call in the setup steps is Claude-Code-specific.
+
+Under OpenCode, use `/download-solidworks-docs`; the adapter registers both bundled skills and the command.

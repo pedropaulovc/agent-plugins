@@ -18,8 +18,8 @@ appear, you open `<path>` for the threads you will act on and drive the reply fl
 
 - PR ref (optional): a PR number, full URL, or branch name — the forms
   `gh pr view` accepts. (`owner/repo#123` is **not** accepted; pass the URL for a
-  PR in another repo.) In Claude Code this arrives as `$ARGUMENTS`; under **Codex**
-  there is no argument substitution, so take the ref from the user's prompt. If
+  PR in another repo.) In Claude Code this arrives as `$ARGUMENTS`; under **Codex
+  or OpenCode** take the ref from the user's prompt. If
   none is given, auto-detects the PR from the current branch. The script validates
   the ref up front and exits loudly on a bad one.
 
@@ -28,7 +28,7 @@ appear, you open `<path>` for the threads you will act on and drive the reply fl
 ### 1. Resolve the PR
 
 If the user gave no PR ref (i.e. `$ARGUMENTS` is empty under Claude Code, or the
-prompt named none under Codex), resolve the current branch's PR:
+prompt named none under Codex/OpenCode), resolve the current branch's PR:
 
 ```bash
 gh pr view --json number,url -q '"#\(.number) \(.url)"'
@@ -43,14 +43,23 @@ fork checkout), whereas the URL is unambiguous.
 The watch loop fetches once on startup, so any threads already open when you start
 arrive as `feedback …` lines in the first poll (silent if none are active).
 
-### 2. Launch the watch inside the Monitor tool
+### 2. Launch the watch
+
+**Under OpenCode:** call the `watch_pr` tool with `action: "start"` and the
+resolved PR URL/ref. The plugin owns the background process and sends each batch
+of changed event lines back into this session automatically. Do not launch the
+script through `bash`, do not poll it, and do not start a second watcher. Use
+`watch_pr` with `action: "status"` or `action: "stop"` to inspect or cancel it.
+After starting it, skip the rest of this step and continue with the event table.
+
+**Under Claude Code:** launch the watch inside the Monitor tool.
 
 Run `watch-pr.sh <PR>` **as the Monitor tool's `command`** with `persistent: true`
 (PR lifecycles can take hours — no timeout). Use the `watch-pr.sh` that sits **in
 this skill's own directory** — right next to this `SKILL.md`, whose absolute path
 you already know (it's where you loaded this file from) — and put that path
 directly in the command. Do NOT use Bash `run_in_background` + a separate Monitor,
-and do **not** locate the script with `find ~/.claude ~/.codex … | head -1`: that
+and do **not** locate the script with `find ~/.claude ~/.codex ~/.cache/opencode … | head -1`: that
 scans every cached install and can launch a stale copy from an older plugin
 version instead of the one next to this `SKILL.md`.
 
@@ -65,8 +74,7 @@ The loop diffs state each poll and emits **one line per change**, staying silent
 while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — you
 never stop it manually.
 
-**Under Codex (no `Monitor` tool):** Codex has no persistent Monitor primitive,
-so run the *same* `watch-pr.sh <PR>` as a **background terminal** instead
+**Under Codex (no `Monitor` tool):** run the *same* `watch-pr.sh <PR>` as a **background terminal**
 (`unified_exec` / the harness's background-shell mechanism — not a blocking
 foreground call). The script's stdout is identical; poll it with `/ps` (or read
 the background terminal's captured output) and act on each new line exactly as in

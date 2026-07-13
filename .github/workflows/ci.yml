@@ -44,6 +44,42 @@ jobs:
       - name: Compile-check embedded jq programs in PR-comment formatters
         run: bash tools/check-jq-programs.sh
 
+  test-opencode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install OpenCode adapter dependencies
+        run: npm ci --ignore-scripts
+      - name: Test OpenCode plugin adapters
+        run: npm run test:opencode
+
+      - name: Check OpenCode package versions match plugin manifests
+        run: |
+          fail=0
+          for package in plugins/*/package.json; do
+            plugin_dir=${package%/package.json}
+            # Superpowers owns its upstream package version independently.
+            [[ $plugin_dir == plugins/superpowers ]] && continue
+            package_version=$(jq -r .version "$package")
+            claude_version=$(jq -r .version "$plugin_dir/.claude-plugin/plugin.json")
+            if [[ $package_version != "$claude_version" ]]; then
+              echo "::error file=$package::package version $package_version does not match plugin version $claude_version"
+              fail=1
+            fi
+            codex_manifest="$plugin_dir/.codex-plugin/plugin.json"
+            if [[ -f $codex_manifest ]]; then
+              codex_version=$(jq -r .version "$codex_manifest")
+              if [[ $codex_version != "$claude_version" ]]; then
+                echo "::error file=$codex_manifest::Codex version $codex_version does not match Claude version $claude_version"
+                fail=1
+              fi
+            fi
+          done
+          exit $fail
+
   test-rust-hooks:
     runs-on: ubuntu-latest
     steps:

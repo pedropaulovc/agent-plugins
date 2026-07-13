@@ -4,6 +4,8 @@ Provides the `/comments` skill: fetches active (unresolved) PR comments from Git
 
 Pass `--include-resolved` to also include resolved threads.
 
-## Codex support
+## Codex and OpenCode support
 
 Works in both. The reply signature is harness-aware (`Claude Code` vs `Codex`). Under Codex there is no `$ARGUMENTS` substitution, so pass the PR ref from your prompt; the skill is explicit-only.
+
+OpenCode exposes `/comments`; its adapter places command arguments in the prompt before loading the skill.

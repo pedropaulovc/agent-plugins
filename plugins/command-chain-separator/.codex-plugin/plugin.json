@@ -1,6 +1,6 @@
 {
   "name": "command-chain-separator",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "PreToolUse hook that injects a visible output separator between Bash commands joined by `&&` or `;` so per-command output is easy to read",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

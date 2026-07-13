@@ -1,7 +1,7 @@
 {
   "name": "mediocrity-detector",
-  "version": "0.4.3",
-  "description": "Stop hook that detects hedging language suggesting shortcuts or deferred work and prompts Claude to surface assumptions",
+  "version": "0.4.4",
+  "description": "Stop hook that detects hedging language suggesting shortcuts or deferred work and prompts the agent to surface assumptions",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

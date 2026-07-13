@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/memory-to-repo",
+  "version": "0.11.3",
+  "description": "Repository-backed agent memory for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/memory-to-repo.js"
+}

@@ -16,6 +16,6 @@ Provides the `alt-text` skill: writes alt text for images about to be posted on 
 
 **Does not trigger on:** requests to understand an image for the user themselves ("what's in this picture?") or requests for visible captions rather than alt text.
 
-## Codex support
+## Codex and OpenCode support
 
-Works in both Claude Code and Codex — a plain instruction skill with no harness-specific behavior.
+Works in Claude Code, Codex, and OpenCode — a plain instruction skill with no harness-specific behavior. OpenCode also exposes `/alt-text`.

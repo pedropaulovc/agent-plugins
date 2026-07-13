@@ -1,6 +1,6 @@
 ---
 name: record-memory-usage
-description: Scan past sessions (including worktrees) for memory files actually Read, and refresh memory/usage.jsonl so SessionStart can rank memories by usage.
+description: Scan past Claude Code and OpenCode sessions (including worktrees) for memory files actually read, and refresh memory/usage.jsonl so SessionStart can rank memories by usage.
 ---
 
 # Record memory usage
@@ -18,21 +18,20 @@ node "<plugin-root>/scripts/record-memory-usage.ts" 2>&1
 
 Report the summary line the script prints.
 
-## Heads up: Claude Code sessions only
+## Supported session stores
 
-The scanner currently reads **Claude Code** session logs from
-`~/.claude/projects/...`. Codex sessions live in `~/.codex/sessions/`, which the
-scanner does not read — so when run under Codex it will find no Codex usage data.
-This skill is therefore primarily useful when run in Claude Code (or against a
-project that has Claude Code session history).
+The scanner reads Claude Code JSONL transcripts from `~/.claude/projects/...`
+and OpenCode's SQLite session database (normally
+`~/.local/share/opencode/opencode.db`). Codex sessions in `~/.codex/sessions/`
+are not yet scanned.
 
 ## What this does
 
-Scans every past Claude Code session for this project — the main checkout
-and any sessions run in a `.claude/worktrees/*` worktree of it — for `Read`
-tool calls whose target file resolved to `memory/<name>.md` (excluding the
-`MEMORY.md` index itself). For each distinct `(sessionId, memoryFileName)`
-pair found, it writes one JSON line to `memory/usage.jsonl`:
+Scans past Claude Code and OpenCode sessions for this project, across every
+checkout reported by `git worktree list`, for read-tool calls whose target file
+resolved to `memory/<name>.md` (excluding the `MEMORY.md` index itself). For
+each distinct `(sessionId, memoryFileName)` pair found, it writes one JSON line
+to `memory/usage.jsonl`:
 
 ```json
 {"sessionId": "025df9d0-...", "memoryFileName": "memory/gstack-entrepreneur-vendoring.md"}

@@ -28,12 +28,14 @@ If the agent is genuinely restricted to the fetch tool with no MCP alternative, 
 
 ## Requirements
 
-The Firecrawl and Browserbase MCP servers must be configured in your Claude Code MCP settings. Without them this hook will block fetches without providing a working alternative.
+The Firecrawl and Browserbase MCP servers must be configured in your Claude Code or OpenCode MCP settings. Without them this hook will block fetches without providing a working alternative.
 
 ## License
 
 MIT
 
-## Codex support
+## Codex and OpenCode support
 
 **Claude Code only.** Deliberately not shipped to Codex: Codex has no `WebFetch` tool to intercept, and its `web_search` is not hook-interceptable. To force MCP tools under Codex, set `web_search = "disabled"` in `~/.codex/config.toml` instead.
+
+OpenCode is supported through `tool.execute.before`: its `webfetch` tool is denied with the same routing guidance, exclusions, and `[force-fetch]` escape hatch.
