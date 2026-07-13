@@ -45,8 +45,6 @@ const stripMarker = (value) => {
 
 export const MemoryToRepoPlugin = async ({ directory, worktree }) => {
   const projectRoot = worktree || directory;
-  const sessionOutput = runHook("session-start", {}, projectRoot);
-  const sessionContext = sessionOutput?.hookSpecificOutput?.additionalContext;
 
   return {
     config: async (config) => {
@@ -65,6 +63,8 @@ export const MemoryToRepoPlugin = async ({ directory, worktree }) => {
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
+      const sessionOutput = runHook("session-start", {}, projectRoot);
+      const sessionContext = sessionOutput?.hookSpecificOutput?.additionalContext;
       if (sessionContext && !output.system.includes(sessionContext)) output.system.push(sessionContext);
     },
 

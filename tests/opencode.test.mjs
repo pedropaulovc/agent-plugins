@@ -153,6 +153,12 @@ test("memory-to-repo session context uses the OpenCode worktree root", async () 
     assert.match(output.system[0], new RegExp(`${tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/memory`));
     assert.match(output.system[0], /Topic/);
     assert.doesNotMatch(output.system[0], /src\/nested\/memory/);
+
+    writeFileSync(path.join(tempDir, "memory", "MEMORY.md"), "- [Updated](updated.md) - fresh memory\n");
+    const refreshedOutput = { system: [] };
+    await hooks["experimental.chat.system.transform"]({}, refreshedOutput);
+    assert.match(refreshedOutput.system[0], /Updated/);
+    assert.doesNotMatch(refreshedOutput.system[0], /Topic/);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
