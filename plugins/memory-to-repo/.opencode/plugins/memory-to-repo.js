@@ -43,8 +43,9 @@ const stripMarker = (value) => {
   return value;
 };
 
-export const MemoryToRepoPlugin = async ({ directory }) => {
-  const sessionOutput = runHook("session-start", {}, directory);
+export const MemoryToRepoPlugin = async ({ directory, worktree }) => {
+  const projectRoot = worktree || directory;
+  const sessionOutput = runHook("session-start", {}, projectRoot);
   const sessionContext = sessionOutput?.hookSpecificOutput?.additionalContext;
 
   return {

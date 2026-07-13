@@ -1,11 +1,13 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const defaultWatchScript = path.join(pluginRoot, "skills/watch-pr/watch-pr.sh");
 const BATCH_DELAY_MS = 200;
+const execFileAsync = promisify(execFile);
 
 export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
   const watchers = new Map();
@@ -13,6 +15,23 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
   const watchScript = typeof options.watchScript === "string"
     ? path.resolve(options.watchScript)
     : defaultWatchScript;
+  const ghBinary = typeof options.ghBinary === "string" ? options.ghBinary : "gh";
+
+  const resolveRef = async (cwd, ref) => {
+    if (ref?.trim()) return ref.trim();
+    try {
+      const { stdout } = await execFileAsync(
+        ghBinary,
+        ["pr", "view", "--json", "url", "--jq", ".url"],
+        { cwd, encoding: "utf8" },
+      );
+      const url = stdout.trim();
+      if (url) return url;
+    } catch {
+      // Replace CLI details with a stable tool-facing error below.
+    }
+    throw new Error("watch-pr could not resolve a pull request for the current branch; pass a PR number, URL, or branch explicitly.");
+  };
 
   const notify = (sessionID, sessionDirectory, lines) => {
     const text = [
@@ -162,7 +181,9 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
               ? `watch-pr is monitoring ${active.ref} (pid ${active.child.pid}).`
               : "No watch-pr monitor is active.";
           }
-          const active = startWatcher(sessionID, context.directory || directory, ref?.trim());
+          const cwd = context.directory || directory;
+          const resolvedRef = await resolveRef(cwd, ref);
+          const active = startWatcher(sessionID, cwd, resolvedRef);
           return `Started event-driven watch-pr monitoring for ${active.ref} (pid ${active.child.pid}). This session will be notified automatically; do not poll it.`;
         },
       },
