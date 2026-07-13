@@ -11,6 +11,14 @@ const binary = path.join(
   process.platform === "win32" ? "mediocrity-detector.exe" : "mediocrity-detector",
 );
 
+const addedPatchLines = (patch) => typeof patch === "string"
+  ? patch
+      .split("\n")
+      .filter((line) => line.startsWith("+") && !line.startsWith("+++"))
+      .map((line) => line.slice(1))
+      .join("\n")
+  : undefined;
+
 const toTranscript = (messages) => messages.map(({ info, parts }) => {
   if (info.role === "user") {
     return JSON.stringify({
@@ -23,10 +31,11 @@ const toTranscript = (messages) => messages.map(({ info, parts }) => {
     if (part.type === "text") content.push({ type: "text", text: part.text });
     if (part.type === "tool") {
       const toolInput = part.state?.input ?? {};
+      const patchContent = addedPatchLines(toolInput.patchText ?? toolInput.patch);
       content.push({
         type: "tool_use",
         input: {
-          content: toolInput.content,
+          content: [toolInput.content, patchContent].filter(Boolean).join("\n") || undefined,
           new_string: toolInput.new_string ?? toolInput.newString,
         },
       });

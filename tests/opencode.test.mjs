@@ -97,7 +97,14 @@ test("mediocrity detector continues one OpenCode turn", async () => {
         data: prompts.length === 0
           ? [
               { info: { role: "user" }, parts: [{ type: "text", text: "Finish the task" }] },
-              { info: { role: "assistant", id: "assistant-1" }, parts: [{ type: "text", text: "This placeholder is good enough for now." }] },
+              {
+                info: { role: "assistant", id: "assistant-1" },
+                parts: [{
+                  type: "tool",
+                  tool: "apply_patch",
+                  state: { input: { patchText: "*** Begin Patch\n+const value = 'placeholder';\n-oldValue();\n*** End Patch" } },
+                }],
+              },
             ]
           : [
               { info: { role: "user" }, parts: [{ type: "text", text: "Report the assumption" }] },
@@ -111,6 +118,7 @@ test("mediocrity detector continues one OpenCode turn", async () => {
   await hooks.event(idleEvent("session"));
   assert.equal(prompts.length, 1);
   assert.match(prompts[0].body.parts[0].text, /Shortcut\/assumption language detected/);
+  assert.match(prompts[0].body.parts[0].text, /placeholder/);
   await hooks.event(idleEvent("session"));
   assert.equal(prompts.length, 1, "the corrective turn must not trigger a stop loop");
   await hooks.event(idleEvent("session"));
@@ -159,6 +167,66 @@ test("memory-to-repo session context uses the OpenCode worktree root", async () 
     await hooks["experimental.chat.system.transform"]({}, refreshedOutput);
     assert.match(refreshedOutput.system[0], /Updated/);
     assert.doesNotMatch(refreshedOutput.system[0], /Topic/);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("memory usage scanner attributes linked-worktree OpenCode reads to that worktree", () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "memory-usage-worktree-opencode-"));
+  const projectRoot = path.join(tempDir, "project");
+  const linkedRoot = path.join(tempDir, "linked");
+  const databasePath = path.join(tempDir, "opencode.db");
+  mkdirSync(path.join(projectRoot, "memory"), { recursive: true });
+  writeFileSync(path.join(projectRoot, "memory", "topic.md"), "# Topic\n");
+  execFileSync("git", ["init", "-b", "main"], { cwd: projectRoot });
+  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: projectRoot });
+  execFileSync("git", ["config", "user.name", "OpenCode Test"], { cwd: projectRoot });
+  execFileSync("git", ["add", "."], { cwd: projectRoot });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: projectRoot });
+  execFileSync("git", ["worktree", "add", "-b", "linked", linkedRoot], { cwd: projectRoot });
+  mkdirSync(path.join(linkedRoot, "src"), { recursive: true });
+
+  const database = new DatabaseSync(databasePath);
+  database.exec(`
+    CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
+    CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL);
+    CREATE TABLE part (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, data TEXT NOT NULL);
+  `);
+  database.prepare("INSERT INTO project (id, worktree) VALUES (?, ?)").run("project", projectRoot);
+  database.prepare("INSERT INTO session (id, project_id, directory) VALUES (?, ?, ?)")
+    .run("ses_linked", "project", path.join(linkedRoot, "src"));
+  database.prepare("INSERT INTO part (id, session_id, data) VALUES (?, ?, ?)").run(
+    "part-linked",
+    "ses_linked",
+    JSON.stringify({
+      type: "tool",
+      tool: "read",
+      state: { input: { filePath: path.join(linkedRoot, "memory", "topic.md") } },
+    }),
+  );
+  database.close();
+
+  try {
+    const output = execFileSync(
+      process.execPath,
+      [path.join(directory, "plugins/memory-to-repo/scripts/record-memory-usage.ts")],
+      {
+        cwd: projectRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: tempDir,
+          CLAUDE_PROJECT_DIR: projectRoot,
+          OPENCODE_DB_PATH: databasePath,
+        },
+      },
+    );
+    assert.match(output, /1 OpenCode session/);
+    assert.deepEqual(
+      readFileSync(path.join(projectRoot, "memory", "usage.jsonl"), "utf8").trim().split("\n").map(JSON.parse),
+      [{ sessionId: "ses_linked", memoryFileName: "memory/topic.md" }],
+    );
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

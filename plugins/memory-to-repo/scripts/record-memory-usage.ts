@@ -222,8 +222,8 @@ function collectOpenCodeUsage(projectRoot: string): OpenCodeUsage {
       const recordedRoot = session.worktree && session.worktree !== "/"
         ? resolve(session.worktree)
         : directory;
-      const worktree = matchingWorktree(worktrees, recordedRoot)
-        ?? matchingWorktree(worktrees, directory);
+      const worktree = matchingWorktree(worktrees, directory)
+        ?? matchingWorktree(worktrees, recordedRoot);
       if (worktree) relevant.set(session.id, { directory, worktree });
     }
     if (!relevant.size) {
