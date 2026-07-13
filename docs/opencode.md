@@ -3,6 +3,10 @@
 Every plugin in this repository has an OpenCode entry point. The repository root is
 also an aggregate package that exports all 16 plugins.
 
+OpenCode 1.17.18 or newer is required. The adapters register bundled skill directories
+through the live `skills.paths` config and rely on in-place `tool.execute.before`
+argument mutation behavior from that runtime line.
+
 ## Install all plugins
 
 Add the Git-backed package to the `plugin` array in your global or project

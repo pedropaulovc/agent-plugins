@@ -39,10 +39,12 @@ test("all plugins load and register expected config", async () => {
 test("command-chain-separator rewrites OpenCode bash arguments", async () => {
   const hooks = await plugins.CommandChainSeparatorPlugin({ directory });
   const output = { args: { command: "printf one && printf two" } };
+  const originalArgs = output.args;
   await hooks["tool.execute.before"](
     { tool: "bash", sessionID: "session", callID: "call" },
     output,
   );
+  assert.equal(output.args, originalArgs, "OpenCode executes the original args object");
   assert.match(output.args.command, /printf '\\n\\n'/);
   const after = { title: "", output: "one\n\ntwo", metadata: {} };
   await hooks["tool.execute.after"](
@@ -76,10 +78,12 @@ test("no-fetch blocks ordinary URLs and strips its escape marker", async () => {
 test("playwright adapter adds headed mode and returns its viewport notice", async () => {
   const hooks = await plugins.PlaywrightCliHeadedPlugin({ directory });
   const output = { args: { command: "playwright-cli open https://example.com" } };
+  const originalArgs = output.args;
   await hooks["tool.execute.before"](
     { tool: "bash", sessionID: "session", callID: "playwright" },
     output,
   );
+  assert.equal(output.args, originalArgs, "OpenCode executes the original args object");
   assert.match(output.args.command, /playwright-cli open --headed/);
   const after = { title: "", output: "opened", metadata: {} };
   await hooks["tool.execute.after"](

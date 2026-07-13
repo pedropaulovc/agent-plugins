@@ -24,7 +24,10 @@ export const CommandChainSeparatorPlugin = async () => {
       if (result.status !== 0 || !result.stdout.trim()) return;
       try {
         const hook = JSON.parse(result.stdout).hookSpecificOutput;
-        if (hook?.updatedInput) output.args = hook.updatedInput;
+        if (hook?.updatedInput) {
+          for (const key of Object.keys(output.args)) delete output.args[key];
+          Object.assign(output.args, hook.updatedInput);
+        }
         if (hook?.additionalContext) notices.set(input.callID, hook.additionalContext);
       } catch {
         // Malformed hook output must not prevent the original tool call.
