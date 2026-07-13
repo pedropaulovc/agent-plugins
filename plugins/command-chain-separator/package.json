@@ -3,5 +3,16 @@
   "version": "0.4.6",
   "description": "Readable command-chain output for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/command-chain-separator.js"
+  "main": ".opencode/plugins/command-chain-separator.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/command-chain-separator"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

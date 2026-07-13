@@ -3,5 +3,16 @@
   "version": "1.0.2",
   "description": "Accessibility-focused alt text skill for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/alt-text.js"
+  "main": ".opencode/plugins/alt-text.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/alt-text"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

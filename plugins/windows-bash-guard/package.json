@@ -3,5 +3,16 @@
   "version": "0.1.5",
   "description": "Windows Bash path protection for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/windows-bash-guard.js"
+  "main": ".opencode/plugins/windows-bash-guard.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/windows-bash-guard"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

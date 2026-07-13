@@ -1,9 +1,20 @@
 {
-  "name": "superpowers",
+  "name": "@pedropaulovc/superpowers",
   "version": "6.1.1",
   "description": "Superpowers skills and runtime bootstrap for coding agents",
   "type": "module",
   "main": ".opencode/plugins/superpowers.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/superpowers"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "keywords": [
     "pi-package",
     "skills",

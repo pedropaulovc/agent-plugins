@@ -3,5 +3,16 @@
   "version": "0.1.14",
   "description": "Pull request comments skill for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/pr-comments.js"
+  "main": ".opencode/plugins/pr-comments.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/pr-comments"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

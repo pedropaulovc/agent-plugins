@@ -3,5 +3,16 @@
   "version": "0.8.7",
   "description": "SolidWorks API development skills for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/developing-solidworks.js"
+  "main": ".opencode/plugins/developing-solidworks.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/developing-solidworks"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

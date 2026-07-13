@@ -158,14 +158,12 @@ Superpowers is available in Kimi Code's plugin marketplace.
 
 ### OpenCode
 
-OpenCode uses its own plugin install; install Superpowers separately even if you
-already use it in another harness.
+OpenCode uses its own plugin install. Install Superpowers separately even if you
+already use it in another harness:
 
-- Tell OpenCode:
-
-  ```
-  Fetch and follow instructions from https://raw.githubusercontent.com/obra/superpowers/refs/heads/main/.opencode/INSTALL.md
-  ```
+```bash
+opencode plugin --global @pedropaulovc/superpowers
+```
 
 - Detailed docs: [docs/README.opencode.md](docs/README.opencode.md)
 

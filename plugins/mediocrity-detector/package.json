@@ -3,5 +3,16 @@
   "version": "0.4.5",
   "description": "Shortcut and hedging detector for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/mediocrity-detector.js"
+  "main": ".opencode/plugins/mediocrity-detector.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/mediocrity-detector"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

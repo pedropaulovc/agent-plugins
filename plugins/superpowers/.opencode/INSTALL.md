@@ -6,11 +6,17 @@
 
 ## Installation
 
-Add superpowers to the `plugin` array in your `opencode.json` (global or project-level):
+Install the package globally:
+
+```bash
+opencode plugin --global @pedropaulovc/superpowers
+```
+
+Or add it to the `plugin` array in your `opencode.json`:
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git"]
+  "plugin": ["@pedropaulovc/superpowers"]
 }
 ```
 

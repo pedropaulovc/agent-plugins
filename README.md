@@ -23,8 +23,14 @@ web access is a hosted `web_search` tool that hooks can't intercept (disable it 
 `web_search = "disabled"` in `~/.codex/config.toml` instead). Slash-commands become
 skills under Codex (invoke with `$<skill>` or `/skills`).
 
-**OpenCode:** install the whole collection by adding its Git package to the `plugin`
-array in `opencode.json`:
+**OpenCode:** install one plugin from npm:
+
+```bash
+opencode plugin --global @pedropaulovc/watch-pr
+```
+
+Replace `watch-pr` with any plugin name from the table below. To install the whole
+collection, add its Git package to the `plugin` array in `opencode.json`:
 
 ```json
 {
@@ -35,9 +41,9 @@ array in `opencode.json`:
 }
 ```
 
-Restart OpenCode after changing the config. The package registers all bundled skills,
-commands, and lifecycle/tool hooks. See [the OpenCode guide](docs/opencode.md) for
-selective local installs, platform support, and the hook mapping.
+Restart OpenCode after installing a plugin or changing the config. See the
+[OpenCode guide](docs/opencode.md) for project-scoped installs, local development,
+platform support, and the hook mapping.
 
 ## Featured
 

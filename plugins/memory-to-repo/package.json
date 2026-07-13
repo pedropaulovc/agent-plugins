@@ -3,5 +3,16 @@
   "version": "0.11.6",
   "description": "Repository-backed agent memory for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/memory-to-repo.js"
+  "main": ".opencode/plugins/memory-to-repo.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/memory-to-repo"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

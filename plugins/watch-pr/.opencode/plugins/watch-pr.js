@@ -72,6 +72,22 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
     });
   };
 
+  const resolveBashPath = async (file) => {
+    if (process.platform !== "win32") return file;
+    const portable = file.replaceAll("\\", "/");
+    try {
+      const { stdout: locations } = await execFileAsync("where.exe", ["bash"], { encoding: "utf8" });
+      const bashLocation = locations.split(/\r?\n/, 1)[0].toLowerCase();
+      if (!bashLocation.includes("\\windows\\system32\\") && !bashLocation.includes("\\windowsapps\\")) {
+        return portable;
+      }
+      const { stdout } = await execFileAsync("wsl.exe", ["wslpath", "-a", "-u", portable], { encoding: "utf8" });
+      return stdout.trim() || portable;
+    } catch {
+      return portable;
+    }
+  };
+
   const stopWatcher = (sessionID) => {
     const watcher = watchers.get(sessionID);
     if (!watcher) return false;
@@ -84,9 +100,10 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
     return true;
   };
 
-  const startWatcher = (sessionID, cwd, ref) => {
+  const startWatcher = async (sessionID, cwd, ref) => {
     stopWatcher(sessionID);
-    const args = ref ? [watchScript, ref] : [watchScript];
+    const bashWatchScript = await resolveBashPath(watchScript);
+    const args = ref ? [bashWatchScript, ref] : [bashWatchScript];
     const child = spawn("bash", args, {
       cwd,
       env: { ...process.env, OPENCODE: "1" },
@@ -187,7 +204,7 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
           }
           const cwd = context.directory || directory;
           const resolvedRef = await resolveRef(cwd, ref);
-          const active = startWatcher(sessionID, cwd, resolvedRef);
+          const active = await startWatcher(sessionID, cwd, resolvedRef);
           return `Started event-driven watch-pr monitoring for ${active.ref} (pid ${active.child.pid}). This session will be notified automatically; do not poll it.`;
         },
       },

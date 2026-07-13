@@ -3,5 +3,16 @@
   "version": "0.1.3",
   "description": "GitHub issue authoring skill for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/gh-issue.js"
+  "main": ".opencode/plugins/gh-issue.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/gh-issue"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

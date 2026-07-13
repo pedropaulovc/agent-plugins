@@ -3,5 +3,16 @@
   "version": "0.4.4",
   "description": "Unrelated issue dismissal detector for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/unrelated-issue-detector.js"
+  "main": ".opencode/plugins/unrelated-issue-detector.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/unrelated-issue-detector"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

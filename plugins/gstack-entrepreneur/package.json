@@ -3,5 +3,16 @@
   "version": "0.2.4",
   "description": "Entrepreneurship strategy skills for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/gstack-entrepreneur.js"
+  "main": ".opencode/plugins/gstack-entrepreneur.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/gstack-entrepreneur"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

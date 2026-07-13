@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -10,6 +10,26 @@ import * as plugins from "../.opencode/plugins/agent-plugins.js";
 
 const directory = process.cwd();
 const idleEvent = (sessionID) => ({ event: { type: "session.idle", properties: { sessionID } } });
+
+test("every OpenCode plugin is an npm-ready scoped package", () => {
+  const pluginsDir = path.join(directory, "plugins");
+  const pluginNames = readdirSync(pluginsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+
+  assert.equal(pluginNames.length, 16);
+  for (const pluginName of pluginNames) {
+    const packageDir = path.join(pluginsDir, pluginName);
+    const manifest = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf8"));
+    assert.equal(manifest.name, `@pedropaulovc/${pluginName}`);
+    assert.equal(manifest.engines.opencode, ">=1.17.18");
+    assert.equal(manifest.repository.url, "git+https://github.com/pedropaulovc/agent-plugins.git");
+    assert.equal(manifest.repository.directory, `plugins/${pluginName}`);
+    assert.equal(manifest.publishConfig.access, "public");
+    assert.ok(existsSync(path.join(packageDir, manifest.main)), `${pluginName} main entry must exist`);
+  }
+});
 
 test("all plugins load and register expected config", async () => {
   assert.equal(Object.keys(plugins).length, 16);
@@ -162,7 +182,8 @@ test("memory-to-repo session context uses the OpenCode worktree root", async () 
     const output = { system: [] };
     await hooks["experimental.chat.system.transform"]({}, output);
     assert.equal(output.system.length, 1);
-    assert.match(output.system[0], new RegExp(`${tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/memory`));
+    const portableTempDir = tempDir.replaceAll(path.sep, "/");
+    assert.match(output.system[0], new RegExp(`${portableTempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/memory`));
     assert.match(output.system[0], /Topic/);
     assert.doesNotMatch(output.system[0], /src\/nested\/memory/);
 
@@ -258,15 +279,12 @@ test("unrelated issue detector continues one OpenCode turn", async () => {
 test("watch-pr wakes its OpenCode session with batched monitor events", async () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-opencode-"));
   const watchScript = path.join(tempDir, "watch-pr.sh");
-  const ghBinary = path.join(tempDir, "gh");
   writeFileSync(watchScript, [
     "#!/usr/bin/env bash",
     "printf 'ref %s\\n' \"$1\"",
     "printf 'check build: pending\\nfeedback T1 src/app.js:4 reviewer title\\n'",
     "exec sleep 10",
   ].join("\n"));
-  writeFileSync(ghBinary, "#!/usr/bin/env bash\nprintf '%s\\n' 'https://github.com/example/repo/pull/123'\n");
-  chmodSync(ghBinary, 0o755);
   const prompts = [];
   const client = {
     app: { log: async () => {} },
@@ -274,12 +292,12 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
   };
   const hooks = await plugins.WatchPrPlugin(
     { client, directory, worktree: directory },
-    { watchScript, ghBinary },
+    { watchScript },
   );
   const context = { sessionID: "watch-session", directory, worktree: directory };
   try {
     const started = await hooks.tool.watch_pr.execute(
-      { action: "start" },
+      { action: "start", ref: "https://github.com/example/repo/pull/123" },
       context,
     );
     assert.match(started, /notified automatically/);

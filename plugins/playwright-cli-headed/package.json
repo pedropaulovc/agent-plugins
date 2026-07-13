@@ -3,5 +3,16 @@
   "version": "0.2.5",
   "description": "Headed Playwright CLI enforcement for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/playwright-cli-headed.js"
+  "main": ".opencode/plugins/playwright-cli-headed.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/playwright-cli-headed"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

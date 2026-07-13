@@ -3,5 +3,16 @@
   "version": "0.3.7",
   "description": "Worktree reset skill for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/worktree-reset.js"
+  "main": ".opencode/plugins/worktree-reset.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/worktree-reset"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

@@ -1,11 +1,34 @@
 # OpenCode support
 
-Every plugin in this repository has an OpenCode entry point. The repository root is
-also an aggregate package that exports all 16 plugins.
+Every plugin in this repository is published as its own npm package. The repository
+root is also a Git-backed aggregate package that exports all 16 plugins.
 
 OpenCode 1.17.18 or newer is required. The adapters register bundled skill directories
 through the live `skills.paths` config and rely on in-place `tool.execute.before`
 argument mutation behavior from that runtime line.
+
+## Install one plugin
+
+Use OpenCode's package installer and the plugin name from the README table:
+
+```bash
+opencode plugin --global @pedropaulovc/watch-pr
+```
+
+`--global` writes to the global OpenCode config. Omit it to install the plugin only
+for the current project. Restart OpenCode after installation.
+
+You can also add packages directly to `opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "@pedropaulovc/alt-text",
+    "@pedropaulovc/memory-to-repo"
+  ]
+}
+```
 
 ## Install all plugins
 
@@ -24,9 +47,9 @@ Add the Git-backed package to the `plugin` array in your global or project
 Restart OpenCode. Git-backed packages are cached by OpenCode, so clear the matching
 entry under `~/.cache/opencode/node_modules/` when testing an unpublished update.
 
-## Install selected plugins
+## Local development
 
-For a selective development install, clone this repository and reference one or more
+To test unpublished changes, clone this repository and reference one or more
 plugin package directories with absolute `file:` specs:
 
 ```json

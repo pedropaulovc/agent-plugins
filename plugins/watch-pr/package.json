@@ -1,9 +1,20 @@
 {
   "name": "@pedropaulovc/watch-pr",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Pull request lifecycle monitoring skill for OpenCode",
   "type": "module",
   "main": ".opencode/plugins/watch-pr.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedropaulovc/agent-plugins.git",
+    "directory": "plugins/watch-pr"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "zod": "^4.4.3"
   }
