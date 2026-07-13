@@ -18,6 +18,10 @@ opencode plugin --global @pedropaulovc/watch-pr
 `--global` writes to the global OpenCode config. Omit it to install the plugin only
 for the current project. Restart OpenCode after installation.
 
+The in-app plugin manager may report that the package has no TUI target. These are
+server plugins, so that message is expected: installation still updates the server
+config, but the current app cannot load the plugin until OpenCode restarts.
+
 You can also add packages directly to `opencode.json`:
 
 ```json
