@@ -15,7 +15,7 @@
 // Run via: node scripts/record-memory-usage.ts (native TS type-stripping,
 // Node >=23.6 — no build step, no dependency install required at runtime).
 import { execSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -30,6 +30,15 @@ interface OpenCodeUsage {
   databaseFound: boolean;
   sessionCount: number;
   records: UsageRecord[];
+}
+
+function canonicalPath(value: string): string {
+  const absolute = resolve(value);
+  try {
+    return realpathSync.native(absolute);
+  } catch {
+    return absolute;
+  }
 }
 
 // Mirror Claude Code's project-slug convention: every path separator and dot
@@ -144,7 +153,7 @@ function gitWorktreeRoots(projectRoot: string): string[] {
     const roots = output
       .split("\n")
       .filter((line) => line.startsWith("worktree "))
-      .map((line) => resolve(line.slice("worktree ".length)));
+      .map((line) => canonicalPath(line.slice("worktree ".length)));
     return roots.length ? roots : [projectRoot];
   } catch {
     return [projectRoot];
@@ -157,8 +166,9 @@ function isWithin(root: string, candidate: string): boolean {
 }
 
 function matchingWorktree(worktrees: string[], candidate: string): string | undefined {
+  const canonicalCandidate = canonicalPath(candidate);
   return worktrees
-    .filter((root) => isWithin(root, candidate))
+    .filter((root) => isWithin(root, canonicalCandidate))
     .sort((a, b) => b.length - a.length)[0];
 }
 
@@ -189,8 +199,8 @@ function tableExists(database: DatabaseSync, table: string): boolean {
 }
 
 function memoryNameFromPath(worktree: string, cwd: string, filePath: string): string | undefined {
-  const absolutePath = resolve(cwd, filePath);
-  const rel = relative(worktree, absolutePath);
+  const absolutePath = canonicalPath(resolve(cwd, filePath));
+  const rel = relative(canonicalPath(worktree), absolutePath);
   const parts = rel.split(sep);
   if (parts[0] !== "memory" || parts.length < 2) return undefined;
   if (!rel.endsWith(".md") || basename(rel) === "MEMORY.md") return undefined;
@@ -218,9 +228,9 @@ function collectOpenCodeUsage(projectRoot: string): OpenCodeUsage {
       .all() as Array<{ id: string; directory: string; worktree: string | null }>;
     const relevant = new Map<string, { directory: string; worktree: string }>();
     for (const session of sessions) {
-      const directory = resolve(session.directory);
+      const directory = canonicalPath(session.directory);
       const recordedRoot = session.worktree && session.worktree !== "/"
-        ? resolve(session.worktree)
+        ? canonicalPath(session.worktree)
         : directory;
       const worktree = matchingWorktree(worktrees, directory)
         ?? matchingWorktree(worktrees, recordedRoot);
