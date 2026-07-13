@@ -81,7 +81,7 @@ It then re-syncs `MEMORY.md` so the index matches the files on disk, and reports
 
 ## `/record-memory-usage` command
 
-`/record-memory-usage` runs `scripts/record-memory-usage.ts` — a Node script using the [`claude-code-types`](https://www.npmjs.com/package/claude-code-types) package's type definitions for Claude Code's JSONL transcript format — over every past session for this project, **including sessions run in a `.claude/worktrees/*` worktree** of it (worktree sessions get their own `~/.claude/projects/<slug>--claude-worktrees-<name>/` directory; the script finds them by slug prefix and normalizes each `Read`'s absolute path against that session's own `cwd`, so a worktree checkout and the main checkout both resolve to the same `memory/<file>.md` name).
+`/record-memory-usage` runs `scripts/record-memory-usage.ts` over past Claude Code JSONL transcripts and OpenCode's SQLite session database. It includes sessions from every checkout reported by `git worktree list` and normalizes each read against that checkout root, so worktrees and the main checkout all resolve to the same `memory/<file>.md` name. The Claude parser uses [`claude-code-types`](https://www.npmjs.com/package/claude-code-types) for transcript types; the OpenCode parser uses Node's built-in read-only SQLite API.
 
 For every `Read` tool call in those transcripts whose target resolved to a file under `memory/` (excluding the `MEMORY.md` index itself), it records one `{sessionId, memoryFileName}` pair, deduplicated per session, and appends any not already present to `./memory/usage.jsonl` — one JSON object per line. Existing lines are kept byte-for-byte and never reordered; only new records are added at the end. Since `usage.jsonl` is git-tracked and shared, this keeps concurrent runs (different people, different branches) append-only at the tail, which git merges cleanly — a full rewrite/re-sort would touch nearly every line and turn every concurrent run into a merge conflict. The trade-off: a record for a memory file that's later renamed or deleted just goes unused rather than being cleaned up (the ranking below simply never looks it up).
 
@@ -101,6 +101,8 @@ Claude Code loads `MEMORY.md` at session start and the `/memory` command operate
 
 MIT
 
-## Codex support
+## Codex and OpenCode support
 
 Works in Claude Code and Codex on Windows and Linux. Redirects each harness's machine-local auto-memory to the repo `./memory/` store — `~/.claude/projects/<slug>/memory/` under Claude Code and `~/.codex/memories/` under Codex. The `[force-memory]` escape hatch auto-approves under Codex only in `bypassPermissions`/`dontAsk` modes; otherwise it defers to the normal approval prompt.
+
+OpenCode receives the repository memory index through its system transform and blocks tool calls aimed at either machine-local store. `/memory-audit` and `/record-memory-usage` are registered as OpenCode commands, and the usage scanner includes OpenCode read-tool history from its session database.

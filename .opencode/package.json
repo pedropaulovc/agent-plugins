@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@opencode-ai/plugin": "1.17.18",
+    "zod": "^4.4.3"
+  }
+}

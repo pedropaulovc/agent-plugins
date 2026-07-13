@@ -11,11 +11,11 @@ Run the usage scanner and report what it found:
 
 ## What this does
 
-Scans every past Claude Code session for this project — the main checkout
-and any sessions run in a `.claude/worktrees/*` worktree of it — for `Read`
-tool calls whose target file resolved to `memory/<name>.md` (excluding the
-`MEMORY.md` index itself). For each distinct `(sessionId, memoryFileName)`
-pair found, it writes one JSON line to `memory/usage.jsonl`:
+Scans past Claude Code JSONL transcripts and OpenCode's SQLite session database
+for this project across every checkout reported by `git worktree list`. It
+finds read-tool calls whose target resolved to `memory/<name>.md` (excluding the
+`MEMORY.md` index itself). For each distinct `(sessionId, memoryFileName)` pair
+found, it writes one JSON line to `memory/usage.jsonl`:
 
 ```json
 {"sessionId": "025df9d0-...", "memoryFileName": "memory/gstack-entrepreneur-vendoring.md"}

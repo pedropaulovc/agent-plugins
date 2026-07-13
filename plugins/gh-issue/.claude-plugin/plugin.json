@@ -1,7 +1,7 @@
 {
   "name": "gh-issue",
   "description": "Skill that transforms terse bug reports into well-structured GitHub issues via gh CLI",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

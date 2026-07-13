@@ -47,6 +47,8 @@ All engineering tooling boilerplate: telemetry, session tracking, update checks,
 
 Based on [gstack](https://github.com/garrytan/gstack) by [Garry Tan](https://x.com/garrytan). MIT License.
 
-## Codex support
+## Codex and OpenCode support
 
 Works in both. The `codex` second-opinion skill is explicit-only and cross-model: under Claude Code it consults Codex; under Codex (where `codex exec` would be a recursive self-call) it consults the `claude` CLI instead, or stops if no cross-model CLI is available.
+
+OpenCode registers all five skills as slash commands. The second-opinion skill consults Codex unless the active OpenCode model is itself Codex, in which case it uses the Claude CLI.

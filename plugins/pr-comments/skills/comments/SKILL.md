@@ -12,12 +12,12 @@ Fetch active (unresolved) comments from a GitHub Pull Request and format them fo
 
 ## Arguments
 
-- PR ref (optional): The PR URL (e.g., `https://github.com/owner/repo/pull/123`) or PR reference (e.g., `owner/repo#123` or just `123` if in a repo). In Claude Code this is `$ARGUMENTS`; under Codex, take it from the user's prompt (see step 1). If not provided, automatically detects the PR from the current git branch.
+- PR ref (optional): The PR URL (e.g., `https://github.com/owner/repo/pull/123`) or PR reference (e.g., `owner/repo#123` or just `123` if in a repo). In Claude Code this is `$ARGUMENTS`; under Codex or OpenCode, take it from the user's prompt (OpenCode's `/comments` adapter places command arguments there). If not provided, automatically detects the PR from the current git branch.
 - `--include-resolved` (optional): Include resolved threads in the output. By default, only active (unresolved) threads are exported.
 
 ## Instructions
 
-1. Determine the target PR reference from the user's request — a PR URL, `owner/repo#123`, or a bare number. In **Claude Code** it arrives via `$ARGUMENTS` (the harness substitutes it). Under **Codex** there is no argument substitution, so read the ref the user gave in their prompt. Then run the `comments.sh` script that sits **in this skill's own directory** — right next to this `SKILL.md`. You already know that directory's absolute path (it's where you loaded this file from), so invoke the script by that path directly. Pass the ref as a **single quoted argument** — omit it entirely only when the user gave none, to auto-detect the PR from the current branch:
+1. Determine the target PR reference from the user's request — a PR URL, `owner/repo#123`, or a bare number. In **Claude Code** it arrives via `$ARGUMENTS` (the harness substitutes it). Under **Codex or OpenCode**, read the ref from the user's prompt. Then run the `comments.sh` script that sits **in this skill's own directory** — right next to this `SKILL.md`. You already know that directory's absolute path (it's where you loaded this file from), so invoke the script by that path directly. Pass the ref as a **single quoted argument** — omit it entirely only when the user gave none, to auto-detect the PR from the current branch:
 
 Also pass `--include-resolved` as its own argument whenever the user asked to include resolved threads (it can appear with or without a PR ref); omit it otherwise.
 
@@ -30,7 +30,7 @@ bash "<this skill's directory>/comments.sh"
 bash "<this skill's directory>/comments.sh" "<pr-url-or-ref>" --include-resolved
 ```
 
-Do **not** locate the script with `find ~/.claude ~/.codex … | head -1`: that scans every cached install and can execute a stale copy from an older plugin version instead of the one next to this `SKILL.md`. Do **not** pass a literal `$ARGUMENTS` under Codex either — an unset shell variable expands to empty and silently auto-detects the wrong PR, and it drops flags like `--include-resolved`.
+Do **not** locate the script with `find ~/.claude ~/.codex ~/.cache/opencode … | head -1`: that scans every cached install and can execute a stale copy from an older plugin version instead of the one next to this `SKILL.md`. Do **not** pass a literal `$ARGUMENTS` under Codex or OpenCode either — an unset shell variable expands to empty and silently auto-detects the wrong PR, and it drops flags like `--include-resolved`.
 
 2. The script outputs the path to the generated markdown file on stdout. Capture this path and read the file contents.
 

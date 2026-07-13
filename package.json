@@ -1,0 +1,16 @@
+{
+  "name": "@pedropaulovc/agent-plugins",
+  "version": "1.0.5",
+  "description": "OpenCode adapters for the agent-plugins collection",
+  "type": "module",
+  "main": ".opencode/plugins/agent-plugins.js",
+  "engines": {
+    "opencode": ">=1.17.18"
+  },
+  "scripts": {
+    "test:opencode": "node --test tests/opencode.test.mjs"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

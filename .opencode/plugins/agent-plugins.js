@@ -1,0 +1,16 @@
+export { AltTextPlugin } from "../../plugins/alt-text/.opencode/plugins/alt-text.js";
+export { CommandChainSeparatorPlugin } from "../../plugins/command-chain-separator/.opencode/plugins/command-chain-separator.js";
+export { DevelopingSolidworksPlugin } from "../../plugins/developing-solidworks/.opencode/plugins/developing-solidworks.js";
+export { GhIssuePlugin } from "../../plugins/gh-issue/.opencode/plugins/gh-issue.js";
+export { GstackEntrepreneurPlugin } from "../../plugins/gstack-entrepreneur/.opencode/plugins/gstack-entrepreneur.js";
+export { MediocrityDetectorPlugin } from "../../plugins/mediocrity-detector/.opencode/plugins/mediocrity-detector.js";
+export { MemoryToRepoPlugin } from "../../plugins/memory-to-repo/.opencode/plugins/memory-to-repo.js";
+export { NoFetchPlugin } from "../../plugins/no-fetch/.opencode/plugins/no-fetch.js";
+export { OnePasswordPlugin } from "../../plugins/onepassword/.opencode/plugins/onepassword.js";
+export { PlaywrightCliHeadedPlugin } from "../../plugins/playwright-cli-headed/.opencode/plugins/playwright-cli-headed.js";
+export { PrCommentsPlugin } from "../../plugins/pr-comments/.opencode/plugins/pr-comments.js";
+export { SuperpowersPlugin } from "../../plugins/superpowers/.opencode/plugins/superpowers.js";
+export { UnrelatedIssueDetectorPlugin } from "../../plugins/unrelated-issue-detector/.opencode/plugins/unrelated-issue-detector.js";
+export { WatchPrPlugin } from "../../plugins/watch-pr/.opencode/plugins/watch-pr.js";
+export { WindowsBashGuardPlugin } from "../../plugins/windows-bash-guard/.opencode/plugins/windows-bash-guard.js";
+export { WorktreeResetPlugin } from "../../plugins/worktree-reset/.opencode/plugins/worktree-reset.js";

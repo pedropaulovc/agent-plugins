@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/worktree-reset",
+  "version": "0.3.7",
+  "description": "Worktree reset skill for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/worktree-reset.js"
+}

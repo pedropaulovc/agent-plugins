@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/mediocrity-detector",
+  "version": "0.4.5",
+  "description": "Shortcut and hedging detector for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/mediocrity-detector.js"
+}

@@ -25,10 +25,10 @@ Without `--force`, keep the confirmation behaviour described in each step.
 
 ## 1. Tear down agent state
 
-> **Under Codex:** the primitives below (task list, scheduled timers, teammates,
+> **Under Codex or OpenCode:** the primitives below (task list, scheduled timers, teammates,
 > subagents, monitors, `/loop`, PR-activity subscriptions) are Claude Code
-> concepts with no Codex equivalent — the listed tools (`TaskStop`, `Monitor`,
-> `CronDelete`, `unsubscribe_pr_activity`, …) do not exist there. In a Codex
+> concepts with no equivalent — the listed tools (`TaskStop`, `Monitor`,
+> `CronDelete`, `unsubscribe_pr_activity`, …) do not exist there. In a Codex or OpenCode
 > session, **skip this section entirely** except for **Background jobs** (stop any
 > background terminals via the harness's mechanism, e.g. `/stop`), and proceed to
 > the git steps below — the worktree reset + dep reinstall is the portable core.

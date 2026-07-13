@@ -22,7 +22,7 @@ For your own commentary: direct, concrete, builder-to-builder.
 
 ---
 
-## Running under Codex (not Claude Code)
+## Running under Codex or OpenCode
 
 This skill's value is a **cross-model** opinion: the host model (Claude) consults
 a *different* model (Codex) that hasn't seen the conversation. When the host is
@@ -38,9 +38,12 @@ exported). Use signals you actually have:
    the host is Codex — full stop.
 2. **The skill's load path confirms it.** You loaded this `SKILL.md` from a
    concrete path; a Codex home (`~/.codex/…`, `.codex/plugins/…`) means Codex,
-   a Claude tree (`~/.claude/…`) means Claude Code.
+   a Claude tree (`~/.claude/…`) means Claude Code, and an OpenCode cache or
+   config tree (`~/.cache/opencode/…`, `~/.config/opencode/…`, `.opencode/…`)
+   means OpenCode. Under OpenCode, use Codex as the second opinion unless the
+   active model is itself Codex.
 
-If the host is Codex, `codex exec` below is a recursive self-call — not an
+If the host or active model is Codex, `codex exec` below is a recursive self-call — not an
 independent opinion. Get the cross-model opinion from the OTHER model instead:
 invoke the `claude` CLI in headless print mode and treat its output exactly as
 the steps below treat Codex's, substituting Claude for Codex throughout (present
@@ -53,9 +56,9 @@ command -v claude >/dev/null 2>&1 && echo "CLAUDE_AVAILABLE" || echo "CLAUDE_NOT
 ```
 
 If no cross-model CLI is available (`claude` not installed/authenticated under
-Codex, or `codex` not available under Claude Code), say so and stop — a
+Codex, or `codex` not available under Claude Code/OpenCode), say so and stop — a
 same-model "second opinion" is not what this skill promises. The rest of this
-document assumes the host is Claude Code and the second model is Codex.
+document assumes the host is Claude Code or OpenCode and the second model is Codex.
 
 ---
 

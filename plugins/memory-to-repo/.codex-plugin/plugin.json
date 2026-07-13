@@ -1,6 +1,6 @@
 {
   "name": "memory-to-repo",
-  "version": "0.11.1",
+  "version": "0.11.6",
   "description": "Blocks CRUD on the machine-local auto-memory directory and redirects the agent to the repo's ./memory/ folder so memory is git-tracked and shared across users",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

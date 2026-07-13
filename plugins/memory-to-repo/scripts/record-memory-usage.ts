@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Scans this project's past Claude Code sessions (including sessions run in
-// git worktrees) for Read tool calls that targeted a file under ./memory/,
+// Scans this project's past Claude Code and OpenCode sessions (including
+// sessions run in git worktrees) for Read tool calls under ./memory/,
 // and APPENDS any newly-discovered {sessionId, memoryFileName} records to
 // ./memory/usage.jsonl — one record per distinct (session, memory file) pair.
 // The native SessionStart hook reads this file to rank memories by how often they've
@@ -17,12 +17,19 @@
 import { execSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { AssistantEntry, ToolUseBlock, TranscriptEntry } from "claude-code-types";
 
 interface UsageRecord {
   sessionId: string;
   memoryFileName: string;
+}
+
+interface OpenCodeUsage {
+  databaseFound: boolean;
+  sessionCount: number;
+  records: UsageRecord[];
 }
 
 // Mirror Claude Code's project-slug convention: every path separator and dot
@@ -127,6 +134,147 @@ function collectUsage(sessionDirs: string[]): UsageRecord[] {
   return records;
 }
 
+function gitWorktreeRoots(projectRoot: string): string[] {
+  try {
+    const output = execSync("git worktree list --porcelain", {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const roots = output
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .map((line) => resolve(line.slice("worktree ".length)));
+    return roots.length ? roots : [projectRoot];
+  } catch {
+    return [projectRoot];
+  }
+}
+
+function isWithin(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel));
+}
+
+function matchingWorktree(worktrees: string[], candidate: string): string | undefined {
+  return worktrees
+    .filter((root) => isWithin(root, candidate))
+    .sort((a, b) => b.length - a.length)[0];
+}
+
+function openCodeDatabasePath(): string | undefined {
+  if (process.env.OPENCODE_DB_PATH) return resolve(process.env.OPENCODE_DB_PATH);
+  const dataHome = process.env.XDG_DATA_HOME
+    ? resolve(process.env.XDG_DATA_HOME)
+    : join(homedir(), ".local", "share");
+  const defaultPath = join(dataHome, "opencode", "opencode.db");
+  if (existsSync(defaultPath)) return defaultPath;
+  try {
+    const discovered = execSync("opencode db path", {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return discovered || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function tableExists(database: DatabaseSync, table: string): boolean {
+  return Boolean(
+    database
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(table),
+  );
+}
+
+function memoryNameFromPath(worktree: string, cwd: string, filePath: string): string | undefined {
+  const absolutePath = resolve(cwd, filePath);
+  const rel = relative(worktree, absolutePath);
+  const parts = rel.split(sep);
+  if (parts[0] !== "memory" || parts.length < 2) return undefined;
+  if (!rel.endsWith(".md") || basename(rel) === "MEMORY.md") return undefined;
+  return parts.join("/");
+}
+
+function collectOpenCodeUsage(projectRoot: string): OpenCodeUsage {
+  const databasePath = openCodeDatabasePath();
+  if (!databasePath || !existsSync(databasePath)) {
+    return { databaseFound: false, sessionCount: 0, records: [] };
+  }
+
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    if (!["session", "part"].every((table) => tableExists(database, table))) {
+      return { databaseFound: true, sessionCount: 0, records: [] };
+    }
+    const worktrees = gitWorktreeRoots(projectRoot);
+    const sessions = database
+      .prepare(`
+        SELECT s.id, s.directory, p.worktree
+        FROM session s
+        LEFT JOIN project p ON p.id = s.project_id
+      `)
+      .all() as Array<{ id: string; directory: string; worktree: string | null }>;
+    const relevant = new Map<string, { directory: string; worktree: string }>();
+    for (const session of sessions) {
+      const directory = resolve(session.directory);
+      const recordedRoot = session.worktree && session.worktree !== "/"
+        ? resolve(session.worktree)
+        : directory;
+      const worktree = matchingWorktree(worktrees, directory)
+        ?? matchingWorktree(worktrees, recordedRoot);
+      if (worktree) relevant.set(session.id, { directory, worktree });
+    }
+    if (!relevant.size) {
+      return { databaseFound: true, sessionCount: 0, records: [] };
+    }
+
+    const seen = new Set<string>();
+    const records: UsageRecord[] = [];
+    const parts = database
+      .prepare(`
+        SELECT session_id, data
+        FROM part
+        WHERE json_extract(data, '$.type') = 'tool'
+          AND lower(json_extract(data, '$.tool')) = 'read'
+      `)
+      .iterate() as Iterable<{ session_id: string; data: string }>;
+    for (const row of parts) {
+      const session = relevant.get(row.session_id);
+      if (!session) continue;
+      let part: unknown;
+      try {
+        part = JSON.parse(row.data);
+      } catch {
+        continue;
+      }
+      if (!part || typeof part !== "object") continue;
+      const value = part as {
+        type?: string;
+        tool?: string;
+        state?: { input?: { filePath?: unknown; file_path?: unknown } };
+      };
+      if (value.type !== "tool" || value.tool?.toLowerCase() !== "read") continue;
+      const input = value.state?.input;
+      const filePath = input?.filePath ?? input?.file_path;
+      if (typeof filePath !== "string" || !filePath) continue;
+      const memoryFileName = memoryNameFromPath(session.worktree, session.directory, filePath);
+      if (!memoryFileName) continue;
+      const key = `${row.session_id} ${memoryFileName}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      records.push({ sessionId: row.session_id, memoryFileName });
+    }
+    return { databaseFound: true, sessionCount: relevant.size, records };
+  } catch (error) {
+    console.warn(`Could not scan OpenCode database ${databasePath}: ${String(error)}`);
+    return { databaseFound: true, sessionCount: 0, records: [] };
+  } finally {
+    database.close();
+  }
+}
+
 // usage.jsonl is a shared, git-tracked append log: concurrent runs on
 // different branches only ever add lines at the tail, which git's default
 // 3-way merge already handles cleanly in the common case. `merge=union` is a
@@ -178,8 +326,12 @@ function main(): void {
   }
 
   const claudeProjectsDir = join(homedir(), ".claude", "projects");
-  if (!existsSync(claudeProjectsDir)) {
-    console.log(`No ${claudeProjectsDir}; no past sessions to scan.`);
+  const sessionDirs = existsSync(claudeProjectsDir)
+    ? findSessionDirs(claudeProjectsDir, projectRoot)
+    : [];
+  const openCodeUsage = collectOpenCodeUsage(projectRoot);
+  if (!existsSync(claudeProjectsDir) && !openCodeUsage.databaseFound) {
+    console.log("No Claude Code or OpenCode session store found; no past sessions to scan.");
     return;
   }
 
@@ -187,8 +339,12 @@ function main(): void {
   const isNewFile = !existsSync(outPath);
   const { lines: existingLines, keys: existingKeys } = readExisting(outPath);
 
-  const sessionDirs = findSessionDirs(claudeProjectsDir, projectRoot);
-  const newRecords = collectUsage(sessionDirs)
+  const combined = [...collectUsage(sessionDirs), ...openCodeUsage.records];
+  const unique = new Map(combined.map((record) => [
+    `${record.sessionId} ${record.memoryFileName}`,
+    record,
+  ]));
+  const newRecords = [...unique.values()]
     .filter((r) => !existingKeys.has(`${r.sessionId} ${r.memoryFileName}`))
     .sort((a, b) =>
       a.memoryFileName === b.memoryFileName
@@ -203,7 +359,8 @@ function main(): void {
   const files = new Set(newRecords.map((r) => r.memoryFileName)).size;
   const sessions = new Set(newRecords.map((r) => r.sessionId)).size;
   console.log(
-    `Scanned ${sessionDirs.length} session director${sessionDirs.length === 1 ? "y" : "ies"}; ` +
+    `Scanned ${sessionDirs.length} Claude session director${sessionDirs.length === 1 ? "y" : "ies"} ` +
+      `and ${openCodeUsage.sessionCount} OpenCode session(s); ` +
       `appended ${newRecords.length} new usage record(s) covering ${files} memory file(s) across ${sessions} session(s) ` +
       `(kept ${existingLines.length} existing record(s)) to ${outPath}`,
   );

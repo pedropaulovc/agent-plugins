@@ -2,7 +2,8 @@
 set -uo pipefail
 
 # Watch a PR's full lifecycle AND surface incoming review feedback — one script.
-# Designed to run INSIDE the Monitor tool's `command` (persistent:true):
+# Designed to run inside Claude Code's Monitor tool, OpenCode's watch_pr
+# plugin bridge, or another harness's background terminal:
 # each emitted line is surfaced as an event; the loop is silent while nothing
 # changes and self-terminates on MERGED/CLOSED.
 #
