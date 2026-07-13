@@ -45,18 +45,22 @@ jobs:
         run: bash tools/check-jq-programs.sh
 
   test-opencode:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 25
       - name: Install OpenCode adapter dependencies
         run: npm ci --ignore-scripts
       - name: Test OpenCode plugin adapters
         run: npm run test:opencode
 
       - name: Check OpenCode package versions match plugin manifests
+        if: runner.os == 'Linux'
         run: |
           fail=0
           for package in plugins/*/package.json; do

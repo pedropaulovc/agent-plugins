@@ -2,6 +2,7 @@
   "name": "@pedropaulovc/developing-solidworks",
   "version": "0.8.7",
   "description": "SolidWorks API development skills for OpenCode",
+  "license": "MIT",
   "type": "module",
   "main": ".opencode/plugins/developing-solidworks.js",
   "engines": {

@@ -2,6 +2,7 @@
   "name": "@pedropaulovc/windows-bash-guard",
   "version": "0.1.5",
   "description": "Windows Bash path protection for OpenCode",
+  "license": "MIT",
   "type": "module",
   "main": ".opencode/plugins/windows-bash-guard.js",
   "engines": {

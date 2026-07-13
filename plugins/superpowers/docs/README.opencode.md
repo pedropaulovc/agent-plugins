@@ -88,16 +88,14 @@ Create project-specific skills in `.opencode/skills/` within your project.
 
 ## Updating
 
-OpenCode installs Superpowers through a git-backed package spec. Some OpenCode
-and Bun versions pin that resolved git dependency in a lockfile or cache, so a
-restart may not pick up the newest Superpowers commit. If updates do not appear,
-clear OpenCode's package cache or reinstall the plugin.
+OpenCode installs the latest package version unless the config pins one. Restart
+OpenCode after upgrading because plugin configuration is loaded only at startup.
 
-To pin a specific version, use a branch or tag:
+To pin a specific version:
 
 ```json
 {
-  "plugin": ["superpowers@git+https://github.com/obra/superpowers.git#v5.0.3"]
+  "plugin": ["@pedropaulovc/superpowers@6.1.1"]
 }
 ```
 

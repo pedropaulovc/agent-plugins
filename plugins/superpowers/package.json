@@ -2,6 +2,7 @@
   "name": "@pedropaulovc/superpowers",
   "version": "6.1.1",
   "description": "Superpowers skills and runtime bootstrap for coding agents",
+  "license": "MIT",
   "type": "module",
   "main": ".opencode/plugins/superpowers.js",
   "engines": {

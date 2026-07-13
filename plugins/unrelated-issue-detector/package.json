@@ -2,6 +2,7 @@
   "name": "@pedropaulovc/unrelated-issue-detector",
   "version": "0.4.4",
   "description": "Unrelated issue dismissal detector for OpenCode",
+  "license": "MIT",
   "type": "module",
   "main": ".opencode/plugins/unrelated-issue-detector.js",
   "engines": {

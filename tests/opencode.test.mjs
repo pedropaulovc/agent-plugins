@@ -23,11 +23,13 @@ test("every OpenCode plugin is an npm-ready scoped package", () => {
     const packageDir = path.join(pluginsDir, pluginName);
     const manifest = JSON.parse(readFileSync(path.join(packageDir, "package.json"), "utf8"));
     assert.equal(manifest.name, `@pedropaulovc/${pluginName}`);
+    assert.equal(manifest.license, "MIT");
     assert.equal(manifest.engines.opencode, ">=1.17.18");
     assert.equal(manifest.repository.url, "git+https://github.com/pedropaulovc/agent-plugins.git");
     assert.equal(manifest.repository.directory, `plugins/${pluginName}`);
     assert.equal(manifest.publishConfig.access, "public");
     assert.ok(existsSync(path.join(packageDir, manifest.main)), `${pluginName} main entry must exist`);
+    assert.ok(existsSync(path.join(packageDir, "LICENSE")), `${pluginName} license must be packaged`);
   }
 });
 

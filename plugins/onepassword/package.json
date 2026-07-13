@@ -2,6 +2,7 @@
   "name": "@pedropaulovc/onepassword",
   "version": "0.1.1",
   "description": "1Password CLI authentication skill for OpenCode",
+  "license": "MIT",
   "type": "module",
   "main": ".opencode/plugins/onepassword.js",
   "engines": {
