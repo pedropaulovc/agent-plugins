@@ -37,7 +37,7 @@ committing or deleting a memory isn't consulting it. For each distinct
 `memory/usage.jsonl`:
 
 ```json
-{"sessionId": "025df9d0-...", "memoryFileName": "memory/gstack-entrepreneur-vendoring.md"}
+{"sessionId": "025df9d0-...", "memoryFileName": "gstack-entrepreneur-vendoring.md"}
 ```
 
 Existing lines are preserved byte-for-byte and never reordered — only

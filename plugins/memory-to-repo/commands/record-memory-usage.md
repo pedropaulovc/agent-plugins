@@ -22,7 +22,7 @@ is deliberately not counted. For each distinct `(sessionId, memoryFileName)` pai
 found, it writes one JSON line to `memory/usage.jsonl`:
 
 ```json
-{"sessionId": "025df9d0-...", "memoryFileName": "memory/gstack-entrepreneur-vendoring.md"}
+{"sessionId": "025df9d0-...", "memoryFileName": "gstack-entrepreneur-vendoring.md"}
 ```
 
 Existing lines are preserved byte-for-byte and never reordered — only

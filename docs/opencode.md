@@ -1,7 +1,8 @@
 # OpenCode support
 
-Every plugin in this repository has an OpenCode entry point. The repository root is
-also an aggregate package that exports all 16 plugins.
+Most plugins in this repository have an OpenCode entry point. The repository root is
+also an aggregate package that exports those 15 plugins (memory-to-repo is
+Claude Code + Codex only).
 
 OpenCode 1.17.18 or newer is required. The adapters register bundled skill directories
 through the live `skills.paths` config and rely on in-place `tool.execute.before`
@@ -33,8 +34,7 @@ plugin package directories with absolute `file:` specs:
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    "alt-text@file:///absolute/path/to/agent-plugins/plugins/alt-text",
-    "memory-to-repo@file:///absolute/path/to/agent-plugins/plugins/memory-to-repo"
+    "alt-text@file:///absolute/path/to/agent-plugins/plugins/alt-text"
   ]
 }
 ```

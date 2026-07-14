@@ -87,6 +87,11 @@ const INTERPRETERS = new Set([
 ]);
 const INTERPRETER_FLAGS = new Set(["-c", "-lc", "-command", "/c", "-encodedcommand"]);
 
+// Commands whose FIRST positional argument is a search PATTERN, not a file:
+// `rg memory/x.md` searches the tree for that string, it doesn't read the file.
+// Skip that first bare argument so it isn't miscounted as a consultation.
+const PATTERN_COMMANDS = new Set(["rg", "grep", "egrep", "fgrep", "ag", "ack", "awk", "gawk"]);
+
 // Split a command into statement segments (on unquoted `;` `\n` `|` `&&` `||`
 // `&`) and each segment into whitespace-separated tokens, honoring single and
 // double quotes so a separator inside a quoted argument (`rg "a|b" memory/x.md`)
@@ -136,37 +141,60 @@ function segmentVerb(tokens: string[]): { verb: string; index: number } {
   return { verb, index: i };
 }
 
+// Resolve a path a session touched to its repo-relative memory name, keyed the
+// way the SessionStart hook looks counts up: the bare MEMORY.md link target
+// ("<file>.md" or "<sub>/<file>.md", relative to the memory/ dir), NOT
+// "memory/<file>.md" — a "memory/"-prefixed key never matches the index and the
+// record is silently ignored during ranking. Resolving against the call's cwd
+// also scopes the read to THIS checkout: a path that escapes into another repo
+// (`../other/memory/x.md`, `/tmp/other/memory/x.md`) resolves outside `memory/`
+// and is dropped. Returns undefined for non-memory paths, the MEMORY.md index,
+// and glob/unexpanded-var tokens (`memory/*.md`, `memory/$f.md`).
+function memoryNameForPath(cwd: string, filePath: string): string | undefined {
+  const rel = relative(cwd, resolve(cwd, filePath.replace(/\\/g, "/")));
+  const parts = rel.split(sep);
+  if (parts[0] !== "memory" || parts.length < 2) return undefined;
+  if (!rel.endsWith(".md") || basename(rel) === "MEMORY.md") return undefined;
+  const name = parts.slice(1).join("/");
+  if (/[*?$[\]]/.test(name)) return undefined;
+  return name;
+}
+
 // A memory file can be consulted through the shell instead of the Read tool —
 // `cat memory/foo.md` in a Bash call, `Get-Content memory\foo.md` in a
-// PowerShell one, or a Codex shell call. Pull the memory/<name>.md paths a
-// command reads, keying off the literal "memory/" (or Windows "memory\") path
-// segment rather than node:path's resolve — resolve is bound to the scanning
-// host's separator, so a Windows backslash path scanned on Linux (or vice versa)
-// would slip through. Keying off the segment covers relative, ./-prefixed, and
-// absolute forms on either OS. `depth` bounds interpreter recursion.
-function memoryNamesFromCommand(command: string, depth = 0): string[] {
+// PowerShell one, or a Codex shell call. Extract the memory names a command
+// reads, resolving each path argument against the call's `cwd` (see
+// memoryNameForPath). Only arguments to a file-reading command count — a
+// pattern command's first positional (the search term) and in-place `sed -i` /
+// `gawk -i inplace` edits are writes/searches, not reads, so they're skipped.
+// `depth` bounds interpreter recursion.
+function memoryNamesFromCommand(command: string, cwd: string, depth = 0): string[] {
   const names: string[] = [];
   for (const tokens of shellSegments(command)) {
     const { verb, index } = segmentVerb(tokens);
     if (depth < 2 && INTERPRETERS.has(verb)) {
       const flag = tokens.findIndex((t, i) => i > index && INTERPRETER_FLAGS.has(t.toLowerCase()));
-      if (flag !== -1 && tokens[flag + 1]) names.push(...memoryNamesFromCommand(tokens[flag + 1], depth + 1));
+      if (flag !== -1 && tokens[flag + 1]) names.push(...memoryNamesFromCommand(tokens[flag + 1], cwd, depth + 1));
       continue;
     }
     if (!READ_COMMANDS.has(verb)) continue;
+    // In-place edits rewrite the file rather than read it.
+    if (verb === "sed" && tokens.some((t, i) => i > index && (t.startsWith("-i") || t.startsWith("--in-place")))) continue;
+    if ((verb === "awk" || verb === "gawk") && tokens.some((t, i) => i > index && t === "inplace")) continue;
+    let skipPattern = PATTERN_COMMANDS.has(verb);
     for (let i = index + 1; i < tokens.length; i++) {
       const raw = tokens[i];
       const prev = tokens[i - 1] ?? "";
       // A path right after an output redirection (`> file`) is written, not read.
       if (raw.startsWith(">") || prev === ">" || prev === ">>") continue;
       const token = raw.replace(/^\(+/, "").replace(/[);,|&]+$/, "");
-      const match = token.replace(/\\/g, "/").replace(/\/{2,}/g, "/").match(/(?:^|\/)memory\/(.+\.md)$/);
-      if (!match) continue;
-      const name = match[1];
-      // Skip globs and unexpanded vars (`memory/*.md`, `memory/$f.md`): they name
-      // no single file. MEMORY.md is the index, not a memory, so exclude it too.
-      if (/[*?$[\]]/.test(name) || basename(name) === "MEMORY.md") continue;
-      names.push(`memory/${name}`);
+      if (!token || token.startsWith("-")) continue;
+      if (skipPattern) {
+        skipPattern = false;
+        continue;
+      }
+      const name = memoryNameForPath(cwd, token);
+      if (name) names.push(name);
     }
   }
   return names;
@@ -174,9 +202,8 @@ function memoryNamesFromCommand(command: string, depth = 0): string[] {
 
 // A Read tool call's file_path is always absolute, but the session may have
 // run in this project's root OR in a worktree checkout of it — resolve
-// relative to the entry's own cwd so both normalize to the same
-// repo-relative "memory/<file>.md" name. Bash calls are scanned too, for the
-// shell-read case above.
+// relative to the entry's own cwd so both normalize to the same repo-relative
+// memory name. Bash calls are scanned too, for the shell-read case above.
 function extractMemoryReads(entry: TranscriptEntry): string[] {
   if (entry.type !== "assistant") return [];
   const message = (entry as AssistantEntry).message;
@@ -187,17 +214,14 @@ function extractMemoryReads(entry: TranscriptEntry): string[] {
     const tu = block as ToolUseBlock;
     if (tu.name === "Bash") {
       const command = tu.input.command;
-      if (typeof command === "string") names.push(...memoryNamesFromCommand(command));
+      if (typeof command === "string") names.push(...memoryNamesFromCommand(command, cwd));
       continue;
     }
     if (tu.name !== "Read") continue;
     const filePath = tu.input.file_path;
     if (typeof filePath !== "string" || !filePath) continue;
-    const rel = relative(cwd, resolve(cwd, filePath));
-    const [top, ...restParts] = rel.split(sep);
-    if (top !== "memory" || restParts.length === 0) continue;
-    if (!rel.endsWith(".md") || basename(rel) === "MEMORY.md") continue;
-    names.push(["memory", ...restParts].join("/"));
+    const name = memoryNameForPath(cwd, filePath);
+    if (name) names.push(name);
   }
   return names;
 }
@@ -341,7 +365,17 @@ function codexCommandsFromEntry(entry: unknown): string[] {
     return command ? [command] : [];
   }
   if (p.type === "custom_tool_call" && typeof p.input === "string") {
-    return [...p.input.matchAll(CODEX_COMMAND_ARG)].map((m) => m[1]);
+    // The capture is a JSON string body: quotes inside the command are escaped
+    // (`\"`), so `tools.exec_command({cmd:"bash -lc \"cat memory/x.md\""})`
+    // yields `bash -lc \"cat memory/x.md\"`. Decode it back to real quotes so
+    // the tokenizer sees the actual command, not stray backslashes.
+    return [...p.input.matchAll(CODEX_COMMAND_ARG)].map((m) => {
+      try {
+        return JSON.parse(`"${m[1]}"`) as string;
+      } catch {
+        return m[1];
+      }
+    });
   }
   return [];
 }
@@ -389,7 +423,7 @@ function collectCodexUsage(projectRoot: string): CodexUsage {
     if (!sessionId || !cwd || !matchingWorktree(worktrees, resolve(cwd))) continue;
     sessions.add(sessionId);
     for (const command of commands) {
-      for (const memoryFileName of memoryNamesFromCommand(command)) {
+      for (const memoryFileName of memoryNamesFromCommand(command, cwd)) {
         const key = `${sessionId} ${memoryFileName}`;
         if (seen.has(key)) continue;
         seen.add(key);
