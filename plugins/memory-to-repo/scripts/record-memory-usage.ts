@@ -145,13 +145,18 @@ function segmentVerb(tokens: string[]): { verb: string; index: number } {
 // way the SessionStart hook looks counts up: the bare MEMORY.md link target
 // ("<file>.md" or "<sub>/<file>.md", relative to the memory/ dir), NOT
 // "memory/<file>.md" — a "memory/"-prefixed key never matches the index and the
-// record is silently ignored during ranking. Resolving against the call's cwd
-// also scopes the read to THIS checkout: a path that escapes into another repo
-// (`../other/memory/x.md`, `/tmp/other/memory/x.md`) resolves outside `memory/`
-// and is dropped. Returns undefined for non-memory paths, the MEMORY.md index,
-// and glob/unexpanded-var tokens (`memory/*.md`, `memory/$f.md`).
-function memoryNameForPath(cwd: string, filePath: string): string | undefined {
-  const rel = relative(cwd, resolve(cwd, filePath.replace(/\\/g, "/")));
+// record is silently ignored during ranking. The path is resolved to absolute
+// against `cwd` (the call's own workdir), then required to live directly under a
+// worktree root's `memory/` dir. That scoping both credits the right store when
+// a command runs from a subdirectory (`cat ../memory/x.md` from `src/` → the
+// repo memory) and drops reads that target something else (`src/memory/x.md`, or
+// another checkout entirely). Returns undefined for non-memory paths, the
+// MEMORY.md index, and glob/unexpanded-var tokens (`memory/*.md`, `memory/$f.md`).
+function memoryNameForPath(worktrees: string[], cwd: string, filePath: string): string | undefined {
+  const absolute = resolve(cwd, filePath.replace(/\\/g, "/"));
+  const root = matchingWorktree(worktrees, absolute);
+  if (!root) return undefined;
+  const rel = relative(root, absolute);
   const parts = rel.split(sep);
   if (parts[0] !== "memory" || parts.length < 2) return undefined;
   if (!rel.endsWith(".md") || basename(rel) === "MEMORY.md") return undefined;
@@ -168,13 +173,13 @@ function memoryNameForPath(cwd: string, filePath: string): string | undefined {
 // pattern command's first positional (the search term) and in-place `sed -i` /
 // `gawk -i inplace` edits are writes/searches, not reads, so they're skipped.
 // `depth` bounds interpreter recursion.
-function memoryNamesFromCommand(command: string, cwd: string, depth = 0): string[] {
+function memoryNamesFromCommand(command: string, worktrees: string[], cwd: string, depth = 0): string[] {
   const names: string[] = [];
   for (const tokens of shellSegments(command)) {
     const { verb, index } = segmentVerb(tokens);
     if (depth < 2 && INTERPRETERS.has(verb)) {
       const flag = tokens.findIndex((t, i) => i > index && INTERPRETER_FLAGS.has(t.toLowerCase()));
-      if (flag !== -1 && tokens[flag + 1]) names.push(...memoryNamesFromCommand(tokens[flag + 1], cwd, depth + 1));
+      if (flag !== -1 && tokens[flag + 1]) names.push(...memoryNamesFromCommand(tokens[flag + 1], worktrees, cwd, depth + 1));
       continue;
     }
     if (!READ_COMMANDS.has(verb)) continue;
@@ -193,7 +198,7 @@ function memoryNamesFromCommand(command: string, cwd: string, depth = 0): string
         skipPattern = false;
         continue;
       }
-      const name = memoryNameForPath(cwd, token);
+      const name = memoryNameForPath(worktrees, cwd, token);
       if (name) names.push(name);
     }
   }
@@ -204,7 +209,7 @@ function memoryNamesFromCommand(command: string, cwd: string, depth = 0): string
 // run in this project's root OR in a worktree checkout of it — resolve
 // relative to the entry's own cwd so both normalize to the same repo-relative
 // memory name. Bash calls are scanned too, for the shell-read case above.
-function extractMemoryReads(entry: TranscriptEntry): string[] {
+function extractMemoryReads(entry: TranscriptEntry, worktrees: string[]): string[] {
   if (entry.type !== "assistant") return [];
   const message = (entry as AssistantEntry).message;
   const cwd = (entry as AssistantEntry).cwd;
@@ -214,13 +219,13 @@ function extractMemoryReads(entry: TranscriptEntry): string[] {
     const tu = block as ToolUseBlock;
     if (tu.name === "Bash") {
       const command = tu.input.command;
-      if (typeof command === "string") names.push(...memoryNamesFromCommand(command, cwd));
+      if (typeof command === "string") names.push(...memoryNamesFromCommand(command, worktrees, cwd));
       continue;
     }
     if (tu.name !== "Read") continue;
     const filePath = tu.input.file_path;
     if (typeof filePath !== "string" || !filePath) continue;
-    const name = memoryNameForPath(cwd, filePath);
+    const name = memoryNameForPath(worktrees, cwd, filePath);
     if (name) names.push(name);
   }
   return names;
@@ -246,7 +251,7 @@ function readExisting(outPath: string): { lines: string[]; keys: Set<string> } {
   return { lines, keys };
 }
 
-function collectUsage(sessionDirs: string[]): UsageRecord[] {
+function collectUsage(sessionDirs: string[], worktrees: string[]): UsageRecord[] {
   const seen = new Set<string>();
   const records: UsageRecord[] = [];
   for (const dir of sessionDirs) {
@@ -261,7 +266,7 @@ function collectUsage(sessionDirs: string[]): UsageRecord[] {
         } catch {
           continue;
         }
-        for (const memoryFileName of extractMemoryReads(entry)) {
+        for (const memoryFileName of extractMemoryReads(entry, worktrees)) {
           const key = `${sessionId} ${memoryFileName}`;
           if (seen.has(key)) continue;
           seen.add(key);
@@ -341,50 +346,67 @@ const CODEX_SHELL_FUNCTIONS = new Set([
 // noise out of what gets scanned, and cuts the command off at its real end
 // rather than letting the trailing `","workdir":...` bleed into the last token.
 const CODEX_COMMAND_ARG = /"?(?:cmd|command)"?\s*:\s*"((?:\\.|[^"\\])*)"/g;
+const CODEX_WORKDIR_ARG = /"?(?:workdir|cwd)"?\s*:\s*"((?:\\.|[^"\\])*)"/g;
 
-function codexShellArgsToCommand(args: unknown): string | undefined {
+// A shell call runs in its own workdir, which may differ from the session cwd
+// (a call from a subdirectory). Carry it so memory paths resolve against the
+// right base; callers fall back to the session cwd when it's absent.
+interface CodexCommand {
+  command: string;
+  workdir?: string;
+}
+
+function codexShellArgs(args: unknown): CodexCommand | undefined {
   if (typeof args !== "string") return undefined;
   try {
-    const parsed = JSON.parse(args) as { cmd?: unknown; command?: unknown };
+    const parsed = JSON.parse(args) as { cmd?: unknown; command?: unknown; workdir?: unknown; cwd?: unknown };
     const cmd = parsed.cmd ?? parsed.command;
-    if (Array.isArray(cmd)) return cmd.map(String).join(" ");
-    if (typeof cmd === "string") return cmd;
+    const workdir = typeof parsed.workdir === "string" ? parsed.workdir
+      : typeof parsed.cwd === "string" ? parsed.cwd : undefined;
+    if (Array.isArray(cmd)) return { command: cmd.map(String).join(" "), workdir };
+    if (typeof cmd === "string") return { command: cmd, workdir };
   } catch {
     // Not JSON — fall back to scanning the raw argument text.
   }
-  return args;
+  return { command: args };
 }
 
-function codexCommandsFromEntry(entry: unknown): string[] {
+// The capture is a JSON string body: quotes inside are escaped (`\"`), so
+// `exec_command({cmd:"bash -lc \"cat memory/x.md\""})` yields
+// `bash -lc \"cat memory/x.md\"`. Decode it back to real quotes.
+function decodeJsonBody(body: string): string {
+  try {
+    return JSON.parse(`"${body}"`) as string;
+  } catch {
+    return body;
+  }
+}
+
+function codexCommandsFromEntry(entry: unknown): CodexCommand[] {
   if (!entry || typeof entry !== "object") return [];
   const payload = (entry as { payload?: unknown }).payload;
   if (!payload || typeof payload !== "object") return [];
   const p = payload as { type?: string; name?: string; arguments?: unknown; input?: unknown };
   if (p.type === "function_call" && typeof p.name === "string" && CODEX_SHELL_FUNCTIONS.has(p.name)) {
-    const command = codexShellArgsToCommand(p.arguments);
-    return command ? [command] : [];
+    const parsed = codexShellArgs(p.arguments);
+    return parsed ? [parsed] : [];
   }
   if (p.type === "custom_tool_call" && typeof p.input === "string") {
-    // The capture is a JSON string body: quotes inside the command are escaped
-    // (`\"`), so `tools.exec_command({cmd:"bash -lc \"cat memory/x.md\""})`
-    // yields `bash -lc \"cat memory/x.md\"`. Decode it back to real quotes so
-    // the tokenizer sees the actual command, not stray backslashes.
+    const workdirs = [...p.input.matchAll(CODEX_WORKDIR_ARG)];
     return [...p.input.matchAll(CODEX_COMMAND_ARG)].map((m) => {
-      try {
-        return JSON.parse(`"${m[1]}"`) as string;
-      } catch {
-        return m[1];
-      }
+      // Pair each command with the workdir declared alongside it (the same
+      // `{cmd:..., workdir:...}` object, so the first workdir following the cmd).
+      const workdir = workdirs.find((w) => (w.index ?? 0) > (m.index ?? 0));
+      return { command: decodeJsonBody(m[1]), workdir: workdir ? decodeJsonBody(workdir[1]) : undefined };
     });
   }
   return [];
 }
 
-function collectCodexUsage(projectRoot: string): CodexUsage {
+function collectCodexUsage(worktrees: string[]): CodexUsage {
   const sessionsDir = codexSessionsDir();
   if (!existsSync(sessionsDir)) return { storeFound: false, sessionCount: 0, records: [] };
 
-  const worktrees = gitWorktreeRoots(projectRoot);
   const seen = new Set<string>();
   const records: UsageRecord[] = [];
   const sessions = new Set<string>();
@@ -397,7 +419,7 @@ function collectCodexUsage(projectRoot: string): CodexUsage {
     }
     let sessionId: string | undefined;
     let cwd: string | undefined;
-    const commands: string[] = [];
+    const commands: CodexCommand[] = [];
     for (const line of lines) {
       if (!line.trim()) continue;
       let entry: unknown;
@@ -422,8 +444,12 @@ function collectCodexUsage(projectRoot: string): CodexUsage {
     // worktree of it), belongs to a different repo — skip it.
     if (!sessionId || !cwd || !matchingWorktree(worktrees, resolve(cwd))) continue;
     sessions.add(sessionId);
-    for (const command of commands) {
-      for (const memoryFileName of memoryNamesFromCommand(command, cwd)) {
+    for (const { command, workdir } of commands) {
+      // Resolve against the call's own workdir when it declared one (absolute
+      // wins; a relative workdir is taken against the session cwd), else the
+      // session cwd.
+      const base = workdir ? resolve(cwd, workdir.replace(/\\/g, "/")) : cwd;
+      for (const memoryFileName of memoryNamesFromCommand(command, worktrees, base)) {
         const key = `${sessionId} ${memoryFileName}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -484,11 +510,12 @@ function main(): void {
     return;
   }
 
+  const worktrees = gitWorktreeRoots(projectRoot);
   const claudeProjectsDir = join(homedir(), ".claude", "projects");
   const sessionDirs = existsSync(claudeProjectsDir)
     ? findSessionDirs(claudeProjectsDir, projectRoot)
     : [];
-  const codexUsage = collectCodexUsage(projectRoot);
+  const codexUsage = collectCodexUsage(worktrees);
   if (!existsSync(claudeProjectsDir) && !codexUsage.storeFound) {
     console.log("No Claude Code or Codex session store found; no past sessions to scan.");
     return;
@@ -498,7 +525,7 @@ function main(): void {
   const isNewFile = !existsSync(outPath);
   const { lines: existingLines, keys: existingKeys } = readExisting(outPath);
 
-  const combined = [...collectUsage(sessionDirs), ...codexUsage.records];
+  const combined = [...collectUsage(sessionDirs, worktrees), ...codexUsage.records];
   const unique = new Map(combined.map((record) => [
     `${record.sessionId} ${record.memoryFileName}`,
     record,
