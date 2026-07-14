@@ -4,7 +4,6 @@ export { DevelopingSolidworksPlugin } from "../../plugins/developing-solidworks/
 export { GhIssuePlugin } from "../../plugins/gh-issue/.opencode/plugins/gh-issue.js";
 export { GstackEntrepreneurPlugin } from "../../plugins/gstack-entrepreneur/.opencode/plugins/gstack-entrepreneur.js";
 export { MediocrityDetectorPlugin } from "../../plugins/mediocrity-detector/.opencode/plugins/mediocrity-detector.js";
-export { MemoryToRepoPlugin } from "../../plugins/memory-to-repo/.opencode/plugins/memory-to-repo.js";
 export { NoFetchPlugin } from "../../plugins/no-fetch/.opencode/plugins/no-fetch.js";
 export { OnePasswordPlugin } from "../../plugins/onepassword/.opencode/plugins/onepassword.js";
 export { PlaywrightCliHeadedPlugin } from "../../plugins/playwright-cli-headed/.opencode/plugins/playwright-cli-headed.js";

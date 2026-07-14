@@ -56,6 +56,9 @@ jobs:
       - name: Test OpenCode plugin adapters
         run: npm run test:opencode
 
+      - name: Test memory usage scanner and hook ranking contract
+        run: npm run test:usage
+
       - name: Check OpenCode package versions match plugin manifests
         run: |
           fail=0

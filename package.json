@@ -8,7 +8,8 @@
     "opencode": ">=1.17.18"
   },
   "scripts": {
-    "test:opencode": "node --test tests/opencode.test.mjs"
+    "test:opencode": "node --test tests/opencode.test.mjs",
+    "test:usage": "node --test tests/record-memory-usage.test.mjs"
   },
   "dependencies": {
     "zod": "^4.4.3"

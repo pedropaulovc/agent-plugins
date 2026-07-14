@@ -1,9 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import * as plugins from "../.opencode/plugins/agent-plugins.js";
@@ -12,7 +10,7 @@ const directory = process.cwd();
 const idleEvent = (sessionID) => ({ event: { type: "session.idle", properties: { sessionID } } });
 
 test("all plugins load and register expected config", async () => {
-  assert.equal(Object.keys(plugins).length, 16);
+  assert.equal(Object.keys(plugins).length, 15);
   const config = {};
   const client = {
     session: {
@@ -24,15 +22,13 @@ test("all plugins load and register expected config", async () => {
     const hooks = await plugin({ client, directory, worktree: directory });
     if (hooks.config) await hooks.config(config);
   }
-  assert.equal(config.skills.paths.length, 10);
-  assert.equal(Object.keys(config.command).length, 14);
+  assert.equal(config.skills.paths.length, 9);
+  assert.equal(Object.keys(config.command).length, 12);
   assert.ok(config.command["alt-text"]);
   assert.ok(config.command.issue);
   assert.ok(config.command.comments);
   assert.ok(config.command["watch-pr"]);
   assert.ok(config.command["download-solidworks-docs"]);
-  assert.ok(config.command["memory-audit"]);
-  assert.ok(config.command["record-memory-usage"]);
   assert.ok(config.command.m);
 });
 
@@ -129,113 +125,6 @@ test("mediocrity detector continues one OpenCode turn", async () => {
   assert.equal(prompts.length, 1, "duplicate idle events must not rescan a message");
 });
 
-test("memory-to-repo denies OpenCode reads of machine-local memory", async () => {
-  const hooks = await plugins.MemoryToRepoPlugin({ directory });
-  await assert.rejects(
-    hooks["tool.execute.before"](
-      { tool: "read", sessionID: "session", callID: "call" },
-      { args: { filePath: "/home/user/.claude/projects/repo/memory/MEMORY.md" } },
-    ),
-    /machine-local auto-memory directory/,
-  );
-  const escaped = {
-    args: { filePath: "/home/user/.claude/projects/repo/memory/local.md [force-memory]" },
-  };
-  await hooks["tool.execute.before"](
-    { tool: "read", sessionID: "session", callID: "escaped" },
-    escaped,
-  );
-  assert.equal(escaped.args.filePath, "/home/user/.claude/projects/repo/memory/local.md");
-});
-
-test("memory-to-repo session context uses the OpenCode worktree root", async () => {
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), "memory-context-opencode-"));
-  const subdirectory = path.join(tempDir, "src", "nested");
-  mkdirSync(path.join(tempDir, "memory"), { recursive: true });
-  mkdirSync(subdirectory, { recursive: true });
-  writeFileSync(path.join(tempDir, "memory", "MEMORY.md"), "- [Topic](topic.md) - worktree memory\n");
-  try {
-    const hooks = await plugins.MemoryToRepoPlugin({
-      directory: subdirectory,
-      worktree: tempDir,
-    });
-    const output = { system: [] };
-    await hooks["experimental.chat.system.transform"]({}, output);
-    assert.equal(output.system.length, 1);
-    assert.match(output.system[0], new RegExp(`${tempDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/memory`));
-    assert.match(output.system[0], /Topic/);
-    assert.doesNotMatch(output.system[0], /src\/nested\/memory/);
-
-    writeFileSync(path.join(tempDir, "memory", "MEMORY.md"), "- [Updated](updated.md) - fresh memory\n");
-    const refreshedOutput = { system: [] };
-    await hooks["experimental.chat.system.transform"]({}, refreshedOutput);
-    assert.match(refreshedOutput.system[0], /Updated/);
-    assert.doesNotMatch(refreshedOutput.system[0], /Topic/);
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
-test("memory usage scanner attributes linked-worktree OpenCode reads to that worktree", () => {
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), "memory-usage-worktree-opencode-"));
-  const projectRoot = path.join(tempDir, "project");
-  const linkedRoot = path.join(tempDir, "linked");
-  const databasePath = path.join(tempDir, "opencode.db");
-  mkdirSync(path.join(projectRoot, "memory"), { recursive: true });
-  writeFileSync(path.join(projectRoot, "memory", "topic.md"), "# Topic\n");
-  execFileSync("git", ["init", "-b", "main"], { cwd: projectRoot });
-  execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: projectRoot });
-  execFileSync("git", ["config", "user.name", "OpenCode Test"], { cwd: projectRoot });
-  execFileSync("git", ["add", "."], { cwd: projectRoot });
-  execFileSync("git", ["commit", "-m", "initial"], { cwd: projectRoot });
-  execFileSync("git", ["worktree", "add", "-b", "linked", linkedRoot], { cwd: projectRoot });
-  mkdirSync(path.join(linkedRoot, "src"), { recursive: true });
-
-  const database = new DatabaseSync(databasePath);
-  database.exec(`
-    CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
-    CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL);
-    CREATE TABLE part (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, data TEXT NOT NULL);
-  `);
-  database.prepare("INSERT INTO project (id, worktree) VALUES (?, ?)").run("project", projectRoot);
-  database.prepare("INSERT INTO session (id, project_id, directory) VALUES (?, ?, ?)")
-    .run("ses_linked", "project", path.join(linkedRoot, "src"));
-  database.prepare("INSERT INTO part (id, session_id, data) VALUES (?, ?, ?)").run(
-    "part-linked",
-    "ses_linked",
-    JSON.stringify({
-      type: "tool",
-      tool: "read",
-      state: { input: { filePath: path.join(linkedRoot, "memory", "topic.md") } },
-    }),
-  );
-  database.close();
-
-  try {
-    const output = execFileSync(
-      process.execPath,
-      [path.join(directory, "plugins/memory-to-repo/scripts/record-memory-usage.ts")],
-      {
-        cwd: projectRoot,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          HOME: tempDir,
-          CLAUDE_PROJECT_DIR: projectRoot,
-          OPENCODE_DB_PATH: databasePath,
-        },
-      },
-    );
-    assert.match(output, /1 OpenCode session/);
-    assert.deepEqual(
-      readFileSync(path.join(projectRoot, "memory", "usage.jsonl"), "utf8").trim().split("\n").map(JSON.parse),
-      [{ sessionId: "ses_linked", memoryFileName: "memory/topic.md" }],
-    );
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
-});
-
 test("unrelated issue detector continues one OpenCode turn", async () => {
   const prompts = [];
   const client = {
@@ -306,59 +195,3 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
   }
 });
 
-test("memory usage scanner records OpenCode read-tool history", () => {
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), "memory-usage-opencode-"));
-  const projectRoot = path.join(tempDir, "project");
-  const memoryDir = path.join(projectRoot, "memory");
-  const databasePath = path.join(tempDir, "opencode.db");
-  mkdirSync(memoryDir, { recursive: true });
-  writeFileSync(path.join(memoryDir, "topic.md"), "# Topic\n");
-
-  const database = new DatabaseSync(databasePath);
-  database.exec(`
-    CREATE TABLE project (id TEXT PRIMARY KEY, worktree TEXT NOT NULL);
-    CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, directory TEXT NOT NULL);
-    CREATE TABLE part (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, data TEXT NOT NULL);
-  `);
-  database.prepare("INSERT INTO project (id, worktree) VALUES (?, ?)").run("project", projectRoot);
-  database.prepare("INSERT INTO session (id, project_id, directory) VALUES (?, ?, ?)")
-    .run("ses_open", "project", path.join(projectRoot, "src"));
-  const insertPart = database.prepare("INSERT INTO part (id, session_id, data) VALUES (?, ?, ?)");
-  const readPart = JSON.stringify({
-    type: "tool",
-    tool: "read",
-    state: { input: { filePath: path.join(memoryDir, "topic.md") } },
-  });
-  insertPart.run("part-1", "ses_open", readPart);
-  insertPart.run("part-2", "ses_open", readPart);
-  insertPart.run("part-index", "ses_open", JSON.stringify({
-    type: "tool",
-    tool: "read",
-    state: { input: { filePath: path.join(memoryDir, "MEMORY.md") } },
-  }));
-  database.close();
-
-  try {
-    const output = execFileSync(
-      process.execPath,
-      [path.join(directory, "plugins/memory-to-repo/scripts/record-memory-usage.ts")],
-      {
-        cwd: projectRoot,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          HOME: tempDir,
-          CLAUDE_PROJECT_DIR: projectRoot,
-          OPENCODE_DB_PATH: databasePath,
-        },
-      },
-    );
-    assert.match(output, /1 OpenCode session/);
-    assert.deepEqual(
-      readFileSync(path.join(memoryDir, "usage.jsonl"), "utf8").trim().split("\n").map(JSON.parse),
-      [{ sessionId: "ses_open", memoryFileName: "memory/topic.md" }],
-    );
-  } finally {
-    rmSync(tempDir, { recursive: true, force: true });
-  }
-});
