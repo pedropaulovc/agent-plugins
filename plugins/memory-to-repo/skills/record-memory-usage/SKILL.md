@@ -1,6 +1,6 @@
 ---
 name: record-memory-usage
-description: Scan past Claude Code and OpenCode sessions (including worktrees) for memory files actually read, and refresh memory/usage.jsonl so SessionStart can rank memories by usage.
+description: Scan past Claude Code and Codex sessions (including worktrees) for memory files actually read, and refresh memory/usage.jsonl so SessionStart can rank memories by usage.
 ---
 
 # Record memory usage
@@ -21,17 +21,20 @@ Report the summary line the script prints.
 ## Supported session stores
 
 The scanner reads Claude Code JSONL transcripts from `~/.claude/projects/...`
-and OpenCode's SQLite session database (normally
-`~/.local/share/opencode/opencode.db`). Codex sessions in `~/.codex/sessions/`
-are not yet scanned.
+and Codex JSONL rollouts from `~/.codex/sessions/...` (or `$CODEX_HOME/sessions`).
 
 ## What this does
 
-Scans past Claude Code and OpenCode sessions for this project, across every
-checkout reported by `git worktree list`, for read-tool calls whose target file
-resolved to `memory/<name>.md` (excluding the `MEMORY.md` index itself). For
-each distinct `(sessionId, memoryFileName)` pair found, it writes one JSON line
-to `memory/usage.jsonl`:
+Scans past Claude Code and Codex sessions for this project, across
+every checkout reported by `git worktree list`, for memory files that were
+consulted — both Read-tool calls and file-reading shell commands (`cat`, `sed`,
+`rg`, `Get-Content`, …) — whose target resolved to `memory/<name>.md` (excluding
+the `MEMORY.md` index itself). Codex has no Read tool, so its consultations show
+up only as shell commands; a memory path that appears in a write or VCS command
+instead (`git add`, `git rm`, `rm`, `mv`) is deliberately **not** counted, since
+committing or deleting a memory isn't consulting it. For each distinct
+`(sessionId, memoryFileName)` pair found, it writes one JSON line to
+`memory/usage.jsonl`:
 
 ```json
 {"sessionId": "025df9d0-...", "memoryFileName": "memory/gstack-entrepreneur-vendoring.md"}

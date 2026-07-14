@@ -11,10 +11,14 @@ Run the usage scanner and report what it found:
 
 ## What this does
 
-Scans past Claude Code JSONL transcripts and OpenCode's SQLite session database
-for this project across every checkout reported by `git worktree list`. It
-finds read-tool calls whose target resolved to `memory/<name>.md` (excluding the
-`MEMORY.md` index itself). For each distinct `(sessionId, memoryFileName)` pair
+Scans past Claude Code JSONL transcripts and Codex JSONL rollouts for this
+project across every checkout reported by
+`git worktree list`. It finds memory files that were consulted — Read-tool calls
+and file-reading shell commands (`cat`, `sed`, `rg`, `Get-Content`, …) — whose
+target resolved to `memory/<name>.md` (excluding the `MEMORY.md` index itself).
+Codex has no Read tool, so its consultations show up only as shell commands; a
+memory path in a write or VCS command instead (`git add`, `git rm`, `rm`, `mv`)
+is deliberately not counted. For each distinct `(sessionId, memoryFileName)` pair
 found, it writes one JSON line to `memory/usage.jsonl`:
 
 ```json
