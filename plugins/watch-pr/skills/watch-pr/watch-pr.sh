@@ -302,14 +302,15 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
   fi
   [[ "$advance" == 1 ]] && { prev=$cur; prev_ur_ids=$ur_ids; }
 
-  if (( SECONDS - last_event_at >= STALL_SECONDS )); then
-    emit "stall: no new events for $STALL_TIMEOUT — watcher still running"
-  fi
-
   if [[ "$state" =~ ^(MERGED|CLOSED)$ ]]; then
     [[ "$state" == "MERGED" ]] && { emit "merged — running git fetch"; git fetch --all --prune; }
     break
   fi
+
+  if (( SECONDS - last_event_at >= STALL_SECONDS )); then
+    emit "stall: no new events for $STALL_TIMEOUT — watcher still running"
+  fi
+
   sleep "$POLL_SECONDS"
 done
 emit "PR $NUM finished: $state"

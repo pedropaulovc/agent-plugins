@@ -150,7 +150,7 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
   const ghBinary = path.join(tempDir, "gh");
   writeFileSync(watchScript, [
     "#!/usr/bin/env bash",
-    "printf 'ref %s\\n' \"$1\"",
+    "printf 'args %s\\n' \"$*\"",
     "printf 'check build: pending\\nfeedback T1 src/app.js:4 reviewer title\\n'",
     "exec sleep 10",
   ].join("\n"));
@@ -168,22 +168,23 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
   const context = { sessionID: "watch-session", directory, worktree: directory };
   try {
     const started = await hooks.tool.watch_pr.execute(
-      { action: "start" },
+      { action: "start", stallTimeout: "2h" },
       context,
     );
     assert.match(started, /notified automatically/);
     assert.match(started, /pull\/123/);
+    assert.match(started, /2h stall timeout/);
     for (let attempt = 0; attempt < 20 && prompts.length === 0; attempt += 1) {
       await delay(25);
     }
     assert.equal(prompts.length, 1);
-    assert.match(prompts[0].body.parts[0].text, /ref https:\/\/github.com\/example\/repo\/pull\/123/);
+    assert.match(prompts[0].body.parts[0].text, /args https:\/\/github.com\/example\/repo\/pull\/123 --stall-timeout 2h/);
     assert.match(prompts[0].body.parts[0].text, /check build: pending/);
     assert.match(prompts[0].body.parts[0].text, /feedback T1/);
     assert.equal(prompts[0].body.parts[0].synthetic, true);
     assert.match(
       await hooks.tool.watch_pr.execute({ action: "status" }, context),
-      /monitoring https:\/\/github.com\/example\/repo\/pull\/123/,
+      /monitoring https:\/\/github.com\/example\/repo\/pull\/123 with a 2h stall timeout/,
     );
     assert.equal(
       await hooks.tool.watch_pr.execute({ action: "stop" }, context),
@@ -194,4 +195,3 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
-

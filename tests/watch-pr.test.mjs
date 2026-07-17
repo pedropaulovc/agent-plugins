@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmodSync, copyFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -17,7 +17,8 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
   const commentsPath = path.join(tempDir, "comments.md");
 
   try {
-    await execFileAsync("mkdir", ["-p", binDir, scriptDir]);
+    mkdirSync(binDir);
+    mkdirSync(scriptDir);
     copyFileSync(
       path.join(root, "plugins/watch-pr/skills/watch-pr/watch-pr.sh"),
       path.join(scriptDir, "watch-pr.sh"),
@@ -61,7 +62,7 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
       "count=$((count + 1))",
       "printf '%s\\n' \"$count\" > \"$WATCH_PR_TEST_COUNTER\"",
       "state=OPEN",
-      "[[ $count -ge 2 ]] && state=CLOSED",
+      "[[ $count -ge 3 ]] && state=CLOSED",
       "printf '{\"state\":\"%s\",\"mergeStateStatus\":\"CLEAN\",\"baseRefName\":\"main\",\"reviews\":[],\"reactionGroups\":[],\"comments\":[]}\\n' \"$state\"",
     ].join("\n"));
 
