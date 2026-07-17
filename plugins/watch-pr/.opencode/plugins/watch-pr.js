@@ -84,9 +84,10 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
     return true;
   };
 
-  const startWatcher = (sessionID, cwd, ref) => {
+  const startWatcher = (sessionID, cwd, ref, stallTimeout) => {
     stopWatcher(sessionID);
-    const args = ref ? [watchScript, ref] : [watchScript];
+    const args = [watchScript, ref];
+    if (stallTimeout) args.push("--stall-timeout", stallTimeout);
     const child = spawn("bash", args, {
       cwd,
       env: { ...process.env, OPENCODE: "1" },
@@ -96,6 +97,7 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
     const watcher = {
       child,
       ref: ref || "current branch",
+      stallTimeout: stallTimeout || "1h",
       lines: [],
       remainder: "",
       timer: null,
@@ -173,8 +175,9 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
         args: {
           action: z.enum(["start", "stop", "status"]).default("start"),
           ref: z.string().optional().describe("PR number, URL, or branch accepted by gh pr view"),
+          stallTimeout: z.string().regex(/^[1-9][0-9]*[smhd]$/).optional().describe("Quiet interval before a stall notification, such as 30m or 2h (default: 1h)"),
         },
-        async execute({ action, ref }, context) {
+        async execute({ action, ref, stallTimeout }, context) {
           const sessionID = context.sessionID;
           if (action === "stop") {
             return stopWatcher(sessionID) ? "Stopped the watch-pr monitor." : "No watch-pr monitor is active.";
@@ -182,13 +185,13 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
           if (action === "status") {
             const active = watchers.get(sessionID);
             return active
-              ? `watch-pr is monitoring ${active.ref} (pid ${active.child.pid}).`
+              ? `watch-pr is monitoring ${active.ref} with a ${active.stallTimeout} stall timeout (pid ${active.child.pid}).`
               : "No watch-pr monitor is active.";
           }
           const cwd = context.directory || directory;
           const resolvedRef = await resolveRef(cwd, ref);
-          const active = startWatcher(sessionID, cwd, resolvedRef);
-          return `Started event-driven watch-pr monitoring for ${active.ref} (pid ${active.child.pid}). This session will be notified automatically; do not poll it.`;
+          const active = startWatcher(sessionID, cwd, resolvedRef, stallTimeout);
+          return `Started event-driven watch-pr monitoring for ${active.ref} with a ${active.stallTimeout} stall timeout (pid ${active.child.pid}). This session will be notified automatically; do not poll it.`;
         },
       },
     },

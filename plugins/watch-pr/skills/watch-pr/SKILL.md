@@ -22,6 +22,11 @@ appear, you open `<path>` for the threads you will act on and drive the reply fl
   or OpenCode** take the ref from the user's prompt. If
   none is given, auto-detects the PR from the current branch. The script validates
   the ref up front and exits loudly on a bad one.
+- `--stall-timeout <duration>` (optional): emit a stall notification after this much
+  time without a new event, then once per additional quiet interval. Defaults to
+  `1h`; accepts a positive integer plus `s`, `m`, `h`, or `d` (for example,
+  `30m`, `2h`, or `1d`). Under OpenCode, pass the same value as the `watch_pr`
+  tool's `stallTimeout` argument.
 
 ## Instructions
 
@@ -54,7 +59,7 @@ After starting it, skip the rest of this step and continue with the event table.
 
 **Under Claude Code:** launch the watch inside the Monitor tool.
 
-Run `watch-pr.sh <PR>` **as the Monitor tool's `command`** with `persistent: true`
+Run `watch-pr.sh <PR> [--stall-timeout <duration>]` **as the Monitor tool's `command`** with `persistent: true`
 (PR lifecycles can take hours — no timeout). Use the `watch-pr.sh` that sits **in
 this skill's own directory** — right next to this `SKILL.md`, whose absolute path
 you already know (it's where you loaded this file from) — and put that path
@@ -67,20 +72,27 @@ version instead of the one next to this `SKILL.md`.
 Monitor:
   persistent: true
   description: "PR <PR> lifecycle"
-  command: bash "<this skill's directory>/watch-pr.sh" <PR>
+  command: bash "<this skill's directory>/watch-pr.sh" <PR> [--stall-timeout <duration>]
 ```
 
 The loop diffs state each poll and emits **one line per change**, staying silent
 while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — you
 never stop it manually.
 
-**Under Codex (no `Monitor` tool):** run the *same* `watch-pr.sh <PR>` as a **background terminal**
+**Under Codex (no `Monitor` tool):** run the same
+`watch-pr.sh <PR> [--stall-timeout <duration>]` as a **background terminal**
 (`unified_exec` / the harness's background-shell mechanism — not a blocking
 foreground call). The script's stdout is identical; poll it with `/ps` (or read
 the background terminal's captured output) and act on each new line exactly as in
 the table below. Everything else — the event lines, the `feedback …` lines, the
 reply flow — is harness-agnostic. Do **not** foreground the script; it
 runs until MERGED/CLOSED.
+
+**On Windows:** run the watcher and its Git commands in Git Bash from Git for
+Windows, or in Bash paired with another Windows-local Git installation. Do **not**
+launch it through WSL Bash: WSL uses a separate Git executable, filesystem paths,
+credentials, and process environment from the Windows harness that owns the
+plugin and background terminal.
 
 ### 3. Act on each emitted event line
 
@@ -100,6 +112,7 @@ runs until MERGED/CLOSED.
 | `reaction THUMBS_UP: 1` (👍) | Codex finished a push-triggered review, found **nothing** | informational — its all-clear (when it *does* find something it posts a review → `review …` + `feedback …` lines → step 4) |
 | `comment-reaction EYES: 1` (👀) | Codex acked an **`@codex review`** mention on a comment, reviewing | informational — wait for its verdict |
 | `comment-reaction THUMBS_UP: 1` (👍) | Codex finished an at-mention review, found **nothing** | informational — its all-clear for the mention (no review object is posted in this case) |
+| `stall: no new events for <duration> — watcher still running` | the watcher is healthy, but the PR emitted no new event lines for the configured timeout (`1h` by default) | informational — continue waiting; another line appears after each additional quiet interval |
 | `PR <PR> finished: MERGED` | merged (loop ran `git fetch --all --prune`) | done — confirm to the user |
 | `PR <PR> finished: CLOSED` | closed without merging | done — confirm to the user |
 
