@@ -7,10 +7,13 @@ set -uo pipefail
 # each emitted line is surfaced as an event; the loop is silent while nothing
 # changes and self-terminates on MERGED/CLOSED.
 #
-# Usage: watch-pr.sh <pr>   where <pr> is a PR number, full URL, or branch name
+# Usage: watch-pr.sh <pr> [--stall-timeout <duration>]
+#   <pr> is a PR number, full URL, or branch name
 #   (the forms `gh pr view` accepts). `owner/repo#123` is NOT accepted — pass the
 #   URL for another repo. The ref is validated up front; a bad one exits loudly
 #   instead of letting the loop sleep on empty state.
+#   <duration> controls quiet-time stall notifications (default: 1h). It is a
+#   positive integer followed by s, m, h, or d, such as 30m or 2h.
 #
 # Event lines (emitted only when they first appear / change):
 #   check <name>: <bucket> [@<completedAt>]  CI check flipped; the completedAt stamp
@@ -41,6 +44,9 @@ set -uo pipefail
 #   → full bodies + code context: <path>   the editable markdown file holding every active
 #                                          thread's full body, diff context and ready-to-run
 #                                          reply.sh commands — open it for threads you act on
+#   stall: no new events for <duration>     watcher is alive, but the PR has produced no new
+#                                          event lines for the configured timeout; repeats once
+#                                          per additional quiet timeout
 #   PR <num> finished: <state>             terminal; loop exits
 #
 # On any new review / comment / review-comment signal, this script runs the
@@ -50,7 +56,67 @@ set -uo pipefail
 # blocks (issue #32). The path is where full bodies live and where drafted replies
 # get written back.
 
-REF="${1:?usage: watch-pr.sh <pr-number|url|branch>}"
+REF=""
+STALL_TIMEOUT="1h"
+while (( $# > 0 )); do
+  case "$1" in
+    --stall-timeout)
+      shift
+      if (( $# == 0 )); then
+        echo "watch-pr: --stall-timeout requires a duration such as 30m or 2h"
+        exit 1
+      fi
+      STALL_TIMEOUT="$1"
+      ;;
+    --stall-timeout=*)
+      STALL_TIMEOUT="${1#*=}"
+      ;;
+    --*)
+      echo "watch-pr: unknown option '$1'"
+      exit 1
+      ;;
+    *)
+      if [[ -n "$REF" ]]; then
+        echo "watch-pr: expected one PR ref, got '$REF' and '$1'"
+        exit 1
+      fi
+      REF="$1"
+      ;;
+  esac
+  shift
+done
+
+if [[ -z "$REF" ]]; then
+  echo "usage: watch-pr.sh <pr-number|url|branch> [--stall-timeout <duration>]"
+  exit 1
+fi
+
+if [[ ! "$STALL_TIMEOUT" =~ ^([1-9][0-9]*)([smhd])$ ]]; then
+  echo "watch-pr: --stall-timeout must be a positive duration ending in s, m, h, or d (for example: 30m or 2h)"
+  exit 1
+fi
+
+STALL_AMOUNT="${BASH_REMATCH[1]}"
+case "${BASH_REMATCH[2]}" in
+  s) STALL_MULTIPLIER=1 ;;
+  m) STALL_MULTIPLIER=60 ;;
+  h) STALL_MULTIPLIER=3600 ;;
+  d) STALL_MULTIPLIER=86400 ;;
+esac
+
+POLL_SECONDS="${WATCH_PR_POLL_SECONDS:-30}"
+STALL_SECONDS=$((STALL_AMOUNT * STALL_MULTIPLIER))
+
+if [[ ! "$POLL_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "watch-pr: WATCH_PR_POLL_SECONDS must be a positive integer"
+  exit 1
+fi
+
+last_event_at=$SECONDS
+emit() {
+  printf '%s\n' "$1"
+  last_event_at=$SECONDS
+}
 
 # Vendored comments.sh sits next to this script (self-contained; no plugin deps).
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -169,7 +235,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
   should_fetch=0
   [[ -n "$ur_added" ]] && should_fetch=1
   if [[ -n "$diff_lines" ]]; then
-    echo "$diff_lines"
+    emit "$diff_lines"
     # A new review / comment / review-comment signal is also fresh feedback. First poll
     # (prev empty) always trips this via the count lines, so open threads are fetched
     # once on startup regardless of the set check above.
@@ -190,7 +256,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
     # failure rather than emit partial data. Surface it and HOLD prev, so the same
     # signal re-trips the fetch next poll instead of being silently marked seen.
     if [[ -z "$path" || ! -f "$path" ]]; then
-      echo "watch-pr: comment formatter failed — will retry next poll"
+      emit "watch-pr: comment formatter failed — will retry next poll"
       advance=0
     fi
 
@@ -230,16 +296,21 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
           }
           END { emit() }
         ' "$path"
-        echo "→ full bodies + code context: $display_path"
+        emit "→ full bodies + code context: $display_path"
       fi
     fi
   fi
   [[ "$advance" == 1 ]] && { prev=$cur; prev_ur_ids=$ur_ids; }
 
   if [[ "$state" =~ ^(MERGED|CLOSED)$ ]]; then
-    [[ "$state" == "MERGED" ]] && { echo "merged — running git fetch"; git fetch --all --prune; }
+    [[ "$state" == "MERGED" ]] && { emit "merged — running git fetch"; git fetch --all --prune; }
     break
   fi
-  sleep 30
+
+  if (( SECONDS - last_event_at >= STALL_SECONDS )); then
+    emit "stall: no new events for $STALL_TIMEOUT — watcher still running"
+  fi
+
+  sleep "$POLL_SECONDS"
 done
-echo "PR $NUM finished: $state"
+emit "PR $NUM finished: $state"

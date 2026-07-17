@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test:opencode": "node --test tests/opencode.test.mjs",
+    "test:watch-pr": "node --test tests/watch-pr.test.mjs",
     "test:usage": "node --test tests/record-memory-usage.test.mjs"
   },
   "dependencies": {
