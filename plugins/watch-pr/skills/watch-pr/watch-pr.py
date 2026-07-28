@@ -15,13 +15,31 @@ import time
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 
+def use_utf8_streams() -> None:
+    """Emit UTF-8 whatever the console codepage is.
+
+    The watcher echoes review snippets verbatim, and a Windows console encoder set to
+    cp1252 raises on the first emoji — the encode-side twin of the decode crash below.
+    Whatever reads this pipe (Monitor, the OpenCode adapter) already decodes UTF-8.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def command(*args: str, capture: bool = False, check: bool = False) -> subprocess.CompletedProcess:
-    return subprocess.run(args, text=True, capture_output=capture, check=check)
+    # gh and git speak UTF-8 on every platform, but text mode decodes captured output
+    # with the *locale* codepage — cp1252 on a stock Windows box. One review body
+    # carrying a byte that page leaves undefined used to raise UnicodeDecodeError in
+    # the reader thread, hand back stdout=None, and take the watch down (issue #67).
+    return subprocess.run(args, text=True, encoding="utf-8", errors="replace", capture_output=capture, check=check)
 
 
 def output(*args: str) -> str:
     result = command(*args, capture=True)
-    return result.stdout
+    # A failed capture yields None; callers all parse text, so degrade to an empty poll.
+    return result.stdout or ""
 
 
 def json_values(value: str) -> List[object]:
@@ -282,6 +300,7 @@ def formatter_lines(document: str) -> List[str]:
 
 
 def main() -> int:
+    use_utf8_streams()
     args = arguments()
     try:
         url, number, slug = pr_info(args.ref)

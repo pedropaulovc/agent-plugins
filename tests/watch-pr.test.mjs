@@ -32,6 +32,16 @@ const stubsUnsupported = process.platform === "win32"
   ? "stub executables on PATH cannot shadow real .exe binaries on Windows"
   : false;
 
+// Forces the interpreter onto its locale codepage — cp1252 on a stock Windows box,
+// ASCII under LC_ALL=C elsewhere — which is the condition issue #67 crashed under.
+// Without PYTHONUTF8=0 a UTF-8-mode default (or PEP 538's C locale coercion) would
+// quietly paper over the very bug these tests pin down.
+const localeCodepage = { PYTHONUTF8: "0", PYTHONCOERCECLOCALE: "0", PYTHONIOENCODING: "", LC_ALL: "C", LANG: "C" };
+
+// A snippet with a ZERO WIDTH JOINER: its UTF-8 encoding carries byte 0x8d, which is
+// exactly the byte cp1252 leaves undefined in the reported traceback.
+const nonAscii = "review \u{1F468}\u200D\u{1F4BB} body";
+
 // Loads watch-pr.py as a module and evaluates `expression` against it, so the
 // helpers can be exercised without standing up a fake GitHub.
 async function probe(expression, env = {}) {
@@ -248,6 +258,57 @@ test("a formatter that writes nothing is reported as a failure", async () => {
       { argv: [script] },
     );
     assert.equal(produced, null);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Issue #67: gh emits UTF-8, but text-mode capture decodes with the locale codepage.
+// Both directions are driven under a forced non-UTF-8 locale, so they fail on the
+// unfixed script on Linux too rather than only on the Windows box that reported it.
+// ---------------------------------------------------------------------------
+
+test("captured command output survives a non-UTF-8 locale", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-decode-"));
+  try {
+    // Stands in for gh: writes UTF-8 bytes, as gh does on every platform.
+    const emitter = path.join(tempDir, "emit.py");
+    writeFileSync(emitter, `import sys\nsys.stdout.buffer.write(${JSON.stringify(nonAscii)}.encode("utf-8"))\n`, "utf8");
+
+    const captured = await probe("module.output(sys.executable, sys.argv[2])", {
+      argv: [emitter],
+      vars: localeCodepage,
+    });
+
+    assert.equal(captured, nonAscii, "a review body must not be mangled by the console codepage");
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("emitted events are UTF-8 whatever the console codepage is", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-encode-"));
+  try {
+    // A file, not `python -c`: a C-locale interpreter cannot even decode a command
+    // line carrying an emoji, whereas source files are always read as UTF-8.
+    const driver = path.join(tempDir, "emit-event.py");
+    writeFileSync(driver, [
+      "import importlib.util, sys",
+      "spec = importlib.util.spec_from_file_location('watch_pr', sys.argv[1])",
+      "module = importlib.util.module_from_spec(spec)",
+      "spec.loader.exec_module(module)",
+      "module.use_utf8_streams()",
+      `print(${JSON.stringify(nonAscii)})`,
+    ].join("\n"), "utf8");
+
+    const { stdout } = await execFileAsync(python, [driver, watcher], {
+      env: { ...process.env, ...localeCodepage },
+      encoding: "buffer",
+      timeout: 30_000,
+    });
+
+    assert.equal(stdout.toString("utf8").trim(), nonAscii, "the monitor reading this pipe decodes UTF-8");
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
