@@ -20,8 +20,8 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
     mkdirSync(binDir);
     mkdirSync(scriptDir);
     copyFileSync(
-      path.join(root, "plugins/watch-pr/skills/watch-pr/watch-pr.sh"),
-      path.join(scriptDir, "watch-pr.sh"),
+      path.join(root, "plugins/watch-pr/skills/watch-pr/watch-pr.py"),
+      path.join(scriptDir, "watch-pr.py"),
     );
     writeFileSync(commentsPath, "active_comments: 0\n");
     writeFileSync(path.join(scriptDir, "comments.sh"), [
@@ -67,14 +67,14 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
     ].join("\n"));
 
     for (const executable of [
-      path.join(scriptDir, "watch-pr.sh"),
+      path.join(scriptDir, "watch-pr.py"),
       path.join(scriptDir, "comments.sh"),
       path.join(binDir, "gh"),
       path.join(binDir, "git"),
     ]) chmodSync(executable, 0o755);
 
-    const { stdout } = await execFileAsync("bash", [
-      path.join(scriptDir, "watch-pr.sh"),
+    const { stdout } = await execFileAsync("python3", [
+      path.join(scriptDir, "watch-pr.py"),
       "123",
       "--stall-timeout",
       "1s",

@@ -7,7 +7,7 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion, Monitor
 
 # Watch a PR to green + merged
 
-Babysit a pull request end to end with a single script: `watch-pr.sh` watches the
+Babysit a pull request end to end with a single script: `watch-pr.py` watches the
 lifecycle AND, whenever fresh feedback lands, fetches + formats the active comments
 itself (via the vendored sibling `comments.sh`) and emits **one compact `feedback …`
 line per active thread** (id / location / author / title) followed by a `→ full
@@ -41,7 +41,7 @@ gh pr view --json number,url -q '"#\(.number) \(.url)"'
 
 If that fails, there is no PR for this branch — stop and tell the user (offer to
 open one). Otherwise carry the **URL** forward (not just the number) and pass it as
-`<PR>` in step 2: `watch-pr.sh` resolves a bare number against the local `gh` repo,
+`<PR>` in step 2: `watch-pr.py` resolves a bare number against the local `gh` repo,
 which can miss or mis-target a PR when the branch's PR lives in another repo (e.g. a
 fork checkout), whereas the URL is unambiguous.
 
@@ -59,8 +59,8 @@ After starting it, skip the rest of this step and continue with the event table.
 
 **Under Claude Code:** launch the watch inside the Monitor tool.
 
-Run `watch-pr.sh <PR> [--stall-timeout <duration>]` **as the Monitor tool's `command`** with `persistent: true`
-(PR lifecycles can take hours — no timeout). Use the `watch-pr.sh` that sits **in
+Run `watch-pr.py <PR> [--stall-timeout <duration>]` **as the Monitor tool's `command`** with `persistent: true`
+(PR lifecycles can take hours — no timeout). Use the `watch-pr.py` that sits **in
 this skill's own directory** — right next to this `SKILL.md`, whose absolute path
 you already know (it's where you loaded this file from) — and put that path
 directly in the command. Do NOT use Bash `run_in_background` + a separate Monitor,
@@ -72,7 +72,7 @@ version instead of the one next to this `SKILL.md`.
 Monitor:
   persistent: true
   description: "PR <PR> lifecycle"
-  command: bash "<this skill's directory>/watch-pr.sh" <PR> [--stall-timeout <duration>]
+  command: python3 "<this skill's directory>/watch-pr.py" <PR> [--stall-timeout <duration>]
 ```
 
 The loop diffs state each poll and emits **one line per change**, staying silent
@@ -80,7 +80,7 @@ while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — 
 never stop it manually.
 
 **Under Codex (no `Monitor` tool):** run the same
-`watch-pr.sh <PR> [--stall-timeout <duration>]` as a **background terminal**
+`watch-pr.py <PR> [--stall-timeout <duration>]` as a **background terminal**
 (`unified_exec` / the harness's background-shell mechanism — not a blocking
 foreground call). The script's stdout is identical; poll it with `/ps` (or read
 the background terminal's captured output) and act on each new line exactly as in
@@ -139,7 +139,7 @@ new events until the PR reaches MERGED/CLOSED.
 ## Notes
 
 - One script does both jobs: the watch loop drives `comments.sh` internally, so you
-  only ever launch `watch-pr.sh` — the feedback arrives as compact `feedback …` lines
+  only ever launch `watch-pr.py` — the feedback arrives as compact `feedback …` lines
   in stdout, and you `Read` the pointed-to file only for threads you act on.
 - The 👀→👍 sequence is the clean-review path for Codex (auto-reviews every push).
 - Force-pushes on this feature branch use `--force-with-lease`; no confirmation needed.

@@ -146,13 +146,13 @@ test("unrelated issue detector continues one OpenCode turn", async () => {
 
 test("watch-pr wakes its OpenCode session with batched monitor events", async () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-opencode-"));
-  const watchScript = path.join(tempDir, "watch-pr.sh");
+  const watchScript = path.join(tempDir, "watch-pr.py");
   const ghBinary = path.join(tempDir, "gh");
   writeFileSync(watchScript, [
-    "#!/usr/bin/env bash",
-    "printf 'args %s\\n' \"$*\"",
-    "printf 'check build: pending\\nfeedback T1 src/app.js:4 reviewer title\\n'",
-    "exec sleep 10",
+    "import sys, time",
+    "print('args ' + ' '.join(sys.argv[1:]), flush=True)",
+    "print('check build: pending\\nfeedback T1 src/app.js:4 reviewer title', flush=True)",
+    "time.sleep(10)",
   ].join("\n"));
   writeFileSync(ghBinary, "#!/usr/bin/env bash\nprintf '%s\\n' 'https://github.com/example/repo/pull/123'\n");
   chmodSync(ghBinary, 0o755);
