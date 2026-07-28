@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -215,7 +216,7 @@ def main() -> int:
         if fetch:
             display_path = output("bash", str(comments_script), url).strip()
             path = Path(display_path)
-            if os.name == "nt" and display_path:
+            if shutil.which("cygpath") and display_path:
                 converted = output("cygpath", "-u", display_path).strip()
                 path = Path(converted or display_path)
             if not display_path or not path.is_file():
