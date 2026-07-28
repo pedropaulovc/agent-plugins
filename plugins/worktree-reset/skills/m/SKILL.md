@@ -1,6 +1,6 @@
 ---
 name: m
-description: Reset current worktree to origin/main. Tears down agent state (task list, scheduled timers, teammates, subagents, monitors, loops, background jobs), cleans stale branches, resets to main, and runs npm install on all worktrees. Pass --force to discard everything without asking.
+description: Reset current worktree to origin/main. Tears down agent state (task list, scheduled timers, teammates, subagents, monitors, loops, background jobs), cleans stale branches, resets to main, and runs npm install, go mod download, and locked uv sync on all worktrees.
 disable-model-invocation: true
 allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate, TaskStop, TaskOutput, Monitor, Agent, SendMessage, CronList, CronDelete, unsubscribe_pr_activity
 ---
@@ -9,19 +9,6 @@ allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate,
 
 Reset the current worktree branch to origin/main **and** tear down all in-flight agent
 state so the session starts from a clean slate.
-
-## Force mode
-
-If `--force` was passed (e.g. `/m --force`), run the whole flow without stopping for
-confirmation:
-
-- Discard all agent state below without asking.
-- Discard all uncommitted, untracked, **and** git-ignored files without asking — use
-  `git clean -fdx .` in place of the gentler clean in step 5, and skip the
-  uncommitted-changes guard in step 3 (the reset and clean will discard them).
-- Drop all stashes without asking (`git stash clear` in step 4).
-
-Without `--force`, keep the confirmation behaviour described in each step.
 
 ## 1. Tear down agent state
 
@@ -74,7 +61,7 @@ is running: `rm -f .git/index.lock`.
 
 Run `git status` to see if there are any staged or unstaged changes. If there are
 uncommitted changes, stop and inform the user — they need to commit or stash these
-changes first. (Skip this guard in `--force` mode.)
+changes first.
 
 ## 4. Check for untracked files and stashes
 
@@ -89,20 +76,15 @@ Run `git status` to list any untracked files. If untracked files exist:
 Also run `git stash list`. A `git reset --hard` does **not** clear stashes, so report any
 that exist and let the user decide whether to keep them.
 
-(In `--force` mode, skip these questions — everything is discarded in step 5, and run
-`git stash clear` to drop all stashes.)
-
 ## 5. Run git clean
 
 If the user confirms cleanup (or if all untracked files are clearly throwaway), run
 `git clean -df` from the root of the repository to remove untracked files and
 directories.
 
-In `--force` mode, run `git clean -fdx .` instead to also remove git-ignored files.
-
 ## 6. Reset state
 
-Prune bookkeeping for worktrees whose directories are gone, then run the `m.sh` script
+Prune bookkeeping for worktrees whose directories are gone, then run the `m.py` script
 that sits in this skill's own directory (right next to this `SKILL.md`). You already know
 that directory's absolute path — it's where you loaded this file from — so invoke the
 script by that path directly. Do **not** search for it with `find`; that scans all of
@@ -110,7 +92,7 @@ script by that path directly. Do **not** search for it with `find`; that scans a
 
 ```bash
 git worktree prune
-bash "<absolute path of the directory containing this SKILL.md>/m.sh"
+python3 "<absolute path of the directory containing this SKILL.md>/m.py"
 ```
 
 Report the final status to the user when complete, including confirmation that every
