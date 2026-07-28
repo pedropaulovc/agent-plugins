@@ -84,7 +84,7 @@ Tuned to my own setup, tooling, workflow preferences, or niche — unlikely to a
 | [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks .NET COM API workflow with anti-hallucination guardrails |
 | [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Entrepreneurship subset of gstack: idea validation, market research, strategy (no code) |
 | [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects to my Firecrawl + Browserbase MCPs |
-| [worktree-reset](plugins/worktree-reset) | Skill | `/m` — tears down agent state (tasks/timers/teammates/subagents/monitors/loops), resets the current worktree to `origin/main`, and reinstalls deps; `--force` to discard everything |
+| [worktree-reset](plugins/worktree-reset) | Skill | `/m` — tears down agent state (tasks/timers/teammates/subagents/monitors/loops), resets the current worktree to `origin/main`, and reinstalls deps |
 | [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Auto-injects `--headed` into `playwright-cli open` invocations and recommends a standard viewport |
 | [alt-text](plugins/alt-text) | Skill | Writes accessibility-focused alt text for images about to be posted on social media |
 | [onepassword](plugins/onepassword) | Skill | Establishes a 1Password CLI (`op`) session interactively via tmux when service-account auth fails |
