@@ -19,8 +19,8 @@ FILES=(
 
 # The program opens with a lone `'` at the end of this line and closes with the `'` that
 # begins the CLOSE_MARKER line.
-OPEN_MARKER='--slurpfile threads "$TMPDIR/threads.json" '\'''
-CLOSE_MARKER=''\'' "$TMPDIR/inline.json"'
+OPEN_MARKER='--slurpfile threads "$WORK_DIR/threads.json" '\'''
+CLOSE_MARKER=''\'' "$WORK_DIR/inline.json"'
 
 fail=0
 for f in "${FILES[@]}"; do

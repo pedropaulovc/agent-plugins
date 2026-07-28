@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +8,47 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
+const watcher = path.join(root, "plugins/watch-pr/skills/watch-pr/watch-pr.py");
+
+// The Windows launcher is the documented entry point but is not always installed;
+// fall back to whichever interpreter answers --version.
+const python = ["py", "python3", "python"].find((candidate) => {
+  if (process.platform !== "win32" && candidate === "py") return false;
+  try {
+    execFileSync(candidate, ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}) ?? "python3";
+
+// The stub `gh`/`git` below are extensionless shell scripts placed on PATH. Windows
+// cannot use them: CreateProcess — what subprocess.run(["gh", …]) ends up calling —
+// resolves only .exe, so a stub never shadows a real gh.exe, and the .cmd shim that
+// would be resolvable truncates the multiline GraphQL argument at its first newline.
+// The Windows-specific logic those tests cannot reach is covered natively further
+// down, against the real interpreter and the real bash lookup.
+const stubsUnsupported = process.platform === "win32"
+  ? "stub executables on PATH cannot shadow real .exe binaries on Windows"
+  : false;
+
+// Loads watch-pr.py as a module and evaluates `expression` against it, so the
+// helpers can be exercised without standing up a fake GitHub.
+async function probe(expression, env = {}) {
+  const code = [
+    "import importlib.util, sys, json",
+    "spec = importlib.util.spec_from_file_location('watch_pr', sys.argv[1])",
+    "module = importlib.util.module_from_spec(spec)",
+    "spec.loader.exec_module(module)",
+    // default=str so a returned Path serialises; None still comes back as null.
+    `print(json.dumps(${expression}, default=str))`,
+  ].join("\n");
+  const { stdout } = await execFileAsync(python, ["-c", code, watcher, ...(env.argv ?? [])], {
+    env: { ...process.env, ...env.vars },
+    timeout: 30_000,
+  });
+  return JSON.parse(stdout);
+}
 
 // Builds a throwaway skill directory plus stub `gh`/`git` on PATH, so watch-pr.py
 // runs its real loop against scripted GitHub state.
@@ -84,7 +125,7 @@ function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
     path.join(binDir, "git"),
   ]) chmodSync(executable, 0o755);
 
-  const run = (extraArgs = []) => execFileAsync("python3", [
+  const run = (extraArgs = []) => execFileAsync(python, [
     path.join(scriptDir, "watch-pr.py"),
     "123",
     ...extraArgs,
@@ -92,7 +133,7 @@ function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
     cwd: tempDir,
     env: {
       ...process.env,
-      PATH: `${binDir}:${process.env.PATH}`,
+      PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
       WATCH_PR_POLL_SECONDS: "1",
       WATCH_PR_TEST_DOCUMENT: documentPath,
       WATCH_PR_TEST_COUNTER: counterPath,
@@ -103,7 +144,7 @@ function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
   return { tempDir, run, cleanup: () => rmSync(tempDir, { recursive: true, force: true }) };
 }
 
-test("watch-pr emits a stall event after a quiet interval", async () => {
+test("watch-pr emits a stall event after a quiet interval", { skip: stubsUnsupported }, async () => {
   const { run, cleanup } = fixture("watch-pr-stall-", { closeAfter: 3 });
   try {
     const { stdout } = await run(["--stall-timeout", "1s"]);
@@ -120,7 +161,7 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
   }
 });
 
-test("watch-pr passes the formatter an output path it can read back", async () => {
+test("watch-pr passes the formatter an output path it can read back", { skip: stubsUnsupported }, async () => {
   const { run, cleanup } = fixture("watch-pr-formatter-", { closeAfter: 3, comments: ["reviewer"] });
   try {
     const { stdout } = await run(["--stall-timeout", "1h"]);
@@ -137,7 +178,7 @@ test("watch-pr passes the formatter an output path it can read back", async () =
   }
 });
 
-test("a persistently failing formatter neither loops nor re-emits state", async () => {
+test("a persistently failing formatter neither loops nor re-emits state", { skip: stubsUnsupported }, async () => {
   const { run, cleanup } = fixture("watch-pr-loop-", {
     closeAfter: 6,
     comments: ["reviewer"],
@@ -160,4 +201,70 @@ test("a persistently failing formatter neither loops nor re-emits state", async 
   } finally {
     cleanup();
   }
+});
+
+// ---------------------------------------------------------------------------
+// Coverage for the platform-specific pieces of issue #63. These drive the real
+// helpers directly, so unlike the fixtures above they run natively on Windows —
+// which is the only place the bug reproduced.
+// ---------------------------------------------------------------------------
+
+test("the formatter runs under a bash whose files the parent can read back", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-roundtrip-"));
+  try {
+    const script = path.join(tempDir, "comments.sh");
+    // Stands in for comments.sh: writes the document to the path it was handed.
+    writeFileSync(script, ['#!/usr/bin/env bash', 'printf \'active_comments: 1\n\' > "$2"'].join("\n"));
+    chmodSync(script, 0o755);
+
+    const produced = await probe(
+      "module.run_formatter(module.bash_executable(), __import__('pathlib').Path(sys.argv[2]), 'https://example.com/pr/7', 7, 1)",
+      { argv: [script] },
+    );
+
+    assert.ok(produced, "run_formatter should return the path it chose");
+    assert.equal(
+      readFileSync(produced, "utf8").trim(),
+      "active_comments: 1",
+      "the parent must be able to read what the child bash wrote",
+    );
+    rmSync(produced, { force: true });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("a formatter that writes nothing is reported as a failure", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-empty-"));
+  try {
+    // Exits 0 but produces an empty file — comments.sh truncates its output before
+    // the jq pipeline that fills it, so "the file exists" is not enough on its own.
+    const script = path.join(tempDir, "comments.sh");
+    writeFileSync(script, ['#!/usr/bin/env bash', ': > "$2"'].join("\n"));
+    chmodSync(script, 0o755);
+
+    const produced = await probe(
+      "module.run_formatter(module.bash_executable(), __import__('pathlib').Path(sys.argv[2]), 'https://example.com/pr/7', 7, 1)",
+      { argv: [script] },
+    );
+    assert.equal(produced, null);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("bash_executable avoids WSL and honours the override", async () => {
+  const chosen = await probe("module.bash_executable()");
+
+  if (process.platform === "win32") {
+    // WSL's bash is first on PATH on a stock box, and its /tmp is a filesystem this
+    // process cannot open — picking it is exactly what broke issue #63.
+    assert.doesNotMatch(chosen, /system32/i, `must not select WSL's bash, got ${chosen}`);
+    assert.match(chosen, /bash\.exe$/i);
+  } else {
+    assert.equal(chosen, "bash");
+  }
+
+  const override = await probe("module.bash_executable()", { vars: { WATCH_PR_BASH: "/custom/bash" } });
+  assert.equal(override, "/custom/bash");
 });
