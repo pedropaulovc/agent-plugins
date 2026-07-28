@@ -69,18 +69,23 @@ scans every cached install and can launch a stale copy from an older plugin
 version instead of the one next to this `SKILL.md`.
 
 ```
-Monitor:
+Monitor (macOS/Linux):
   persistent: true
   description: "PR <PR> lifecycle"
   command: python3 "<this skill's directory>/watch-pr.py" <PR> [--stall-timeout <duration>]
+
+Monitor (Windows):
+  persistent: true
+  description: "PR <PR> lifecycle"
+  command: py "<this skill's directory>/watch-pr.py" <PR> [--stall-timeout <duration>]
 ```
 
 The loop diffs state each poll and emits **one line per change**, staying silent
 while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — you
 never stop it manually.
 
-**Under Codex (no `Monitor` tool):** run the same
-`watch-pr.py <PR> [--stall-timeout <duration>]` as a **background terminal**
+**Under Codex (no `Monitor` tool):** run `python3 watch-pr.py <PR> [--stall-timeout <duration>]`
+(or `py watch-pr.py <PR> [--stall-timeout <duration>]` on Windows) as a **background terminal**
 (`unified_exec` / the harness's background-shell mechanism — not a blocking
 foreground call). The script's stdout is identical; poll it with `/ps` (or read
 the background terminal's captured output) and act on each new line exactly as in
