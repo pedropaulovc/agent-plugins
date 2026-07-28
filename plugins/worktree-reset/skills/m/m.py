@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 import subprocess
 import sys
+from typing import List, Optional
 
 
-def run(*args: str, cwd: Path | None = None, capture_output: bool = False) -> subprocess.CompletedProcess[str]:
+def run(*args: str, cwd: Optional[Path] = None, capture_output: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(
         args,
         cwd=cwd,
@@ -33,9 +35,9 @@ def install_dependencies(worktree: Path) -> None:
         run("uv", "sync", cwd=worktree)
 
 
-def stale_branches() -> list[str]:
+def stale_branches() -> List[str]:
     branches = run("git", "branch", "-vv", capture_output=True).stdout.splitlines()
-    stale: list[str] = []
+    stale: List[str] = []
 
     for branch in branches:
         if ": gone]" not in branch or "C:/src/codjiflo" in branch:
@@ -58,9 +60,10 @@ def delete_stale_branches() -> None:
         )
 
 
-def worktrees() -> list[Path]:
+def worktrees() -> List[Path]:
     output = run("git", "worktree", "list", "--porcelain", capture_output=True).stdout
-    return [Path(line.removeprefix("worktree ")) for line in output.splitlines() if line.startswith("worktree ")]
+    prefix = "worktree "
+    return [Path(line[len(prefix) :]) for line in output.splitlines() if line.startswith(prefix)]
 
 
 def reset_current_worktree(current_worktree: Path, folder_name: str) -> None:
@@ -104,8 +107,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    current_worktree = Path.cwd().resolve()
-    folder_name = args.folder_name or current_worktree.name
+    logical_worktree = Path(os.environ.get("PWD", str(Path.cwd())))
+    current_worktree = logical_worktree.resolve()
+    folder_name = args.folder_name or logical_worktree.name
 
     run("git", "fetch", "--prune", cwd=current_worktree)
     delete_stale_branches()

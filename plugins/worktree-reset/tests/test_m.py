@@ -58,11 +58,14 @@ case "$*" in
 esac
 '''
 
-    def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
-        environment = os.environ | {"PATH": f"{self.bin}:{os.environ['PATH']}", "COMMAND_LOG": str(self.log)}
+    def run_script(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment.update({"PATH": f"{self.bin}:{os.environ['PATH']}", "COMMAND_LOG": str(self.log)})
+        working_directory = cwd or self.repo
+        environment["PWD"] = str(working_directory)
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
-            cwd=self.repo,
+            cwd=working_directory,
             text=True,
             capture_output=True,
             env=environment,
@@ -80,6 +83,15 @@ esac
         self.assertIn("git checkout main", log)
         self.assertIn("git reset --hard origin/main", log)
         self.assertIn("npm install", log)
+
+    def test_uses_logical_symlink_name_for_default_branch(self) -> None:
+        alias = self.root / "feature-link"
+        alias.symlink_to(self.repo, target_is_directory=True)
+
+        result = self.run_script(cwd=alias)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"git checkout feature-link [cwd={alias}]", self.log.read_text())
 
     def test_all_updates_linked_worktrees_and_aborts_failed_rebases(self) -> None:
         result = self.run_script("--all", "feature")
