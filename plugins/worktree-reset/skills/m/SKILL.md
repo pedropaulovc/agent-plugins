@@ -102,7 +102,7 @@ In `--force` mode, run `git clean -fdx .` instead to also remove git-ignored fil
 
 ## 6. Reset state
 
-Prune bookkeeping for worktrees whose directories are gone, then run the `m.sh` script
+Prune bookkeeping for worktrees whose directories are gone, then run the `m.py` script
 that sits in this skill's own directory (right next to this `SKILL.md`). You already know
 that directory's absolute path — it's where you loaded this file from — so invoke the
 script by that path directly. Do **not** search for it with `find`; that scans all of
@@ -110,7 +110,7 @@ script by that path directly. Do **not** search for it with `find`; that scans a
 
 ```bash
 git worktree prune
-bash "<absolute path of the directory containing this SKILL.md>/m.sh"
+python3 "<absolute path of the directory containing this SKILL.md>/m.py"
 ```
 
 Report the final status to the user when complete, including confirmation that every
