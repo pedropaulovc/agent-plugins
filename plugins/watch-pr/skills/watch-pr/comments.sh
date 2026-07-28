@@ -103,28 +103,36 @@ parse_pr_ref "$PR_REF"
 
 # Set output file path now that we have PR_NUMBER
 if [[ "$USE_TEMP_OUTPUT" == "true" ]]; then
-    TEMP_DIR="${TEMP:-${TMP:-/tmp}}"
+    # TMPDIR is the POSIX spelling, TEMP/TMP are Windows'. A bash spawned
+    # non-interactively inherits none of them, so /tmp stays the last resort.
+    TEMP_DIR="${TMPDIR:-${TEMP:-${TMP:-/tmp}}}"
+    # TEMP/TMP arrive as C:\Users\... under Git Bash, and bash reads those
+    # backslashes as escapes. Fold a Windows temp dir back to its POSIX form so the
+    # redirection below and the path conversion at the end both see one spelling.
+    if [[ "$TEMP_DIR" == [A-Za-z]:[\/]* ]] && command -v cygpath &>/dev/null; then
+        TEMP_DIR=$(cygpath -u "$TEMP_DIR")
+    fi
     TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-    OUTPUT_FILE="${TEMP_DIR}/pr-comments-${PR_NUMBER}-${TIMESTAMP}.md"
+    OUTPUT_FILE="${TEMP_DIR%/}/pr-comments-${PR_NUMBER}-${TIMESTAMP}.md"
 fi
 
 echo "Fetching comments for $OWNER/$REPO#$PR_NUMBER..." >&2
 
 # Create temp files for parallel fetching
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+WORK_DIR=$(mktemp -d)
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 # Fetch all comment types in parallel. --slurp collapses every page into ONE
 # array-of-arrays document; without it --paginate emits one JSON document per page
 # and the jq filter below runs once per page, producing duplicate/partial markdown.
 # flatten_arrays (in the jq) unwraps the array-of-arrays.
-gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/comments" --paginate --slurp > "$TMPDIR/inline.json" &
+gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/comments" --paginate --slurp > "$WORK_DIR/inline.json" &
 PID_INLINE=$!
 
-gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" --paginate --slurp > "$TMPDIR/issue.json" &
+gh api "repos/$OWNER/$REPO/issues/$PR_NUMBER/comments" --paginate --slurp > "$WORK_DIR/issue.json" &
 PID_ISSUE=$!
 
-gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" --paginate --slurp > "$TMPDIR/reviews.json" &
+gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" --paginate --slurp > "$WORK_DIR/reviews.json" &
 PID_REVIEWS=$!
 
 # Fetch thread IDs via GraphQL (needed for resolving threads). --paginate walks
@@ -151,7 +159,7 @@ query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
       }
     }
   }
-}' > "$TMPDIR/threads.json" 2>/dev/null &
+}' > "$WORK_DIR/threads.json" 2>/dev/null &
 PID_THREADS=$!
 
 # Wait for every fetch — abort if any fails. Bash `wait` with multiple PIDs
@@ -178,9 +186,9 @@ jq -r --arg owner "$OWNER" \
       --arg reply "$REPLY_SH" \
       --arg fetched_at "$FETCHED_AT" \
       --arg include_resolved "$INCLUDE_RESOLVED" \
-      --slurpfile issue "$TMPDIR/issue.json" \
-      --slurpfile reviews "$TMPDIR/reviews.json" \
-      --slurpfile threads "$TMPDIR/threads.json" '
+      --slurpfile issue "$WORK_DIR/issue.json" \
+      --slurpfile reviews "$WORK_DIR/reviews.json" \
+      --slurpfile threads "$WORK_DIR/threads.json" '
 # Codex ends every review/comment body with a "Useful? React with 👍 / 👎." trailer
 # (optionally preceded by a `---` separator). It is pure noise here — the reply flow
 # already covers reactions in its own instructions — so trim it before rendering a body.
@@ -419,22 +427,31 @@ bash \($reply) \($owner)/\($repo)#\($pr) --issue --body \"Your comment here\"
 bash \($reply) \($owner)/\($repo)#\($pr) --resolve-thread THREAD_ID
 ```
 "
-' "$TMPDIR/inline.json" | tr -d '\r' > "$OUTPUT_FILE"
+' "$WORK_DIR/inline.json" | tr -d '\r' > "$OUTPUT_FILE"
 
 # Count results
-INLINE_COUNT=$(jq 'if type == "array" then (if length > 0 and (.[0] | type) == "array" then flatten else . end) | length else 0 end' "$TMPDIR/inline.json")
-ISSUE_COUNT=$(jq 'if type == "array" then (if length > 0 and (.[0] | type) == "array" then flatten else . end) | length else 0 end' "$TMPDIR/issue.json")
-REVIEW_COUNT=$(jq 'if type == "array" then (if length > 0 and (.[0] | type) == "array" then flatten else . end) | length else 0 end' "$TMPDIR/reviews.json")
+INLINE_COUNT=$(jq 'if type == "array" then (if length > 0 and (.[0] | type) == "array" then flatten else . end) | length else 0 end' "$WORK_DIR/inline.json")
+ISSUE_COUNT=$(jq 'if type == "array" then (if length > 0 and (.[0] | type) == "array" then flatten else . end) | length else 0 end' "$WORK_DIR/issue.json")
+REVIEW_COUNT=$(jq 'if type == "array" then (if length > 0 and (.[0] | type) == "array" then flatten else . end) | length else 0 end' "$WORK_DIR/reviews.json")
 
 echo "Written to $OUTPUT_FILE:" >&2
 echo "  - $INLINE_COUNT inline review comments" >&2
 echo "  - $ISSUE_COUNT top-level comments" >&2
 echo "  - $REVIEW_COUNT reviews" >&2
 
-# Output the file path to stdout for LLM consumption
-# Convert to Windows path if cygpath is available (Git Bash on Windows)
+# Output the file path to stdout for LLM consumption.
+#
+# The caller may not share this shell's filesystem namespace: a Windows-native
+# parent that spawns Git Bash or WSL bash cannot open the /tmp path either one
+# reports. Translate to a path the host OS understands — cygpath -w under
+# MSYS/Cygwin, wslpath -w under WSL (which yields a \wsl.localhost\... UNC path
+# Windows can read) — and fall back to the raw path when a converter is missing or
+# returns nothing. A caller that needs certainty should pass the output file as the
+# second argument instead of parsing this line.
+HOST_PATH=""
 if command -v cygpath &>/dev/null; then
-    cygpath -w "$OUTPUT_FILE"
-else
-    echo "$OUTPUT_FILE"
+    HOST_PATH=$(cygpath -w "$OUTPUT_FILE" 2>/dev/null || true)
+elif command -v wslpath &>/dev/null; then
+    HOST_PATH=$(wslpath -w "$OUTPUT_FILE" 2>/dev/null || true)
 fi
+echo "${HOST_PATH:-$OUTPUT_FILE}"
