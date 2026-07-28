@@ -45,6 +45,13 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
       "  exit 0",
       "fi",
       "if [[ \"$1 $2\" == \"api graphql\" ]]; then",
+      "  count=0",
+      "  [[ -f \"$WATCH_PR_TEST_COUNTER\" ]] && read -r count < \"$WATCH_PR_TEST_COUNTER\"",
+      "  count=$((count + 1))",
+      "  printf '%s\\n' \"$count\" > \"$WATCH_PR_TEST_COUNTER\"",
+      "  state=OPEN",
+      "  [[ $count -ge 3 ]] && state=CLOSED",
+      "  printf '{\"data\":{\"repository\":{\"pullRequest\":{\"state\":\"%s\",\"mergeStateStatus\":\"CLEAN\",\"baseRefName\":\"main\",\"reviews\":{\"nodes\":[]},\"reactionGroups\":[],\"comments\":{\"nodes\":[]},\"reviewThreads\":{\"pageInfo\":{\"hasNextPage\":false,\"endCursor\":null},\"nodes\":[]}}}}}\\n' \"$state\"",
       "  exit 0",
       "fi",
       "if [[ \"$1\" == \"api\" ]]; then",
@@ -57,13 +64,7 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
       "  printf '%s\\n' '{\"url\":\"https://github.com/example/repo/pull/123\",\"number\":123}'",
       "  exit 0",
       "fi",
-      "count=0",
-      "[[ -f \"$WATCH_PR_TEST_COUNTER\" ]] && read -r count < \"$WATCH_PR_TEST_COUNTER\"",
-      "count=$((count + 1))",
-      "printf '%s\\n' \"$count\" > \"$WATCH_PR_TEST_COUNTER\"",
-      "state=OPEN",
-      "[[ $count -ge 3 ]] && state=CLOSED",
-      "printf '{\"state\":\"%s\",\"mergeStateStatus\":\"CLEAN\",\"baseRefName\":\"main\",\"reviews\":[],\"reactionGroups\":[],\"comments\":[]}\\n' \"$state\"",
+      "printf '%s\\n' '{}'",
     ].join("\n"));
 
     for (const executable of [

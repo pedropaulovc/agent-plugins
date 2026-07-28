@@ -100,21 +100,54 @@ def login() -> str:
     return output("gh", "api", "user", "--jq", ".login").strip()
 
 
-def unresolved_ids(slug: str, number: int) -> Set[str]:
-    query = """query($owner: String!, $repo: String!, $pr: Int!, $endCursor: String) {
-  repository(owner: $owner, name: $repo) { pullRequest(number: $pr) {
-    reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { id isResolved } }
-  } }
+SNAPSHOT_QUERY = """query($owner: String!, $repo: String!, $number: Int!, $threadCursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      state mergeStateStatus baseRefName
+      reviews(first: 100) { nodes { author { login } state submittedAt } }
+      reactionGroups { content users { totalCount } }
+      comments(first: 100) { nodes { author { login } } }
+      reviewThreads(first: 100, after: $threadCursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes { id isResolved }
+      }
+    }
+  }
 }"""
-    result = output("gh", "api", "graphql", "--paginate", "-f", f"owner={slug.split('/', 1)[0]}", "-f", f"repo={slug.split('/', 1)[1]}", "-F", f"pr={number}", "-f", f"query={query}")
-    ids: Set[str] = set()
-    for page in json_values(result):
+
+
+def pr_snapshot(slug: str, number: int) -> Tuple[Dict[str, object], Set[str]]:
+    owner, repo = slug.split("/", 1)
+    cursor: Optional[str] = None
+    meta: Dict[str, object] = {}
+    unresolved: Set[str] = set()
+
+    while True:
+        arguments = ["gh", "api", "graphql", "-f", f"owner={owner}", "-f", f"repo={repo}", "-F", f"number={number}", "-f", f"query={SNAPSHOT_QUERY}"]
+        if cursor:
+            arguments.extend(["-f", f"threadCursor={cursor}"])
+        page = json_object(*arguments)
         try:
-            threads = page["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"]
+            pull_request = page["data"]["repository"]["pullRequest"]
+            threads = pull_request["reviewThreads"]
         except (KeyError, TypeError):
-            continue
-        ids.update(str(thread["id"]) for thread in threads if not thread.get("isResolved"))
-    return ids
+            return {}, set()
+        if not meta:
+            meta = {
+                "state": pull_request.get("state"),
+                "mergeStateStatus": pull_request.get("mergeStateStatus"),
+                "baseRefName": pull_request.get("baseRefName"),
+                "reviews": (pull_request.get("reviews") or {}).get("nodes", []),
+                "reactionGroups": pull_request.get("reactionGroups", []),
+                "comments": (pull_request.get("comments") or {}).get("nodes", []),
+            }
+        unresolved.update(str(thread["id"]) for thread in threads.get("nodes", []) if not thread.get("isResolved"))
+        page_info = threads.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            return meta, unresolved
+        cursor = page_info.get("endCursor")
+        if not cursor:
+            return meta, unresolved
 
 
 def comment_reactions(slug: str, number: int, me: str) -> List[str]:
@@ -204,10 +237,9 @@ def main() -> int:
         nonlocal last_event
         print(line, flush=True); last_event = time.monotonic()
     while True:
-        meta = json_object("gh", "pr", "view", str(number), "-R", slug, "--json", "state,mergeStateStatus,baseRefName,reviews,reactionGroups,comments")
+        meta, unresolved = pr_snapshot(slug, number)
         checks = json_array("gh", "pr", "checks", str(number), "-R", slug, "--json", "name,bucket,completedAt")
         review_comments = [item for item in json_array("gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/comments") if (item.get("user") or {}).get("login") != me]
-        unresolved = unresolved_ids(slug, number)
         current = set(state_lines(meta, checks, slug, origin_matches, me, len(review_comments), len(unresolved), comment_reactions(slug, number, me)))
         added, unresolved_added = current - previous, unresolved - previous_unresolved
         fetch = bool(unresolved_added or any(line.startswith(("review ", "comments: ", "review-comments: ")) for line in added))
