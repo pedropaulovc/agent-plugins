@@ -27,10 +27,12 @@ class WorktreeResetTests(unittest.TestCase):
         (self.linked / ".git").touch()
         (self.repo / "package.json").write_text("{}")
         (self.linked / "go.mod").write_text("module example.com/feature\n")
+        (self.linked / "pyproject.toml").write_text("[project]\nname = 'feature'\nversion = '0.0.0'\n")
         self.log = self.root / "commands.log"
         self._write_fake_command("git", self._fake_git())
         self._write_fake_command("npm", "#!/bin/sh\nprintf 'npm %s\\n' \"$*\" >> \"$COMMAND_LOG\"\n")
         self._write_fake_command("go", "#!/bin/sh\nprintf 'go %s\\n' \"$*\" >> \"$COMMAND_LOG\"\n")
+        self._write_fake_command("uv", "#!/bin/sh\nprintf 'uv %s\\n' \"$*\" >> \"$COMMAND_LOG\"\n")
 
     def tearDown(self) -> None:
         shutil.rmtree(self.root)
@@ -88,6 +90,7 @@ esac
         self.assertIn(f"git rebase origin/main [cwd={self.linked}]", log)
         self.assertIn(f"git rebase --abort [cwd={self.linked}]", log)
         self.assertIn("go mod download", log)
+        self.assertIn("uv sync", log)
 
 
 if __name__ == "__main__":

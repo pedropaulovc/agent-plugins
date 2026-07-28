@@ -28,6 +28,10 @@ def install_dependencies(worktree: Path) -> None:
         print("Found go.mod, running go mod download...")
         run("go", "mod", "download", cwd=worktree)
 
+    if (worktree / "pyproject.toml").is_file():
+        print("Found pyproject.toml, running uv sync...")
+        run("uv", "sync", cwd=worktree)
+
 
 def stale_branches() -> list[str]:
     branches = run("git", "branch", "-vv", capture_output=True).stdout.splitlines()
