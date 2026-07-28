@@ -8,9 +8,9 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Dict, Iterable, List, Optional, Set, Tuple
 
@@ -193,6 +193,64 @@ def state_lines(meta: Dict[str, object], checks: List[Dict[str, object]], slug: 
     return sorted(lines + reactions)
 
 
+def git_bash() -> Optional[str]:
+    """Git for Windows' bash, located from the Git install `git` already resolves to."""
+    roots: List[Path] = []
+    exec_path = output("git", "--exec-path").strip()
+    if exec_path:
+        # …/Git/mingw64/libexec/git-core → the install root is a few levels up.
+        roots.extend(Path(exec_path).parents)
+    for variable in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA"):
+        base = os.environ.get(variable)
+        if base:
+            roots.extend([Path(base) / "Git", Path(base) / "Programs" / "Git"])
+    for root in roots:
+        candidate = root / "bin" / "bash.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+def bash_executable() -> str:
+    """A bash that shares this process's filesystem namespace.
+
+    On Windows the `bash` first on PATH is usually WSL's C:\\Windows\\System32\\bash.exe,
+    which runs against a *different* filesystem: anything it writes under /tmp is
+    unreachable from this native-Windows parent, so the formatter looked like it failed
+    on every single poll (issue #63). Git for Windows' bash shares the Windows
+    filesystem, so prefer it and let WATCH_PR_BASH override for unusual installs.
+    """
+    override = os.environ.get("WATCH_PR_BASH")
+    if override:
+        return override
+    if os.name != "nt":
+        return "bash"
+    return git_bash() or "bash"
+
+
+# A formatter that keeps failing gets a bounded number of retries per feedback event;
+# after that the watcher goes quiet until genuinely new feedback arrives (issue #64).
+FORMATTER_FAILURE_LIMIT = 3
+
+
+def run_formatter(bash: str, script: Path, url: str, number: int, attempt: int) -> Optional[Path]:
+    """Run comments.sh into a path THIS process picked, and hand that path back.
+
+    The destination is chosen here rather than parsed out of the child's stdout: a
+    POSIX path printed by an MSYS or WSL bash names a file this parent cannot open
+    (issue #63). comments.sh takes the output file as its second argument, so both
+    sides agree on the location by construction and no path translation is involved.
+    """
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    destination = Path(tempfile.gettempdir()) / f"pr-comments-{number}-{stamp}-{attempt}.md"
+    # as_posix() keeps the drive-letter path free of backslashes, which bash would
+    # otherwise treat as escapes; MSYS resolves "C:/…" to the same Windows file.
+    result = command(bash, str(script), url, destination.as_posix(), capture=True)
+    if result.returncode != 0 or not destination.is_file() or not destination.stat().st_size:
+        return None
+    return destination
+
+
 def formatter_lines(document: str) -> List[str]:
     lines: List[str] = []
     kind = ""
@@ -231,8 +289,9 @@ def main() -> int:
         print(f"watch-pr: {error}", file=sys.stderr)
         return 1
     origin_matches, me = origin_is_base(slug), login()
-    comments_script = Path(__file__).with_name("comments.sh")
+    comments_script, bash = Path(__file__).with_name("comments.sh"), bash_executable()
     previous: Set[str] = set(); previous_unresolved: Set[str] = set(); last_event = time.monotonic()
+    pending_fetch, failures, fetches = False, 0, 0
     def emit(line: str) -> None:
         nonlocal last_event
         print(line, flush=True); last_event = time.monotonic()
@@ -242,25 +301,32 @@ def main() -> int:
         review_comments = [item for item in json_array("gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/comments") if (item.get("user") or {}).get("login") != me]
         current = set(state_lines(meta, checks, slug, origin_matches, me, len(review_comments), len(unresolved), comment_reactions(slug, number, me)))
         added, unresolved_added = current - previous, unresolved - previous_unresolved
-        fetch = bool(unresolved_added or any(line.startswith(("review ", "comments: ", "review-comments: ")) for line in added))
+        if unresolved_added or any(line.startswith(("review ", "comments: ", "review-comments: ")) for line in added):
+            # Fresh feedback: owe a fetch, and hand the formatter a clean retry budget.
+            pending_fetch, failures = True, 0
         for line in sorted(added): emit(line)
-        advance = True
-        if fetch:
-            display_path = output("bash", str(comments_script), url).strip()
-            path = Path(display_path)
-            if os.name != "nt" and shutil.which("cygpath") and display_path:
-                converted = output("cygpath", "-u", display_path).strip()
-                path = Path(converted or display_path)
-            if not display_path or not path.is_file():
-                emit("watch-pr: comment formatter failed — will retry next poll"); advance = False
+        # Advance unconditionally. Holding the baseline back on a failed fetch used to
+        # re-emit the whole state block every poll forever, since the only path that
+        # could advance it was the broken one — enough output for Monitor to auto-stop
+        # the watcher (issue #64). The outstanding fetch rides on pending_fetch instead,
+        # so it still retries without duplicating events that already went out.
+        previous, previous_unresolved = current, unresolved
+        if pending_fetch and failures < FORMATTER_FAILURE_LIMIT:
+            fetches += 1
+            path = run_formatter(bash, comments_script, url, number, fetches)
+            if path is None:
+                failures += 1
+                if failures == 1:
+                    emit("watch-pr: comment formatter failed — will retry next poll")
+                elif failures >= FORMATTER_FAILURE_LIMIT:
+                    emit(f"watch-pr: comment formatter failed {failures}× — pausing retries until new feedback arrives")
             else:
+                pending_fetch, failures = False, 0
                 document = path.read_text(encoding="utf-8")
                 active = re.search(r"^active_comments:\s*(\d+)", document, re.M)
                 if (active and int(active.group(1)) > 0) or "<review-summary" in document:
                     for line in formatter_lines(document): emit(line)
-                    emit(f"→ full bodies + code context: {display_path}")
-        if advance:
-            previous, previous_unresolved = current, unresolved
+                    emit(f"→ full bodies + code context: {path}")
         state = str(meta.get("state", ""))
         if state in ("MERGED", "CLOSED"):
             if state == "MERGED":

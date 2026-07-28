@@ -97,7 +97,11 @@ runs until MERGED/CLOSED.
 Windows, or in Bash paired with another Windows-local Git installation. Do **not**
 launch it through WSL Bash: WSL uses a separate Git executable, filesystem paths,
 credentials, and process environment from the Windows harness that owns the
-plugin and background terminal.
+plugin and background terminal. The watcher applies the same rule to the
+`comments.sh` it spawns — it looks up Git for Windows' bash rather than the `bash`
+first on `PATH`, which is usually WSL's and would write the formatted comments into
+a filesystem the watcher cannot read back. Set `WATCH_PR_BASH` to an explicit
+bash path if Git lives somewhere unusual.
 
 ### 3. Act on each emitted event line
 
