@@ -21,7 +21,7 @@ def command(*args: str, capture: bool = False, check: bool = False) -> subproces
 
 def output(*args: str) -> str:
     result = command(*args, capture=True)
-    return result.stdout if result.returncode == 0 else ""
+    return result.stdout
 
 
 def json_values(value: str) -> List[object]:
@@ -193,7 +193,7 @@ def state_lines(meta: Dict[str, object], checks: List[Dict[str, object]], slug: 
     return sorted(lines + reactions)
 
 
-def formatter_lines(path: Path) -> List[str]:
+def formatter_lines(document: str) -> List[str]:
     lines: List[str] = []
     kind = ""
     attrs: Dict[str, str] = {}
@@ -206,7 +206,7 @@ def formatter_lines(path: Path) -> List[str]:
             lines.append(f"feedback comment [{attrs.get('id', '')}] @{attrs.get('author', '')} {snippet}")
         if kind == "summary":
             lines.append(f"feedback review [{attrs.get('id', '')}] @{attrs.get('author', '')} {snippet}")
-    for line in path.read_text().splitlines():
+    for line in document.splitlines():
         match = re.match(r"<(review-thread|pr-comment|review-summary) (.*)>", line)
         if match:
             emit(); kind = {"review-thread": "thread", "pr-comment": "comment", "review-summary": "summary"}[match.group(1)]
@@ -248,15 +248,16 @@ def main() -> int:
         if fetch:
             display_path = output("bash", str(comments_script), url).strip()
             path = Path(display_path)
-            if shutil.which("cygpath") and display_path:
+            if os.name != "nt" and shutil.which("cygpath") and display_path:
                 converted = output("cygpath", "-u", display_path).strip()
                 path = Path(converted or display_path)
             if not display_path or not path.is_file():
                 emit("watch-pr: comment formatter failed — will retry next poll"); advance = False
             else:
-                active = re.search(r"^active_comments:\s*(\d+)", path.read_text(), re.M)
-                if (active and int(active.group(1)) > 0) or "<review-summary" in path.read_text():
-                    for line in formatter_lines(path): emit(line)
+                document = path.read_text(encoding="utf-8")
+                active = re.search(r"^active_comments:\s*(\d+)", document, re.M)
+                if (active and int(active.group(1)) > 0) or "<review-summary" in document:
+                    for line in formatter_lines(document): emit(line)
                     emit(f"→ full bodies + code context: {display_path}")
         if advance:
             previous, previous_unresolved = current, unresolved

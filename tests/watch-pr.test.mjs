@@ -42,7 +42,7 @@ test("watch-pr emits a stall event after a quiet interval", async () => {
       "fi",
       "if [[ \"$1 $2\" == \"pr checks\" ]]; then",
       "  printf '%s\\n' '[]'",
-      "  exit 0",
+      "  exit 8",
       "fi",
       "if [[ \"$1 $2\" == \"api graphql\" ]]; then",
       "  count=0",
