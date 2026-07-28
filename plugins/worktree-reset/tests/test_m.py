@@ -28,6 +28,7 @@ class WorktreeResetTests(unittest.TestCase):
         (self.repo / "package.json").write_text("{}")
         (self.linked / "go.mod").write_text("module example.com/feature\n")
         (self.linked / "pyproject.toml").write_text("[project]\nname = 'feature'\nversion = '0.0.0'\n")
+        (self.linked / "uv.lock").write_text("version = 1\n")
         self.log = self.root / "commands.log"
         self._write_fake_command("git", self._fake_git())
         self._write_fake_command("npm", "#!/bin/sh\nprintf 'npm %s\\n' \"$*\" >> \"$COMMAND_LOG\"\n")
@@ -58,11 +59,11 @@ case "$*" in
 esac
 '''
 
-    def run_script(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    def run_script(self, *args: str, cwd: Path | None = None, pwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment.update({"PATH": f"{self.bin}:{os.environ['PATH']}", "COMMAND_LOG": str(self.log)})
         working_directory = cwd or self.repo
-        environment["PWD"] = str(working_directory)
+        environment["PWD"] = str(pwd or working_directory)
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             cwd=working_directory,
@@ -93,6 +94,12 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"git checkout feature-link [cwd={alias}]", self.log.read_text())
 
+    def test_ignores_a_stale_inherited_pwd(self) -> None:
+        result = self.run_script(cwd=self.repo, pwd=self.root)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(f"git checkout {self.root.name}", self.log.read_text())
+
     def test_all_updates_linked_worktrees_and_aborts_failed_rebases(self) -> None:
         result = self.run_script("--all", "feature")
 
@@ -102,7 +109,7 @@ esac
         self.assertIn(f"git rebase origin/main [cwd={self.linked}]", log)
         self.assertIn(f"git rebase --abort [cwd={self.linked}]", log)
         self.assertIn("go mod download", log)
-        self.assertIn("uv sync", log)
+        self.assertIn("uv sync --locked", log)
 
 
 if __name__ == "__main__":

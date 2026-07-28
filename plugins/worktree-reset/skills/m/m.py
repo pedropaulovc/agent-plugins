@@ -30,9 +30,9 @@ def install_dependencies(worktree: Path) -> None:
         print("Found go.mod, running go mod download...")
         run("go", "mod", "download", cwd=worktree)
 
-    if (worktree / "pyproject.toml").is_file():
-        print("Found pyproject.toml, running uv sync...")
-        run("uv", "sync", cwd=worktree)
+    if (worktree / "pyproject.toml").is_file() and (worktree / "uv.lock").is_file():
+        print("Found pyproject.toml and uv.lock, running uv sync --locked...")
+        run("uv", "sync", "--locked", cwd=worktree)
 
 
 def stale_branches() -> List[str]:
@@ -107,7 +107,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    logical_worktree = Path(os.environ.get("PWD", str(Path.cwd())))
+    actual_worktree = Path.cwd()
+    inherited_pwd = Path(os.environ.get("PWD", str(actual_worktree)))
+    logical_worktree = inherited_pwd if inherited_pwd.resolve() == actual_worktree.resolve() else actual_worktree
     current_worktree = logical_worktree.resolve()
     folder_name = args.folder_name or logical_worktree.name
 

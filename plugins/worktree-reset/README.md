@@ -1,6 +1,6 @@
 # worktree-reset plugin
 
-Provides the `/m` skill: tears down in-flight agent state (task list, scheduled timers, teammates, subagents, monitors, loops, background jobs, PR activity subscriptions) and positively validates each list is empty, aborts any in-progress git operation (rebase/merge/cherry-pick/am) and stale lock, resets the current worktree branch to origin/main, cleans stale branches, prunes stale worktrees, removes untracked files (with confirmation), reports any stashes, and runs `npm install`, `go mod download`, and `uv sync` on all worktrees when their project files are present.
+Provides the `/m` skill: tears down in-flight agent state (task list, scheduled timers, teammates, subagents, monitors, loops, background jobs, PR activity subscriptions) and positively validates each list is empty, aborts any in-progress git operation (rebase/merge/cherry-pick/am) and stale lock, resets the current worktree branch to origin/main, cleans stale branches, prunes stale worktrees, removes untracked files (with confirmation), reports any stashes, and runs `npm install`, `go mod download`, and `uv sync --locked` on all worktrees with their corresponding project and lock files.
 
 ## Codex and OpenCode support
 
