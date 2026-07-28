@@ -9,7 +9,7 @@ const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const projectConfigPackage = path.resolve(pluginRoot, "../../.opencode/package.json");
 const require = createRequire(existsSync(projectConfigPackage) ? projectConfigPackage : import.meta.url);
 const { z } = require("zod");
-const defaultWatchScript = path.join(pluginRoot, "skills/watch-pr/watch-pr.sh");
+const defaultWatchScript = path.join(pluginRoot, "skills/watch-pr/watch-pr.py");
 const BATCH_DELAY_MS = 200;
 const execFileAsync = promisify(execFile);
 
@@ -20,6 +20,9 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
     ? path.resolve(options.watchScript)
     : defaultWatchScript;
   const ghBinary = typeof options.ghBinary === "string" ? options.ghBinary : "gh";
+  const pythonBinary = typeof options.pythonBinary === "string"
+    ? options.pythonBinary
+    : process.platform === "win32" ? "py" : "python3";
 
   const resolveRef = async (cwd, ref) => {
     if (ref?.trim()) return ref.trim();
@@ -88,7 +91,7 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
     stopWatcher(sessionID);
     const args = [watchScript, ref];
     if (stallTimeout) args.push("--stall-timeout", stallTimeout);
-    const child = spawn("bash", args, {
+    const child = spawn(pythonBinary, args, {
       cwd,
       env: { ...process.env, OPENCODE: "1" },
       stdio: ["ignore", "pipe", "pipe"],
