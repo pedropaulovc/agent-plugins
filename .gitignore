@@ -6,3 +6,7 @@
 
 # Build/rebuild logs (see AGENTS.md build-hooks.py)
 .logs/
+
+# Python bytecode caches from the skill helpers
+__pycache__/
+*.pyc

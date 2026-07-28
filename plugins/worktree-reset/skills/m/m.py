@@ -11,12 +11,26 @@ import sys
 from typing import List, Optional
 
 
+def use_utf8_streams() -> None:
+    """Emit UTF-8 whatever the console codepage is, so printed branch names survive."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def run(*args: str, cwd: Optional[Path] = None, capture_output: bool = False) -> subprocess.CompletedProcess:
+    # git speaks UTF-8, but text mode decodes captured output with the locale codepage —
+    # cp1252 on a stock Windows box. `git branch -vv` carries commit subjects, so a
+    # single emoji in someone's commit message would otherwise raise UnicodeDecodeError
+    # and take the reset down before any worktree was touched (issue #67).
     return subprocess.run(
         args,
         cwd=cwd,
         check=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         capture_output=capture_output,
     )
 
@@ -106,6 +120,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    use_utf8_streams()
     args = parse_args()
     actual_worktree = Path.cwd()
     inherited_pwd = Path(os.environ.get("PWD", str(actual_worktree)))
