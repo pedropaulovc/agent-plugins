@@ -26,7 +26,7 @@ if (-not (Test-Path -LiteralPath $TargetDir)) {
     New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
 }
 
-$tempDownloaded = $false
+$tempOwned = $true
 
 try {
     $response = Invoke-RestMethod -Uri $ApiUri -Headers @{
@@ -46,8 +46,7 @@ try {
     Write-Output "Latest release: $latestVersion"
     Write-Output "Downloading from: $downloadUrl"
 
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $TempPath
-    $tempDownloaded = $true
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $TempPath -UseBasicParsing
     Write-Output "Downloaded to: $TempPath"
 
     Write-Output "Unpacking to: $TargetDir"
@@ -87,7 +86,7 @@ try {
     Write-Output "Done! Unpacked $latestVersion to $TargetDir"
 }
 finally {
-    if ($tempDownloaded -and (Test-Path -LiteralPath $TempPath)) {
+    if ($tempOwned -and (Test-Path -LiteralPath $TempPath)) {
         Remove-Item -LiteralPath $TempPath -Force
     }
 }

@@ -160,7 +160,7 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
   };
   const hooks = await plugins.WatchPrPlugin(
     { client, directory, worktree: directory },
-    { watchScript, pythonBinary: process.platform === "win32" ? "python" : "python3" },
+    { watchScript },
   );
   const context = { sessionID: "watch-session", directory, worktree: directory };
   try {

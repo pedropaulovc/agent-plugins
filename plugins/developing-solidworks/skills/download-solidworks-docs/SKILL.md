@@ -30,8 +30,7 @@ keeps the download operation compatible with shell policies that reject inline
 multi-line scripts:
 
 ```powershell
-$scriptPath = 'C:\path\to\developing-solidworks\skills\download-solidworks-docs\scripts\download-solidworks-docs.ps1'
-& $scriptPath -TargetDir 'C:\path\to\developing-solidworks\skills\developing-solidworks'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:/path/to/developing-solidworks/skills/download-solidworks-docs/scripts/download-solidworks-docs.ps1" -TargetDir "C:/path/to/developing-solidworks/skills/developing-solidworks"
 ```
 
 The script resolves the latest GitHub release, downloads its single `*llms.v*.zip`

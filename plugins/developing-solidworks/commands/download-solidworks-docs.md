@@ -11,7 +11,7 @@ Resolve the absolute path of the plugin's
 it with the absolute path of the sibling `skills/developing-solidworks` directory:
 
 ```powershell
-& $scriptPath -TargetDir $targetDir
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:/path/to/developing-solidworks/skills/download-solidworks-docs/scripts/download-solidworks-docs.ps1" -TargetDir "C:/path/to/developing-solidworks/skills/developing-solidworks"
 ```
 
 If the command receives a skill-directory argument, use it as `$targetDir`.
