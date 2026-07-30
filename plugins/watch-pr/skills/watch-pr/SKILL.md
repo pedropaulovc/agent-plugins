@@ -84,14 +84,15 @@ The loop diffs state each poll and emits **one line per change**, staying silent
 while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — you
 never stop it manually.
 
-**Under Codex (no `Monitor` tool):** run `python3 watch-pr.py <PR> [--stall-timeout <duration>]`
-(or `py watch-pr.py <PR> [--stall-timeout <duration>]` on Windows) as a **background terminal**
-(`unified_exec` / the harness's background-shell mechanism — not a blocking
-foreground call). The script's stdout is identical; poll it with `/ps` (or read
-the background terminal's captured output) and act on each new line exactly as in
-the table below. Everything else — the event lines, the `feedback …` lines, the
-reply flow — is harness-agnostic. Do **not** foreground the script; it
-runs until MERGED/CLOSED.
+**Under Codex (no `Monitor` tool):** start `python3 watch-pr.py <PR> [--stall-timeout <duration>]`
+(or `py watch-pr.py <PR> [--stall-timeout <duration>]` on Windows) as a
+**persistent background terminal** using the harness's background-terminal
+mechanism (`unified_exec`, or its equivalent). Stream that terminal's stdout as
+it is produced and react to every new watcher event exactly as in the table
+below. Keep the watcher attached to that persistent terminal until it reports
+`MERGED` or `CLOSED`; do not detach it with `Start-Process`, redirect stdout to a
+file, or run it in the foreground. Everything else — the event lines, the
+`feedback …` lines, and the reply flow — is harness-agnostic.
 
 **On Windows:** run the watcher and its Git commands in Git Bash from Git for
 Windows, or in Bash paired with another Windows-local Git installation. Do **not**
