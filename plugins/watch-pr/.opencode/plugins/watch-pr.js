@@ -20,9 +20,17 @@ export const WatchPrPlugin = async ({ client, directory }, options = {}) => {
     ? path.resolve(options.watchScript)
     : defaultWatchScript;
   const ghBinary = typeof options.ghBinary === "string" ? options.ghBinary : "gh";
-  const pythonBinary = typeof options.pythonBinary === "string"
-    ? options.pythonBinary
-    : process.platform === "win32" ? "py" : "python3";
+  const resolvePythonBinary = async () => {
+    if (typeof options.pythonBinary === "string") return options.pythonBinary;
+    if (process.platform !== "win32") return "python3";
+    try {
+      await execFileAsync("py", ["--version"], { windowsHide: true });
+      return "py";
+    } catch {
+      return "python";
+    }
+  };
+  const pythonBinary = await resolvePythonBinary();
 
   const resolveRef = async (cwd, ref) => {
     if (ref?.trim()) return ref.trim();
