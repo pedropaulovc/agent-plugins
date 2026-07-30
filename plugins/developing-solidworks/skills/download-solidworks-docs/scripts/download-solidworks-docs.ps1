@@ -26,6 +26,10 @@ if (-not (Test-Path -LiteralPath $TargetDir)) {
     New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
 }
 
+if (Test-Path -LiteralPath $TempPath) {
+    throw "TempPath already exists; choose a new temporary path: $TempPath"
+}
+
 $tempOwned = $true
 
 try {
