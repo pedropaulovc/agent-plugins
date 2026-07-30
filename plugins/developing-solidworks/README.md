@@ -32,6 +32,6 @@ Extracted from [pedropaulovc/harmonic-analyzer](https://github.com/pedropaulovc/
 
 ## Codex and OpenCode support
 
-Works in both. Under Codex, invoke the bundled `download-solidworks-docs` skill with `$download-solidworks-docs` (or run its PowerShell block directly) — the Claude `Skill()` tool call in the setup steps is Claude-Code-specific.
+Works in both. Under Codex, invoke the bundled `download-solidworks-docs` skill with `$download-solidworks-docs` (it invokes the checked-in PowerShell script) — the Claude `Skill()` tool call in the setup steps is Claude-Code-specific.
 
 Under OpenCode, use `/download-solidworks-docs`; the adapter registers both bundled skills and the command.

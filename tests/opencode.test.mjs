@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -147,15 +147,12 @@ test("unrelated issue detector continues one OpenCode turn", async () => {
 test("watch-pr wakes its OpenCode session with batched monitor events", async () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-opencode-"));
   const watchScript = path.join(tempDir, "watch-pr.py");
-  const ghBinary = path.join(tempDir, "gh");
   writeFileSync(watchScript, [
     "import sys, time",
     "print('args ' + ' '.join(sys.argv[1:]), flush=True)",
     "print('check build: pending\\nfeedback T1 src/app.js:4 reviewer title', flush=True)",
     "time.sleep(10)",
   ].join("\n"));
-  writeFileSync(ghBinary, "#!/usr/bin/env bash\nprintf '%s\\n' 'https://github.com/example/repo/pull/123'\n");
-  chmodSync(ghBinary, 0o755);
   const prompts = [];
   const client = {
     app: { log: async () => {} },
@@ -163,12 +160,12 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
   };
   const hooks = await plugins.WatchPrPlugin(
     { client, directory, worktree: directory },
-    { watchScript, ghBinary },
+    { watchScript, pythonBinary: process.platform === "win32" ? "python" : "python3" },
   );
   const context = { sessionID: "watch-session", directory, worktree: directory };
   try {
     const started = await hooks.tool.watch_pr.execute(
-      { action: "start", stallTimeout: "2h" },
+      { action: "start", ref: "https://github.com/example/repo/pull/123", stallTimeout: "2h" },
       context,
     );
     assert.match(started, /notified automatically/);
