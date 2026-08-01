@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +14,7 @@ import {
   unpackZip,
   textFromXml,
 } from "../plugins/developing-solidworks/mcp/solidworks-docs.mjs";
+import { SERVER_INSTRUCTIONS } from "../plugins/developing-solidworks/mcp/solidworks-docs-mcp.mjs";
 
 const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 const CRC32_TABLE = new Uint32Array(256);
@@ -593,8 +595,17 @@ test("reports forced refresh acquisition failures instead of stale success", asy
   }
 });
 
+test("passes the bundled skill through MCP server instructions", () => {
+  const skill = readFileSync(
+    new URL("../plugins/developing-solidworks/skills/developing-solidworks/SKILL.md", import.meta.url),
+    "utf8",
+  ).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+  assert.ok(SERVER_INSTRUCTIONS.startsWith("The bundled developing-solidworks skill below is authoritative."));
+  assert.ok(SERVER_INSTRUCTIONS.endsWith(skill));
+});
+
 test("publishes the complete documented MCP tool set", () => {
-  assert.equal(SERVER_VERSION, "0.9.4");
+  assert.equal(SERVER_VERSION, "0.9.5");
   assert.deepEqual(TOOL_DEFINITIONS.map((tool) => tool.name), [
     "status", "refresh", "glob", "search", "list_assemblies", "list_types",
     "get_type", "list_members", "get_member", "list_enums", "get_enum",
