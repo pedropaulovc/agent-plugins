@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
-export const SERVER_VERSION = "0.9.5";
+export const SERVER_VERSION = "0.9.6";
 export const REPOSITORY = "pedropaulovc/offline-solidworks-api-docs";
 export const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 
@@ -24,6 +24,8 @@ for (let index = 0; index < CRC32_TABLE.length; index += 1) {
 const KIND_BY_PREFIX = { T: "type", M: "method", P: "property", F: "field", E: "event" };
 
 const TOOL_LIMIT_SCHEMA = { type: "integer", minimum: 1, maximum: MAX_LIMIT, default: DEFAULT_LIMIT };
+const SEARCH_PAGE_SIZE = 10;
+const SEARCH_LIMIT_SCHEMA = { type: "integer", minimum: 1, maximum: MAX_LIMIT, default: SEARCH_PAGE_SIZE };
 const TOOL_MEMBER_LIMIT_SCHEMA = { type: "integer", minimum: 1, maximum: MAX_LIMIT };
 const TOOL_OFFSET_SCHEMA = { type: "integer", minimum: 0, default: 0 };
 const TOOL_MEMBER_OFFSET_SCHEMA = { type: "integer", minimum: 0 };
@@ -33,20 +35,14 @@ function objectSchema(properties, required = []) {
 }
 
 export const TOOL_DEFINITIONS = [
-  { name: "status", description: "Show the cached SolidWorks XMLDoc bundle version, release, extracted files, and indexed counts. Downloads the latest release when no usable cache exists.", inputSchema: objectSchema({}) },
+  { name: "status", description: "Show the cached SolidWorks XMLDoc bundle and query the latest online release metadata. Returns the cached version, latest online version, release details, extracted files, and indexed counts.", inputSchema: objectSchema({}) },
   { name: "refresh", description: "Fetch the latest SolidWorks.Interop.xmldoc.zip release asset, replace the cache, unpack it, and rebuild the semantic index.", inputSchema: objectSchema({}) },
-  { name: "glob", description: "Match virtual documentation paths with a glob pattern. Paths include types/, members/, examples/, guides/, and files/ entries.", inputSchema: objectSchema({ pattern: { type: "string", minLength: 1 }, caseSensitive: { type: "boolean", default: false }, limit: TOOL_LIMIT_SCHEMA }, ["pattern"]) },
-  { name: "search", description: "Search every indexed documentation field, including descriptions, remarks, signatures, return types, parameters, examples, and guides. Scope is optional and defaults to all; API results include grounded details and example links, while example results include the first 50 content lines.", inputSchema: objectSchema({ query: { type: "string", minLength: 1 }, caseSensitive: { type: "boolean", default: false }, scope: { type: "string", enum: ["all", "types", "members", "examples", "guides", "files"] }, assembly: { type: "string" }, kind: { type: "string", enum: ["type", "enum", "method", "property", "field", "event", "member"] }, language: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }, ["query"]) },
-  { name: "list_assemblies", description: "List the SolidWorks interop assemblies and the number of indexed types and members in each.", inputSchema: objectSchema({}) },
-  { name: "list_types", description: "List indexed API types by name, assembly, or enum/type kind.", inputSchema: objectSchema({ query: { type: "string" }, assembly: { type: "string" }, kind: { type: "string", enum: ["all", "type", "enum"], default: "all" }, limit: TOOL_LIMIT_SCHEMA }) },
+  { name: "glob", description: "Match virtual documentation paths with a glob pattern. Paths include types/, members/, examples/, guides/, and files/ entries; * matches across path separators, ** supports recursive path segments, and ? matches one non-/ character.", inputSchema: objectSchema({ pattern: { type: "string", minLength: 1 }, caseSensitive: { type: "boolean", default: false }, limit: TOOL_LIMIT_SCHEMA }, ["pattern"]) },
+  { name: "search", description: "Search every indexed documentation field, including descriptions, remarks, signatures, return types, parameters, examples, and guides. Results are paginated with a default page size of 10; use offset for the next page. Scope is optional and defaults to all.", inputSchema: objectSchema({ query: { type: "string", minLength: 1 }, caseSensitive: { type: "boolean", default: false }, scope: { type: "string", enum: ["all", "types", "members", "examples", "guides", "files"] }, assembly: { type: "string" }, kind: { type: "string", enum: ["type", "enum", "method", "property", "field", "event", "member"] }, language: { type: "string" }, limit: SEARCH_LIMIT_SCHEMA, offset: TOOL_OFFSET_SCHEMA }, ["query"]) },
+  { name: "list", description: "List the indexed documentation catalog in one paginated result: assemblies, API types, enums, members, examples, and coding guides. Filter with kind, query, assembly, type, member, language, or root; use get_type for complete type and member information.", inputSchema: objectSchema({ kind: { type: "string", enum: ["all", "assembly", "type", "enum", "member", "method", "property", "field", "event", "example", "guide"], default: "all" }, query: { type: "string" }, type: { type: "string", minLength: 1 }, member: { type: "string" }, assembly: { type: "string" }, language: { type: "string" }, root: { type: "string" }, limit: TOOL_LIMIT_SCHEMA, offset: TOOL_OFFSET_SCHEMA }) },
   { name: "get_type", description: "Fetch one API type with all members by default. Every member includes documentation, remarks, signatures, return types, parameters, and example links; pass memberOffset/memberLimit only when pagination is explicitly needed.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, assembly: { type: "string" }, includeMembers: { type: "boolean", default: true }, memberLimit: TOOL_MEMBER_LIMIT_SCHEMA, memberOffset: TOOL_MEMBER_OFFSET_SCHEMA, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
-  { name: "list_members", description: "List methods, properties, fields, events, and other members belonging to a type. Use offset with limit to page through large types.", inputSchema: objectSchema({ type: { type: "string", minLength: 1 }, assembly: { type: "string" }, query: { type: "string" }, kind: { type: "string", enum: ["all", "method", "property", "field", "event", "member"], default: "all" }, limit: TOOL_LIMIT_SCHEMA, offset: TOOL_OFFSET_SCHEMA }, ["type"]) },
-  { name: "get_member", description: "Fetch one API member by XMLDoc ID, full name, short name, or type/member name. Returns full documentation, parameters, signatures, examples, and optional raw XML.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, type: { type: "string" }, assembly: { type: "string" }, kind: { type: "string", enum: ["all", "method", "property", "field", "event", "member"], default: "all" }, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
-  { name: "list_enums", description: "List enum types and their member counts. Use get_enum with memberOffset and memberLimit to page through large enum lists.", inputSchema: objectSchema({ query: { type: "string" }, assembly: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }) },
   { name: "get_enum", description: "Fetch an enum and all documented values by default. Each value includes its enum code, description, signature, return type when available, and example links; pass memberOffset/memberLimit only when pagination is explicitly needed.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, assembly: { type: "string" }, memberLimit: TOOL_MEMBER_LIMIT_SCHEMA, memberOffset: TOOL_MEMBER_OFFSET_SCHEMA, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
-  { name: "list_examples", description: "List multilingual SolidWorks examples from the companion catalog or embedded member documentation, optionally filtered by member, language, or text.", inputSchema: objectSchema({ query: { type: "string" }, member: { type: "string" }, language: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }) },
   { name: "get_example", description: "Fetch a complete example by catalog ID, source path, title, or virtual examples/ path. Unlike search previews, this returns the full example content.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
-  { name: "list_guides", description: "List programming and how-to guide pages embedded in the companion guide catalog.", inputSchema: objectSchema({ query: { type: "string" }, root: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }) },
   { name: "get_guide", description: "Fetch a complete Markdown programming or how-to guide by guide ID, source path, or title.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
 ];
 
@@ -283,16 +279,28 @@ function buildVirtualEntries(state) {
   return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 function globToRegExp(pattern, caseSensitive = false) {
-  let expression = "^"; const normalized = normalizePath(pattern);
+  let expression = "^";
+  const normalized = normalizePath(pattern);
   for (let index = 0; index < normalized.length; index += 1) {
     const character = normalized[index];
     if (character === "*") {
       if (normalized[index + 1] === "*") {
-        if (normalized[index + 2] === "/") { expression += "(?:.*/)?"; index += 2; } else { expression += ".*"; index += 1; }
-      } else expression += "[^/]*";
+        if (normalized[index + 2] === "/") {
+          expression += "(?:.*/)?";
+          index += 2;
+        } else {
+          expression += ".*";
+          index += 1;
+        }
+      } else {
+        expression += ".*";
+      }
       continue;
     }
-    if (character === "?") { expression += "[^/]"; continue; }
+    if (character === "?") {
+      expression += "[^/]";
+      continue;
+    }
     expression += /[\\^$+?.()|{}[\]]/.test(character) ? `\\${character}` : character;
   }
   return new RegExp(`${expression}$`, caseSensitive ? "" : "i");
@@ -333,6 +341,62 @@ function typeSummary(type, state) {
 }
 function exampleSummary(example) { return { id: example.id, title: example.title, language: example.language, source: example.source, members: example.memberIds, path: `examples/${example.id}` }; }
 function guideSummary(guide) { return { id: guide.id, title: guide.title, source: guide.source, root: guide.root, format: guide.format, path: `guides/${guide.id}` }; }
+function listCatalog(state, options = {}) {
+  const kind = options.kind ?? "all";
+  const query = options.query?.trim() ?? "";
+  const memberKinds = new Set(["method", "property", "field", "event"]);
+  const scopedKind = options.type ? "member" : options.member ? "example" : options.root ? "guide" : null;
+  const memberTypeKeys = options.type
+    ? new Set(resolveType(state, options.type, options.assembly).map((type) => typeKey(type.assembly, type.fullName)))
+    : null;
+  const items = [];
+  const include = (itemKind) => !scopedKind && (kind === "all" || kind === itemKind);
+  const includeMembers = (!scopedKind || scopedKind === "member") && (kind === "all" || kind === "member" || memberKinds.has(kind));
+  const matchesQuery = (value) => !query || matchesText(value, query);
+  const assemblySummary = (assembly) => {
+    const members = state.members.filter((member) => member.assembly === assembly.name && !isTypeRecord(member)).length;
+    return { kind: "assembly", id: assembly.name, name: assembly.name, assembly: assembly.name, sourceFiles: assembly.sourceFiles, types: state.types.filter((type) => type.assembly === assembly.name).length, members, path: `assemblies/${assembly.name}` };
+  };
+
+  if (include("assembly")) for (const assembly of state.assemblies.values()) {
+    const item = assemblySummary(assembly);
+    if (options.assembly && !matchesAssembly(assembly.name, options.assembly)) continue;
+    if (matchesQuery(`${item.name} ${item.sourceFiles.join(" ")}`)) items.push(item);
+  }
+  for (const type of state.types) {
+    const itemKind = type.isEnum ? "enum" : "type";
+    if (!include(itemKind)) continue;
+    if (!matchesAssembly(type.assembly, options.assembly)) continue;
+    if (options.language) continue;
+    if (matchesQuery(`${type.fullName} ${type.shortName} ${type.summary}`)) items.push({ ...typeSummary(type, state), kind: itemKind });
+  }
+  if (includeMembers) for (const member of state.members) {
+    if (isTypeRecord(member)) continue;
+    if (!matchesAssembly(member.assembly, options.assembly)) continue;
+    if (memberTypeKeys && !memberTypeKeys.has(typeKey(member.assembly, member.typeFullName))) continue;
+    if (memberKinds.has(kind) && member.kind !== kind) continue;
+    if (matchesQuery(memberSearchText(member, state))) items.push(memberSummary(member, state));
+  }
+  if (include("example")) for (const example of state.examples) {
+    if (options.assembly && !exampleMatchesAssembly(state, example, options.assembly)) continue;
+    if (options.language && !matchesText(example.language, options.language)) continue;
+    if (options.member && !example.memberIds.some((id) => matchesText(id, options.member))) continue;
+    if (matchesQuery(exampleSearchText(example))) items.push({ kind: "example", ...exampleSummary(example) });
+  }
+  if (include("guide")) for (const guide of state.guides) {
+    if (options.assembly || options.language) continue;
+    if (options.root && guide.root?.toLowerCase() !== options.root.toLowerCase()) continue;
+    if (matchesQuery(guideSearchText(guide))) items.push({ kind: "guide", ...guideSummary(guide) });
+  }
+
+  const order = { assembly: 0, type: 1, enum: 2, method: 3, property: 3, field: 3, event: 3, member: 3, example: 4, guide: 5 };
+  items.sort((left, right) => (order[left.kind] ?? 3) - (order[right.kind] ?? 3) || left.path.localeCompare(right.path));
+  const offset = clampOffset(options.offset);
+  const limit = clampLimit(options.limit);
+  const page = items.slice(offset, offset + limit);
+  const truncated = offset + page.length < items.length;
+  return { kind, query, type: options.type ?? null, member: options.member ?? null, assembly: options.assembly ?? null, language: options.language ?? null, root: options.root ?? null, count: page.length, total: items.length, offset, limit, truncated, nextOffset: truncated ? offset + page.length : null, items: page };
+}
 function firstLines(value, limit = 50) {
   const lines = String(value ?? "").split(/\r?\n/);
   return { content: lines.slice(0, limit).join("\n"), contentLineCount: Math.min(lines.length, limit), totalLineCount: lines.length, contentTruncated: lines.length > limit };
@@ -371,12 +435,6 @@ function typeSearchText(type, state) {
   const references = [...(type.exampleRefs ?? []).flatMap((reference) => [reference.id, reference.language, reference.source]), ...(type.seeAlso ?? []).flatMap((reference) => [reference.cref, reference.href, reference.text])];
   return searchText([type.searchText, type.id, type.fullName, type.shortName, type.assembly, type.sourceFile, type.kind, type.isEnum, type.memberIds, type.memberKeys, type.summary, type.remarks, type.returns, type.value, type.availability, signature.kind, signature.display, signature.returnType, references, examples]);
 }
-function matchesTypeQualifier(member, query) {
-  if (!query) return true;
-  const normalized = normalizePath(query).replace(/^types\//i, "").replaceAll("/", ".").toLowerCase();
-  const fullName = String(member.typeFullName ?? "").toLowerCase();
-  return fullName === normalized || fullName.endsWith(`.${normalized}`) || fullName.split(".").at(-1) === normalized;
-}
 function resolveType(state, name, assembly) {
   let rawQuery = normalizePath(String(name ?? "").trim()).replace(/^(?:types|enums)\//i, "").replace(/\/_overview\.md$/i, "").replace(/\.md$/i, "").replace(/^T:/i, "");
   const segments = rawQuery.split("/").filter(Boolean);
@@ -392,26 +450,6 @@ function resolveType(state, name, assembly) {
   const short = candidates.filter((type) => type.shortName.toLowerCase() === query.toLowerCase());
   if (short.length) return short;
   return candidates.filter((type) => matchesText(type.fullName, query) || matchesText(type.shortName, query));
-}
-function resolveMembers(state, name, options = {}) {
-  const rawQuery = normalizePath(String(name ?? "").trim()).replace(/^(?:members|types)\//i, "").replace(/\.md$/i, "");
-  const segments = rawQuery.split("/").filter(Boolean);
-  let requestedAssembly = options.assembly;
-  if (segments.length > 1 && (!requestedAssembly || matchesAssembly(segments[0], requestedAssembly))) {
-    const knownAssembly = [...state.assemblies.keys()].some((candidate) => matchesAssembly(candidate, segments[0]));
-    if (requestedAssembly || knownAssembly) {
-      requestedAssembly ??= segments.shift();
-      if (options.assembly) segments.shift();
-    }
-  }
-  const query = segments.length > 1 ? segments.at(-1) : segments[0] ?? rawQuery;
-  const pathTypeQuery = segments.length > 1 ? segments.slice(0, -1).join(".") : null;
-  const typeQuery = pathTypeQuery ?? options.type;
-  const kind = options.kind && options.kind !== "all" && options.kind !== "member" ? options.kind : null;
-  const candidates = state.members.filter((member) => !isTypeRecord(member) && matchesAssembly(member.assembly, requestedAssembly) && (!kind || member.kind === kind) && matchesTypeQualifier(member, typeQuery));
-  const exact = candidates.filter((member) => [member.id, member.fullName, member.shortName].some((value) => String(value).toLowerCase() === query.toLowerCase()));
-  if (exact.length) return exact;
-  return candidates.filter((member) => matchesText(member.fullName, query) || matchesText(member.shortName, query));
 }
 function resolveExample(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^examples\//i, ""); const exact = state.examples.filter((example) => [example.id, normalizePath(example.source ?? "")].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.examples.filter((example) => matchesText(example.id, query) || matchesText(example.title, query)); }
 function resolveGuide(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^guides\//i, ""); const exact = state.guides.filter((guide) => [guide.id, normalizePath(guide.source ?? "")].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.guides.filter((guide) => matchesText(guide.id, query) || matchesText(guide.title, query)); }
@@ -434,33 +472,30 @@ function expandedType(state, type, options = {}) {
 function searchState(state, options = {}) {
   const query = String(options.query ?? "").trim();
   const scope = options.scope ?? "all";
-  const limit = clampLimit(options.limit);
+  const limit = clampLimit(options.limit, SEARCH_PAGE_SIZE);
+  const offset = clampOffset(options.offset);
   const caseSensitive = options.caseSensitive === true;
-  const results = [];
+  const matches = [];
   const add = (kind, label, buildText, path, extra = {}) => {
-    if (results.length >= limit) return;
     const searchable = typeof buildText === "function" ? buildText() : buildText;
     const text = typeof searchable === "object" ? searchable.text : searchable;
     const lowerText = typeof searchable === "object" ? searchable.lower : text.toLowerCase();
     if (!(caseSensitive ? text : lowerText).includes(caseSensitive ? query : query.toLowerCase())) return;
     const resolvedExtra = typeof extra === "function" ? extra() : extra;
-    results.push({ kind, label, path, snippet: snippet(text, query, 180, caseSensitive), ...resolvedExtra });
+    matches.push({ kind, label, path, snippet: snippet(text, query, 180, caseSensitive), ...resolvedExtra });
   };
   if (scope === "all" || scope === "types") for (const type of state.types) {
-    if (results.length >= limit) break;
     if (!matchesAssembly(type.assembly, options.assembly, caseSensitive)) continue;
     if (options.kind && type.kind !== options.kind) continue;
     add(type.kind, type.fullName, { text: type.searchText, lower: type.searchTextLower }, typePath(type), { id: type.id, assembly: type.assembly, ...searchResultDetails(state, type) });
   }
   if (scope === "all" || scope === "members") for (const member of state.members) {
-    if (results.length >= limit) break;
     if (isTypeRecord(member)) continue;
     if (!matchesAssembly(member.assembly, options.assembly, caseSensitive)) continue;
     if (options.kind && options.kind !== "member" && member.kind !== options.kind) continue;
     add(member.kind, member.fullName, { text: member.searchText, lower: member.searchTextLower }, memberPath(member), { id: member.id, assembly: member.assembly, type: member.typeFullName, ...searchResultDetails(state, member) });
   }
   if (!options.kind && (scope === "all" || scope === "examples")) for (const example of state.examples) {
-    if (results.length >= limit) break;
     if (!exampleMatchesAssembly(state, example, options.assembly, caseSensitive)) continue;
     if (options.language && !matchesText(example.language, options.language, caseSensitive)) continue;
     add("example", example.title, () => exampleSearchText(example), `examples/${example.id}`, () => {
@@ -469,18 +504,28 @@ function searchState(state, options = {}) {
     });
   }
   if (!options.kind && (scope === "all" || scope === "guides")) for (const guide of state.guides) {
-    if (results.length >= limit) break;
     add("guide", guide.title, () => guideSearchText(guide), `guides/${guide.id}`, { id: guide.id, root: guide.root, ...searchResultDetails(state, guide, guide.title) });
   }
   if (!options.kind && scope === "files") for (const [file, content] of state.rawFiles) {
-    if (results.length >= limit) break;
     add("file", file, () => `${file} ${content}`, `files/${file}`, { id: file, ...searchResultDetails(state, {}) });
   }
-  return { query, scope, caseSensitive, count: results.length, results };
+  const results = matches.slice(offset, offset + limit);
+  const truncated = offset + results.length < matches.length;
+  return { query, scope, caseSensitive, count: results.length, total: matches.length, offset, limit, truncated, nextOffset: truncated ? offset + results.length : null, results };
 }
 function statusFromState(state) {
   const assemblies = [...state.assemblies.values()].map((assembly) => ({ name: assembly.name, sourceFiles: assembly.sourceFiles, types: state.types.filter((type) => type.assembly === assembly.name).length, members: state.members.filter((member) => member.assembly === assembly.name && !isTypeRecord(member)).length }));
   return { ...state.metadata, bundleVersion: state.metadata.bundleVersion ?? state.metadata.tag ?? "unknown", extractedFiles: state.files, counts: { assemblies: assemblies.length, types: state.types.length, enums: state.types.filter((type) => type.isEnum).length, members: state.members.filter((member) => !isTypeRecord(member)).length, examples: state.examples.length, guides: state.guides.length }, assemblies };
+}
+function onlineReleaseSummary({ release, asset, tag }) {
+  return {
+    bundleVersion: tag,
+    tag,
+    releaseUrl: release.html_url ?? null,
+    assetName: asset.name,
+    assetUrl: asset.browser_download_url ?? null,
+    digest: parseDigest(asset.digest) || null,
+  };
 }
 function safeCacheRoot(env = process.env) { if (env.SOLIDWORKS_DOCS_CACHE_DIR) return resolve(env.SOLIDWORKS_DOCS_CACHE_DIR); if (env.CLAUDE_PLUGIN_DATA) return join(resolve(env.CLAUDE_PLUGIN_DATA), "solidworks-docs"); if (env.XDG_CACHE_HOME) return join(resolve(env.XDG_CACHE_HOME), "developing-solidworks"); if (process.platform === "win32" && env.LOCALAPPDATA) return join(resolve(env.LOCALAPPDATA), "developing-solidworks"); return join(homedir(), ".cache", "developing-solidworks"); }
 async function pathExists(path) { try { await fs.access(path); return true; } catch { return false; } }
@@ -602,7 +647,7 @@ export async function unpackZip(buffer, targetDir) {
 }
 
 export class SolidWorksDocs {
-  constructor(options = {}) { this.env = options.env ?? process.env; this.fetchImpl = options.fetchImpl ?? globalThis.fetch; this.cacheDir = resolve(options.cacheDir ?? safeCacheRoot(this.env)); this.bundlePath = options.bundlePath ?? this.env.SOLIDWORKS_DOCS_BUNDLE ?? null; this.releaseApi = options.releaseApi ?? RELEASE_API; this.state = null; this.bundleMetadata = null; }
+  constructor(options = {}) { this.env = options.env ?? process.env; this.fetchImpl = options.fetchImpl ?? globalThis.fetch; this.cacheDir = resolve(options.cacheDir ?? safeCacheRoot(this.env)); this.bundlePath = options.bundlePath ?? this.env.SOLIDWORKS_DOCS_BUNDLE ?? null; this.releaseApi = options.releaseApi ?? RELEASE_API; this.state = null; this.bundleMetadata = null; this.lastRelease = null; }
   async ensure(force = false) {
     if (!force && this.state && this.bundleMetadata) return this.state;
     return withCacheLock(this.cacheDir, async () => {
@@ -612,12 +657,19 @@ export class SolidWorksDocs {
       return this.state;
     });
   }
+  async fetchLatestRelease() {
+    const release = await fetchJson(this.releaseApi, this.fetchImpl);
+    const asset = selectReleaseAsset(release.assets);
+    if (!asset) throw new Error("The latest SolidWorks release has no xmldoc ZIP asset");
+    return { release, asset, tag: release.tag_name ?? "latest" };
+  }
   async ensureBundle(force = false) {
     await fs.mkdir(this.cacheDir, { recursive: true });
     const metadataPath = join(this.cacheDir, "bundle.json");
     const existing = await readJson(metadataPath);
     const localPath = this.bundlePath ?? this.env.SOLIDWORKS_DOCS_BUNDLE;
     if (localPath) {
+      this.lastRelease = null;
       const sourcePath = resolve(localPath);
       const buffer = await fs.readFile(sourcePath);
       const digest = sha256(buffer);
@@ -625,19 +677,15 @@ export class SolidWorksDocs {
       if (!force && existing?.source === "local" && existing.digest === digest && await pathExists(extractedDir)) return existing;
       return this.replaceBundle({ buffer, metadata: { source: "local", sourcePath, repository: REPOSITORY, tag: "local", bundleVersion: this.env.SOLIDWORKS_DOCS_BUNDLE_VERSION ?? "local", assetName: basename(sourcePath), assetUrl: null, digest }, extractedDir, metadataPath });
     }
-    let release;
+    let releaseInfo;
     try {
-      release = await fetchJson(this.releaseApi, this.fetchImpl);
+      releaseInfo = await this.fetchLatestRelease();
     } catch (error) {
       if (!force && existing?.extractedDir && await pathExists(existing.extractedDir)) return existing;
       throw new Error(`Unable to fetch SolidWorks XMLDoc release metadata: ${error.message}`);
     }
-    const asset = selectReleaseAsset(release.assets);
-    if (!asset) {
-      if (!force && existing?.extractedDir && await pathExists(existing.extractedDir)) return existing;
-      throw new Error("The latest SolidWorks release has no xmldoc ZIP asset");
-    }
-    const tag = release.tag_name ?? "latest";
+    this.lastRelease = releaseInfo;
+    const { release, asset, tag } = releaseInfo;
     const digest = parseDigest(asset.digest);
     const cachedRelease = !force
       && existing?.source === "release"
@@ -683,57 +731,44 @@ export class SolidWorksDocs {
       throw error;
     }
   }
-  async status() { return statusFromState(await this.ensure(false)); }
-  async refresh() { this.state = null; this.bundleMetadata = null; return statusFromState(await this.ensure(true)); }
+  async status() {
+    const hadUsableState = Boolean(this.state && this.bundleMetadata);
+    const state = await this.ensure(false);
+    const cached = statusFromState(state);
+    const response = { ...cached, latestOnline: null, latestOnlineError: null, updateAvailable: null };
+    if (state.metadata.source !== "release") return response;
+    let releaseInfo = hadUsableState ? null : this.lastRelease;
+    try {
+      releaseInfo ??= await this.fetchLatestRelease();
+    } catch (error) {
+      return { ...response, latestOnlineError: error.message };
+    }
+    const latestOnline = onlineReleaseSummary(releaseInfo);
+    return { ...response, latestOnline, updateAvailable: latestOnline.bundleVersion !== cached.bundleVersion };
+  }
+  async refresh() {
+    this.state = null;
+    this.bundleMetadata = null;
+    this.lastRelease = null;
+    const state = await this.ensure(true);
+    const cached = statusFromState(state);
+    const latestOnline = state.metadata.source === "release" && this.lastRelease ? onlineReleaseSummary(this.lastRelease) : null;
+    return { ...cached, latestOnline, latestOnlineError: null, updateAvailable: latestOnline ? latestOnline.bundleVersion !== cached.bundleVersion : null };
+  }
   async glob(pattern, limit, caseSensitive = false) { const state = await this.ensure(false); const regex = globToRegExp(pattern, caseSensitive); const matches = state.virtualEntries.flatMap((entry) => { const matchedPath = [entry.path, ...(entry.aliases ?? [])].find((path) => regex.test(path)); if (!matchedPath) return []; const { aliases: _aliases, ...result } = entry; return [{ ...result, matchedPath }]; }).slice(0, clampLimit(limit)); return { pattern: normalizePath(pattern), caseSensitive, count: matches.length, matches }; }
   async search(options) { return searchState(await this.ensure(false), options); }
-  async listAssemblies() { const state = await this.ensure(false); return { count: state.assemblies.size, assemblies: [...state.assemblies.values()].map((assembly) => ({ name: assembly.name, sourceFiles: assembly.sourceFiles, types: state.types.filter((type) => type.assembly === assembly.name).length, members: state.members.filter((member) => member.assembly === assembly.name && !isTypeRecord(member)).length })).sort((left, right) => left.name.localeCompare(right.name)) }; }
-  async listTypes(options = {}) {
-    const state = await this.ensure(false);
-    const query = options.query?.trim();
-    const kind = options.kind ?? "all";
-    const types = state.types.filter((type) => matchesAssembly(type.assembly, options.assembly) && (kind === "all" || type.kind === kind) && (!query || matchesText(`${type.fullName} ${type.summary}`, query))).slice(0, clampLimit(options.limit));
-    return { count: types.length, types: types.map((type) => typeSummary(type, state)) };
-  }
+  async list(options = {}) { return listCatalog(await this.ensure(false), options); }
   async getType(options) {
     const state = await this.ensure(false);
     const matches = resolveType(state, options.name, options.assembly);
     if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map((type) => typeSummary(type, state)) };
     return { found: true, type: expandedType(state, matches[0], options) };
   }
-  async listMembers(options) {
-    const state = await this.ensure(false);
-    const types = resolveType(state, options.type, options.assembly);
-    if (types.length !== 1) return { found: false, matchCount: types.length, types: types.slice(0, MAX_LIMIT).map((type) => typeSummary(type, state)) };
-    const type = types[0];
-    const query = options.query?.trim();
-    const kind = options.kind ?? "all";
-    const offset = clampOffset(options.offset);
-    const limit = clampLimit(options.limit);
-    const allMembers = state.membersByTypeKey.get(typeKey(type.assembly, type.fullName)) ?? [];
-    const filteredMembers = allMembers.filter((member) => (kind === "all" || kind === "member" || member.kind === kind) && (!query || matchesText(`${member.fullName} ${member.summary} ${member.signature?.display}`, query)));
-    const members = filteredMembers.slice(offset, offset + limit);
-    return { found: true, type: typeSummary(type, state), count: members.length, total: filteredMembers.length, offset, limit, truncated: offset + members.length < filteredMembers.length, members: members.map((member) => memberSummary(member, state)) };
-  }
-  async getMember(options) {
-    const state = await this.ensure(false);
-    const matches = resolveMembers(state, options.name, options);
-    if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map((member) => memberSummary(member, state)) };
-    return { found: true, member: expandedMember(matches[0], options.includeRawXml === true, state) };
-  }
-  async listEnums(options = {}) { return this.listTypes({ ...options, kind: "enum" }); }
   async getEnum(options) {
     const result = await this.getType({ ...options, includeMembers: true });
     if (!result.found) return result;
     if (result.type.kind === "enum") return result;
     return { found: false, matchCount: 0, matches: [] };
-  }
-  async listExamples(options = {}) {
-    const state = await this.ensure(false);
-    const query = options.query?.trim();
-    const member = options.member?.trim();
-    const examples = state.examples.filter((example) => (!query || matchesText(`${example.id} ${example.title} ${example.language} ${example.content}`, query)) && (!options.language || matchesText(example.language, options.language)) && (!member || example.memberIds.some((id) => matchesText(id, member)))).slice(0, clampLimit(options.limit));
-    return { count: examples.length, examples: examples.map(exampleSummary) };
   }
   async getExample(options) {
     const state = await this.ensure(false);
@@ -744,13 +779,29 @@ export class SolidWorksDocs {
     if (options.includeRawXml === true) result.rawXml = example.rawXml;
     return { found: true, example: result };
   }
-  async listGuides(options = {}) { const state = await this.ensure(false); const query = options.query?.trim(); const guides = state.guides.filter((guide) => (!query || matchesText(`${guide.id} ${guide.title} ${guide.content}`, query)) && (!options.root || guide.root?.toLowerCase() === options.root.toLowerCase())).slice(0, clampLimit(options.limit)); return { count: guides.length, guides: guides.map(guideSummary) }; }
-  async getGuide(options) { const state = await this.ensure(false); const matches = resolveGuide(state, options.name); if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(guideSummary) }; const guide = matches[0]; const result = { ...guideSummary(guide), content: guide.content }; if (options.includeRawXml === true) result.rawXml = guide.rawXml; return { found: true, guide: result }; }
+  async getGuide(options) {
+    const state = await this.ensure(false);
+    const matches = resolveGuide(state, options.name);
+    if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(guideSummary) };
+    const guide = matches[0];
+    const result = { ...guideSummary(guide), content: guide.content };
+    if (options.includeRawXml === true) result.rawXml = guide.rawXml;
+    return { found: true, guide: result };
+  }
 }
 
 export async function dispatchTool(docs, name, args = {}) {
   switch (name) {
-    case "status": return docs.status(); case "refresh": return docs.refresh(); case "glob": return docs.glob(args.pattern, args.limit, args.caseSensitive); case "search": return docs.search(args); case "list_assemblies": return docs.listAssemblies(); case "list_types": return docs.listTypes(args); case "get_type": return docs.getType(args); case "list_members": return docs.listMembers(args); case "get_member": return docs.getMember(args); case "list_enums": return docs.listEnums(args); case "get_enum": return docs.getEnum(args); case "list_examples": return docs.listExamples(args); case "get_example": return docs.getExample(args); case "list_guides": return docs.listGuides(args); case "get_guide": return docs.getGuide(args); default: throw new Error(`Unknown SolidWorks documentation tool: ${name}`);
+    case "status": return docs.status();
+    case "refresh": return docs.refresh();
+    case "glob": return docs.glob(args.pattern, args.limit, args.caseSensitive);
+    case "search": return docs.search(args);
+    case "list": return docs.list(args);
+    case "get_type": return docs.getType(args);
+    case "get_enum": return docs.getEnum(args);
+    case "get_example": return docs.getExample(args);
+    case "get_guide": return docs.getGuide(args);
+    default: throw new Error(`Unknown tool: ${name}`);
   }
 }
 

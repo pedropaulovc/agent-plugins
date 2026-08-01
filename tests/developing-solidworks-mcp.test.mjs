@@ -124,9 +124,8 @@ function duplicateAssemblyFixtureEntries() {
     ["Assembly.A.duplicate.xml", duplicateMemberXml],
   ];
 }
-
 function paginationFixtureEntries() {
-  const members = Array.from({ length: 3 }, (_, index) => `<member name="F:Page.Widget.Field${index + 1}"><summary>Field ${index + 1}</summary></member>`).join("");
+  const members = Array.from({ length: 12 }, (_, index) => `<member name="F:Page.Widget.Field${index + 1}"><summary>Field ${index + 1}</summary></member>`).join("");
   return [["Page.xml", `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Page</name></assembly><members><member name="T:Page.Widget"><summary>Page widget</summary></member>${members}</members></doc>`]];
 }
 function proactiveFixtureEntries() {
@@ -162,21 +161,19 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.equal(textFromXml("one<para>two</para><br/>three"), "one two\n\nthree");
     const type = await docs.getType({ name: "Widget" });
     assert.match(type.type.summary, /List<Widget> and x < 5/);
-
-    const member = await docs.getMember({ name: "M:Demo.Widget.DoThing(System.Int32@)" });
-    assert.equal(member.found, true);
-    assert.equal(member.member.signature.parameters[0].direction, "byref");
-    assert.equal(member.member.parameters[0].description, "The input <value>.");
-    assert.equal(member.member.parameters[0].name, "value");
-    assert.equal(member.member.exampleRefs[0].id, "Examples/DoThing.htm");
-    assert.deepEqual(member.member.seeAlso.map((reference) => reference.cref).sort(), ["T:Demo.Other", "T:Demo.Widget"]);
-    assert.equal(member.member.seeAlso.find((reference) => reference.cref === "T:Demo.Other").text, "Other reference");
+    const typeMember = type.type.members.find((member) => member.id === "M:Demo.Widget.DoThing(System.Int32@)");
+    assert.ok(typeMember);
+    assert.equal(typeMember.signature.parameters[0].direction, "byref");
+    assert.equal(typeMember.parameters[0].description, "The input <value>.");
+    assert.equal(typeMember.parameters[0].name, "value");
+    assert.equal(typeMember.exampleRefs[0].id, "Examples/DoThing.htm");
+    assert.deepEqual(typeMember.seeAlso.map((reference) => reference.cref).sort(), ["T:Demo.Other", "T:Demo.Widget"]);
+    assert.equal(typeMember.seeAlso.find((reference) => reference.cref === "T:Demo.Other").text, "Other reference");
 
     const enumResult = await docs.getEnum({ name: "enums/Options_e" });
     assert.equal(enumResult.found, true);
     assert.equal((await docs.getEnum({ name: "Widget" })).found, false);
     assert.equal(enumResult.type.members[0].enumValue, 3);
-    assert.equal((await docs.getMember({ name: "members/Demo/Widget/DoThing" })).found, true);
 
     const example = await docs.getExample({ name: "examples/Examples/DoThing.htm" });
     assert.equal(example.found, true);
@@ -186,6 +183,8 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.equal(guide.found, true);
     assert.match(guide.guide.content, /Literal <tag> content/);
 
+    const wildcardGlob = await docs.glob("*Demo*");
+    assert.ok(wildcardGlob.count > 0);
     const glob = await docs.glob("types/**/Widget");
     assert.equal(glob.count, 1);
     const overview = await docs.glob("types/Widget/_overview.md");
@@ -203,8 +202,14 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.ok(kindSearch.results.every((result) => result.kind === "method"));
     assert.equal((await docs.search({ query: "Do", kind: "method", scope: "examples" })).count, 0);
 
-    const dispatched = await dispatchTool(docs, "list_types", { query: "Widget" });
+    const dispatched = await dispatchTool(docs, "list", { kind: "type", query: "Widget" });
     assert.equal(dispatched.count, 1);
+    const listedMember = await dispatchTool(docs, "list", { kind: "method", query: "DoThing" });
+    assert.equal(listedMember.count, 1);
+    assert.equal(listedMember.items[0].id, "M:Demo.Widget.DoThing(System.Int32@)");
+    const listedTypeMembers = await dispatchTool(docs, "list", { kind: "member", type: "types/Demo/Widget" });
+    assert.equal(listedTypeMembers.count, 1);
+    assert.equal(listedTypeMembers.items[0].id, "M:Demo.Widget.DoThing(System.Int32@)");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -288,11 +293,11 @@ test("preserves qualified lookup paths and filters example searches by assembly"
     const qualifiedWithAssembly = await docs.getType({ name: "types/Assembly.A/Widget", assembly: "Assembly.A" });
     assert.equal(qualifiedWithAssembly.found, true);
     assert.equal(type.type.assembly, "Assembly.A");
-    const member = await docs.getMember({ name: "members/Assembly.A/Widget/DoThing" });
-    assert.equal(member.found, true);
-    assert.equal(member.member.assembly, "Assembly.A");
-    assert.deepEqual(member.member.exampleIds, ["Examples/A.htm"]);
-    assert.equal(member.member.examples[0].id, "Examples/A.htm");
+    const member = type.type.members.find((candidate) => candidate.id === "M:Assembly.A.Widget.DoThing");
+    assert.ok(member);
+    assert.equal(member.assembly, "Assembly.A");
+    assert.deepEqual(member.exampleIds, ["Examples/A.htm"]);
+    assert.equal(member.examples[0].id, "Examples/A.htm");
     const examples = await docs.search({ query: "Shared", scope: "examples", assembly: "Assembly.A" });
     assert.deepEqual(examples.results.map((result) => result.id), ["Examples/A.htm"]);
   } finally {
@@ -313,10 +318,10 @@ test("keeps XMLDoc identities assembly-scoped and indexes duplicate embedded exa
     assert.equal(assemblyB.found, true);
     assert.equal(assemblyA.type.assembly, "Assembly.A");
     assert.equal(assemblyB.type.assembly, "Assembly.B");
-    assert.equal((await docs.listMembers({ type: "types/Assembly.A/Widget" })).members[0].assembly, "Assembly.A");
-    assert.equal((await docs.getMember({ name: "members/Assembly.B/Widget/DoThing" })).member.assembly, "Assembly.B");
-    const generatedExamples = await docs.listExamples({ query: "embedded content", limit: 10 });
-    assert.deepEqual(generatedExamples.examples.map((item) => item.id).sort(), [
+    assert.equal(assemblyA.type.members[0].assembly, "Assembly.A");
+    assert.equal(assemblyB.type.members[0].assembly, "Assembly.B");
+    const generatedExamples = await docs.list({ kind: "example", query: "embedded content", limit: 10 });
+    assert.deepEqual(generatedExamples.items.map((item) => item.id).sort(), [
       "Assembly.A/M:Shared.Widget.DoThing#example-1",
       "Assembly.B/M:Shared.Widget.DoThing#example-1",
     ]);
@@ -328,7 +333,7 @@ test("keeps XMLDoc identities assembly-scoped and indexes duplicate embedded exa
   }
 });
 
-test("pages type members and list-member results", async () => {
+test("pages type members and search results", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-pagination-test-"));
   const bundle = path.join(root, "fixture.xmldoc.zip");
   await writeFile(bundle, zip(paginationFixtureEntries()));
@@ -338,16 +343,23 @@ test("pages type members and list-member results", async () => {
     const type = await docs.getType({ name: "Page.Widget", memberOffset: 1, memberLimit: 1 });
     assert.equal(type.found, true);
     assert.equal(type.type.memberOffset, 1);
-    assert.equal(type.type.membersTotal, 3);
+    assert.equal(type.type.membersTotal, 12);
     assert.deepEqual(type.type.members.map((member) => member.name), ["Field2"]);
     assert.equal(type.type.membersTruncated, true);
-    const members = await docs.listMembers({ type: "Page.Widget", offset: 2, limit: 1 });
-    assert.equal(members.total, 3);
-    assert.equal(members.offset, 2);
-    assert.deepEqual(members.members.map((member) => member.name), ["Field3"]);
-    assert.equal(members.truncated, false);
-    const genericMembers = await docs.listMembers({ type: "Page.Widget", kind: "member", limit: 10 });
-    assert.equal(genericMembers.total, 3);
+
+    const firstSearch = await docs.search({ query: "Field", scope: "members" });
+    assert.equal(firstSearch.limit, 10);
+    assert.equal(firstSearch.offset, 0);
+    assert.equal(firstSearch.count, 10);
+    assert.equal(firstSearch.total, 12);
+    assert.equal(firstSearch.truncated, true);
+    assert.equal(firstSearch.nextOffset, 10);
+    const secondSearch = await docs.search({ query: "Field", scope: "members", offset: firstSearch.nextOffset });
+    assert.equal(secondSearch.offset, 10);
+    assert.equal(secondSearch.count, 2);
+    assert.equal(secondSearch.total, 12);
+    assert.equal(secondSearch.truncated, false);
+    assert.equal(secondSearch.nextOffset, null);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -408,15 +420,22 @@ test("downloads a release asset once and reuses the extracted cache", async () =
 
   try {
     const docs = new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl });
-    assert.equal((await docs.status()).bundleVersion, "v-test");
-    assert.equal((await docs.status()).counts.types, 2);
+    const firstStatus = await docs.status();
+    assert.equal(firstStatus.bundleVersion, "v-test");
+    assert.equal(firstStatus.latestOnline.bundleVersion, "v-test");
+    assert.equal(firstStatus.latestOnline.releaseUrl, "https://release.test/v-test");
+    assert.equal(firstStatus.updateAvailable, false);
     assert.equal((await docs.search({ query: "DoThing", scope: "members" })).count, 1);
     assert.equal(metadataRequests, 1);
     assert.equal(assetRequests, 1);
+    const secondStatus = await docs.status();
+    assert.equal(secondStatus.latestOnline.bundleVersion, "v-test");
+    assert.equal(metadataRequests, 2);
     const onlineDocs = new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl });
     assert.equal((await onlineDocs.status()).bundleVersion, "v-test");
+    assert.equal(metadataRequests, 3);
     assert.equal((await onlineDocs.status()).counts.types, 2);
-    assert.equal(metadataRequests, 2);
+    assert.equal(metadataRequests, 4);
     assert.equal(assetRequests, 1);
 
 
@@ -427,6 +446,33 @@ test("downloads a release asset once and reuses the extracted cache", async () =
     });
     assert.equal((await offlineDocs.status()).counts.guides, 1);
     await assert.rejects(offlineDocs.refresh(), /Unable to fetch SolidWorks XMLDoc release metadata/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reports a newer online release without downloading it", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-release-status-test-"));
+  const bundle = zip(fixtureEntries());
+  let tag = "v-old";
+  let assetRequests = 0;
+  const releaseApi = "https://release.test/latest";
+  const fetchImpl = async (url) => {
+    if (url === releaseApi) return { ok: true, json: async () => ({ tag_name: tag, html_url: `https://release.test/${tag}`, assets: [{ name: `SolidWorks.Interop.xmldoc.${tag}.zip`, browser_download_url: "https://release.test/bundle.zip" }] }) };
+    assetRequests += 1;
+    return { ok: true, arrayBuffer: async () => bundle };
+  };
+
+  try {
+    const docs = new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl });
+    assert.equal((await docs.status()).updateAvailable, false);
+    tag = "v-new";
+    const status = await docs.status();
+    assert.equal(status.bundleVersion, "v-old");
+    assert.equal(status.latestOnline.bundleVersion, "v-new");
+    assert.equal(status.latestOnline.releaseUrl, "https://release.test/v-new");
+    assert.equal(status.updateAvailable, true);
+    assert.equal(assetRequests, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -604,18 +650,21 @@ test("passes the bundled skill through MCP server instructions", () => {
   assert.ok(SERVER_INSTRUCTIONS.endsWith(skill));
 });
 
-test("publishes the complete documented MCP tool set", () => {
-  assert.equal(SERVER_VERSION, "0.9.5");
+test("publishes the consolidated documented MCP tool set", () => {
+  assert.equal(SERVER_VERSION, "0.9.6");
   assert.deepEqual(TOOL_DEFINITIONS.map((tool) => tool.name), [
-    "status", "refresh", "glob", "search", "list_assemblies", "list_types",
-    "get_type", "list_members", "get_member", "list_enums", "get_enum",
-    "list_examples", "get_example", "list_guides", "get_guide",
+    "status", "refresh", "glob", "search", "list",
+    "get_type", "get_enum", "get_example", "get_guide",
   ]);
-  const listMembers = TOOL_DEFINITIONS.find((tool) => tool.name === "list_members");
-  assert.deepEqual(listMembers.inputSchema.properties.assembly, { type: "string" });
+  assert.equal(TOOL_DEFINITIONS.some((tool) => tool.name === "list_members" || tool.name === "get_member"), false);
+  const list = TOOL_DEFINITIONS.find((tool) => tool.name === "list");
   const getType = TOOL_DEFINITIONS.find((tool) => tool.name === "get_type");
   const getEnum = TOOL_DEFINITIONS.find((tool) => tool.name === "get_enum");
+  const search = TOOL_DEFINITIONS.find((tool) => tool.name === "search");
+  assert.deepEqual(list.inputSchema.properties.kind.default, "all");
+  assert.deepEqual(list.inputSchema.properties.type, { type: "string", minLength: 1 });
+  assert.deepEqual(list.inputSchema.properties.root, { type: "string" });
   assert.equal(getType.inputSchema.properties.memberOffset.default, undefined);
   assert.equal(getEnum.inputSchema.properties.memberOffset.default, undefined);
-  assert.equal(listMembers.inputSchema.properties.offset.default, 0);
+  assert.equal(search.inputSchema.properties.limit.default, 10);
 });
