@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,6 +9,7 @@ import {
   dispatchTool,
   selectReleaseAsset,
   unpackZip,
+  textFromXml,
 } from "../plugins/developing-solidworks/mcp/solidworks-docs.mjs";
 
 const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
@@ -61,10 +62,10 @@ function zip(entries) {
   return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
-function fixtureEntries() {
+function fixtureEntries(label = "") {
   const memberXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Demo</name></assembly><members>
-+<member name="T:Demo.Widget"><summary>A Widget type.</summary><sw:signature kind="type" display="class Widget" /></member>
-+<member name="M:Demo.Widget.DoThing(System.Int32@)"><summary>Does a thing.</summary><param name="value">The input value.</param><returns>The result.</returns><sw:signature kind="method" display="int DoThing(ref int value)" return-type="System.Int32"><sw:parameter name="value" type="System.Int32@" direction="byref" /></sw:signature><sw:example-ref id="Examples/DoThing.htm" language="C#" source="/Examples/DoThing.htm" /></member>
+<member name="T:Demo.Widget"><summary>A Widget type ${label}; List&lt;Widget&gt; and x &lt; 5.</summary><sw:signature kind="type" display="class Widget" /></member>
+<member name="M:Demo.Widget.DoThing(System.Int32@)"><summary>Does a thing.</summary><param name="value">The input &lt;value&gt;.</param><returns>The result.</returns><sw:signature kind="method" display="int DoThing(ref int value)" return-type="System.Int32"><sw:parameter name="value" type="System.Int32@" direction="byref" /></sw:signature><sw:example-ref id="Examples/DoThing.htm" language="C#" source="/Examples/DoThing.htm" /></member>
 +<member name="T:Demo.Options_e"><summary>Options.</summary></member>
 +<member name="F:Demo.Options_e.OptionA"><summary>3; a documented value</summary></member>
 +</members></doc>`.replaceAll("\n+", "\n");
@@ -77,6 +78,22 @@ function fixtureEntries() {
   ];
 }
 
+function qualifiedFixtureEntries() {
+  const assemblyXml = (assembly, marker) => `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>${assembly}</name></assembly><members>
+<member name="T:${assembly}.Widget"><summary>${marker} widget</summary><sw:signature kind="type" display="class Widget" /></member>
+<member name="M:${assembly}.Widget.DoThing"><summary>${marker} shared example</summary><sw:example-ref id="Examples/${marker}.htm" language="C#" source="/Examples/${marker}.htm" /></member>
+</members></doc>`;
+  const examplesXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SolidWorks.Interop.examples</name></assembly><members /><sw:examples>
+<sw:example id="Examples/A.htm" title="Shared A" language="C#" source="/Examples/A.htm"><sw:applies-to cref="M:Assembly.A.Widget.DoThing" /><sw:content format="solidworks-example"><![CDATA[Shared marker]]></sw:content></sw:example>
+<sw:example id="Examples/B.htm" title="Shared B" language="C#" source="/Examples/B.htm"><sw:applies-to cref="M:Assembly.B.Widget.DoThing" /><sw:content format="solidworks-example"><![CDATA[Shared marker]]></sw:content></sw:example>
+</sw:examples></doc>`;
+  return [
+    ["Assembly.A.xml", assemblyXml("Assembly.A", "A")],
+    ["Assembly.B.xml", assemblyXml("Assembly.B", "B")],
+    ["SolidWorks.Interop.examples.xml", examplesXml],
+  ];
+}
+
 test("indexes XMLDoc members, signatures, enum values, examples, guides, and globs", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-docs-test-"));
   const bundle = path.join(root, "fixture.xmldoc.zip");
@@ -86,15 +103,20 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
   try {
     const status = await docs.status();
     assert.deepEqual(status.counts, { assemblies: 1, types: 2, enums: 1, members: 2, examples: 1, guides: 1 });
+    assert.equal(textFromXml("List&lt;Widget&gt; and x &lt; 5"), "List<Widget> and x < 5");
+    const type = await docs.getType({ name: "Widget" });
+    assert.match(type.type.summary, /List<Widget> and x < 5/);
 
     const member = await docs.getMember({ name: "M:Demo.Widget.DoThing(System.Int32@)" });
     assert.equal(member.found, true);
     assert.equal(member.member.signature.parameters[0].direction, "byref");
+    assert.equal(member.member.parameters[0].description, "The input <value>.");
     assert.equal(member.member.parameters[0].name, "value");
     assert.equal(member.member.exampleRefs[0].id, "Examples/DoThing.htm");
 
     const enumResult = await docs.getEnum({ name: "enums/Options_e" });
     assert.equal(enumResult.found, true);
+    assert.equal((await docs.getEnum({ name: "Widget" })).found, false);
     assert.equal(enumResult.type.members[0].enumValue, 3);
     assert.equal((await docs.getMember({ name: "members/Demo/Widget/DoThing" })).found, true);
 
@@ -121,6 +143,26 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
 
     const dispatched = await dispatchTool(docs, "list_types", { query: "Widget" });
     assert.equal(dispatched.count, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("preserves qualified lookup paths and filters example searches by assembly", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-qualified-test-"));
+  const bundle = path.join(root, "fixture.xmldoc.zip");
+  await writeFile(bundle, zip(qualifiedFixtureEntries()));
+  const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
+
+  try {
+    const type = await docs.getType({ name: "types/Assembly.A/Widget" });
+    assert.equal(type.found, true);
+    assert.equal(type.type.assembly, "Assembly.A");
+    const member = await docs.getMember({ name: "members/Assembly.A/Widget/DoThing" });
+    assert.equal(member.found, true);
+    assert.equal(member.member.assembly, "Assembly.A");
+    const examples = await docs.search({ query: "Shared", scope: "examples", assembly: "Assembly.A" });
+    assert.deepEqual(examples.results.map((result) => result.id), ["Examples/A.htm"]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -162,6 +204,11 @@ test("downloads a release asset once and reuses the extracted cache", async () =
     assert.equal((await docs.search({ query: "DoThing", scope: "members" })).count, 1);
     assert.equal(metadataRequests, 1);
     assert.equal(assetRequests, 1);
+    const onlineDocs = new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl });
+    assert.equal((await onlineDocs.status()).counts.types, 2);
+    assert.equal(metadataRequests, 2);
+    assert.equal(assetRequests, 1);
+
 
     const offlineDocs = new SolidWorksDocs({
       cacheDir: path.join(root, "cache"),
@@ -169,6 +216,83 @@ test("downloads a release asset once and reuses the extracted cache", async () =
       fetchImpl: async () => { throw new Error("offline"); },
     });
     assert.equal((await offlineDocs.status()).counts.guides, 1);
+    await assert.rejects(offlineDocs.refresh(), /Unable to fetch SolidWorks XMLDoc release metadata/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("serializes shared release updates and prunes obsolete bundles", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-concurrency-test-"));
+  const cacheDir = path.join(root, "cache");
+  const releaseApi = "https://release.test/latest";
+  const bundles = { v1: zip(fixtureEntries("v1")), v2: zip(fixtureEntries("v2")) };
+  let version = "v1";
+  let assetRequests = 0;
+  const fetchImpl = async (url) => {
+    if (url === releaseApi) {
+      return { ok: true, json: async () => ({ tag_name: version, html_url: `https://release.test/${version}`, assets: [{ name: `SolidWorks.Interop.xmldoc.${version}.zip`, browser_download_url: `https://release.test/${version}.zip` }] }) };
+    }
+    assetRequests += 1;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+    return { ok: true, arrayBuffer: async () => bundles[version] };
+  };
+
+  try {
+    const first = new SolidWorksDocs({ cacheDir, releaseApi, fetchImpl });
+    const second = new SolidWorksDocs({ cacheDir, releaseApi, fetchImpl });
+    const [firstStatus, secondStatus] = await Promise.all([first.status(), second.status()]);
+    assert.equal(firstStatus.counts.types, 2);
+    assert.equal(secondStatus.counts.types, 2);
+    assert.equal(assetRequests, 1);
+    const firstMetadata = JSON.parse(await readFile(path.join(cacheDir, "bundle.json"), "utf8"));
+
+    version = "v2";
+    await first.refresh();
+    const secondMetadata = JSON.parse(await readFile(path.join(cacheDir, "bundle.json"), "utf8"));
+    assert.notEqual(firstMetadata.extractedDir, secondMetadata.extractedDir);
+    await assert.rejects(access(firstMetadata.extractedDir));
+    await access(secondMetadata.extractedDir);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reports forced refresh acquisition failures instead of stale success", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-refresh-failure-test-"));
+  const cacheDir = path.join(root, "cache");
+  const bundle = zip(fixtureEntries());
+  const releaseApi = "https://release.test/latest";
+  const release = { tag_name: "v-test", html_url: "https://release.test/v-test", assets: [{ name: "SolidWorks.Interop.xmldoc.v-test.zip", browser_download_url: "https://release.test/bundle.zip" }] };
+  const seedFetch = async (url) => url === releaseApi
+    ? { ok: true, json: async () => release }
+    : { ok: true, arrayBuffer: async () => bundle };
+
+  try {
+    await new SolidWorksDocs({ cacheDir, releaseApi, fetchImpl: seedFetch }).status();
+    const failures = [
+      {
+        fetchImpl: async () => { throw new Error("offline"); },
+        expected: /Unable to fetch SolidWorks XMLDoc release metadata/,
+      },
+      {
+        fetchImpl: async (url) => url === releaseApi
+          ? { ok: true, json: async () => ({ ...release, assets: [] }) }
+          : { ok: true, arrayBuffer: async () => bundle },
+        expected: /latest SolidWorks release has no xmldoc ZIP asset/,
+      },
+      {
+        fetchImpl: async (url) => url === releaseApi
+          ? { ok: true, json: async () => release }
+          : { ok: false, status: 503 },
+        expected: /HTTP 503 downloading/,
+      },
+    ];
+    for (const failure of failures) {
+      const docs = new SolidWorksDocs({ cacheDir, releaseApi, fetchImpl: failure.fetchImpl });
+      await assert.doesNotReject(docs.status());
+      await assert.rejects(docs.refresh(), failure.expected);
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

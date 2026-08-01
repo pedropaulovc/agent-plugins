@@ -1,5 +1,5 @@
 import { pathToFileURL } from "node:url";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {

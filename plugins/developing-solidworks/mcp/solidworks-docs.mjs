@@ -67,7 +67,14 @@ function collectSelfClosingElements(source, localName) {
 function firstElement(source, localName) { return collectElements(source, localName)[0] ?? null; }
 function elementText(source, localName, preserveWhitespace = false) { const element = firstElement(source, localName); return element ? textFromXml(element.inner, preserveWhitespace) : null; }
 function textFromXml(source, preserveWhitespace = false) {
-  let value = decodeXml(source).replace(/<\s*(?:see|seealso)\b([^>]*)\/\s*>/gi, (_, rawAttributes) => shortReference(parseAttributes(rawAttributes).cref ?? parseAttributes(rawAttributes).href ?? "")).replace(/<\s*(?:see|seealso)\b[^>]*>([\s\S]*?)<\/\s*(?:see|seealso)\s*>/gi, "$1").replace(/<\s*(?:paramref|typeparamref)\b([^>]*)\/\s*>/gi, (_, rawAttributes) => parseAttributes(rawAttributes).name ?? "").replace(/<\s*(?:code|c)\b[^>]*>/gi, "").replace(/<\s*\/(?:code|c)\s*>/gi, "").replace(/<[^>]+>/g, "");
+  let value = String(source ?? "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/<\s*(?:see|seealso)\b([^>]*)\/\s*>/gi, (_, rawAttributes) => shortReference(parseAttributes(rawAttributes).cref ?? parseAttributes(rawAttributes).href ?? ""))
+    .replace(/<\s*(?:see|seealso)\b[^>]*>([\s\S]*?)<\/\s*(?:see|seealso)\s*>/gi, "$1")
+    .replace(/<\s*(?:paramref|typeparamref)\b([^>]*)\/\s*>/gi, (_, rawAttributes) => parseAttributes(rawAttributes).name ?? "")
+    .replace(/<\s*(?:code|c)\b[^>]*>/gi, "")
+    .replace(/<\s*\/(?:code|c)\s*>/gi, "")
+    .replace(/<[^>]+>/g, "");
   value = decodeXml(value).replace(/\r\n?/g, "\n");
   if (preserveWhitespace) return value.trim();
   return value.split("\n").map((line) => line.trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
@@ -208,6 +215,13 @@ function matchesAssembly(value, assembly, caseSensitive = false) { return !assem
 function snippet(text, query, radius = 180, caseSensitive = false) { const source = String(text ?? "").replace(/\s+/g, " ").trim(); const haystack = caseSensitive ? source : source.toLowerCase(); const needle = caseSensitive ? String(query) : String(query).toLowerCase(); const index = haystack.indexOf(needle); if (index < 0) return source.slice(0, radius * 2); const start = Math.max(0, index - radius); const end = Math.min(source.length, index + String(query).length + radius); return `${start > 0 ? "…" : ""}${source.slice(start, end)}${end < source.length ? "…" : ""}`; }
 function searchText(values) { return values.flat(Infinity).filter((value) => value !== null && value !== undefined && typeof value !== "object").join(" "); }
 function linkedExamples(state, ids = []) { return ids.map((id) => state.examplesById.get(String(id).toLowerCase())).filter(Boolean); }
+function exampleMatchesAssembly(state, example, assembly, caseSensitive = false) {
+  if (!assembly) return true;
+  return example.memberIds.some((memberId) => {
+    const member = state.membersById.get(memberId);
+    return member && matchesAssembly(member.assembly, assembly, caseSensitive);
+  });
+}
 function memberSearchText(member, state) {
   const signature = member.signature ?? {};
   const signatureParameters = (signature.parameters ?? []).flatMap((parameter) => [parameter.name, parameter.type, parameter.direction]);
@@ -221,8 +235,47 @@ function typeSearchText(type, state) {
   const examples = linkedExamples(state, type.exampleIds).flatMap((example) => [example.id, example.title, example.language, example.source, example.content]);
   return searchText([type.searchText, type.id, type.fullName, type.shortName, type.summary, type.remarks, type.returns, type.value, type.availability, signature.kind, signature.display, signature.returnType, type.seeAlso?.flatMap((reference) => [reference.cref, reference.href, reference.text]), examples]);
 }
-function resolveType(state, name, assembly) { const rawQuery = String(name ?? "").trim().replace(/^(?:types|enums)\//i, "").replace(/\/_overview\.md$/i, "").replace(/\.md$/i, "").replace(/^T:/i, ""); const query = rawQuery.includes("/") ? rawQuery.split("/").at(-1) : rawQuery; const exact = state.types.filter((type) => matchesAssembly(type.assembly, assembly) && [type.fullName, type.id.slice(2)].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; const short = state.types.filter((type) => matchesAssembly(type.assembly, assembly) && type.shortName.toLowerCase() === query.toLowerCase()); if (short.length) return short; return state.types.filter((type) => matchesAssembly(type.assembly, assembly) && (matchesText(type.fullName, query) || matchesText(type.shortName, query))); }
-function resolveMembers(state, name, options = {}) { const rawQuery = String(name ?? "").trim().replace(/^members\//i, "").replace(/\.md$/i, ""); const query = rawQuery.includes("/") ? rawQuery.split("/").at(-1) : rawQuery; const typeQuery = options.type ? String(options.type).trim() : null; const kind = options.kind && options.kind !== "all" ? options.kind : null; const candidates = state.members.filter((member) => !isTypeRecord(member) && matchesAssembly(member.assembly, options.assembly) && (!kind || member.kind === kind) && (!typeQuery || matchesText(member.typeFullName, typeQuery) || matchesText(member.typeFullName?.split(".").at(-1), typeQuery))); const exact = candidates.filter((member) => [member.id, member.fullName, member.shortName].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return candidates.filter((member) => matchesText(member.fullName, query) || matchesText(member.shortName, query)); }
+function matchesTypeQualifier(member, query) {
+  if (!query) return true;
+  const normalized = normalizePath(query).replace(/^types\//i, "").replaceAll("/", ".").toLowerCase();
+  const fullName = String(member.typeFullName ?? "").toLowerCase();
+  return fullName === normalized || fullName.endsWith(`.${normalized}`) || fullName.split(".").at(-1) === normalized;
+}
+function resolveType(state, name, assembly) {
+  let rawQuery = normalizePath(String(name ?? "").trim()).replace(/^(?:types|enums)\//i, "").replace(/\/_overview\.md$/i, "").replace(/\.md$/i, "").replace(/^T:/i, "");
+  const segments = rawQuery.split("/").filter(Boolean);
+  let requestedAssembly = assembly;
+  if (segments.length > 1 && (!assembly || matchesAssembly(segments[0], assembly))) {
+    requestedAssembly ??= segments.shift();
+  }
+  const query = segments.join(".") || rawQuery;
+  const candidates = state.types.filter((type) => matchesAssembly(type.assembly, requestedAssembly));
+  const exact = candidates.filter((type) => [type.fullName, type.id.slice(2)].some((value) => value.toLowerCase() === query.toLowerCase()));
+  if (exact.length) return exact;
+  const short = candidates.filter((type) => type.shortName.toLowerCase() === query.toLowerCase());
+  if (short.length) return short;
+  return candidates.filter((type) => matchesText(type.fullName, query) || matchesText(type.shortName, query));
+}
+function resolveMembers(state, name, options = {}) {
+  const rawQuery = normalizePath(String(name ?? "").trim()).replace(/^(?:members|types)\//i, "").replace(/\.md$/i, "");
+  const segments = rawQuery.split("/").filter(Boolean);
+  let requestedAssembly = options.assembly;
+  if (segments.length > 1 && (!requestedAssembly || matchesAssembly(segments[0], requestedAssembly))) {
+    const knownAssembly = [...state.assemblies.keys()].some((candidate) => matchesAssembly(candidate, segments[0]));
+    if (requestedAssembly || knownAssembly) {
+      requestedAssembly ??= segments.shift();
+      if (options.assembly) segments.shift();
+    }
+  }
+  const query = segments.length > 1 ? segments.at(-1) : segments[0] ?? rawQuery;
+  const pathTypeQuery = segments.length > 1 ? segments.slice(0, -1).join(".") : null;
+  const typeQuery = pathTypeQuery ?? options.type;
+  const kind = options.kind && options.kind !== "all" && options.kind !== "member" ? options.kind : null;
+  const candidates = state.members.filter((member) => !isTypeRecord(member) && matchesAssembly(member.assembly, requestedAssembly) && (!kind || member.kind === kind) && matchesTypeQualifier(member, typeQuery));
+  const exact = candidates.filter((member) => [member.id, member.fullName, member.shortName].some((value) => String(value).toLowerCase() === query.toLowerCase()));
+  if (exact.length) return exact;
+  return candidates.filter((member) => matchesText(member.fullName, query) || matchesText(member.shortName, query));
+}
 function resolveExample(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^examples\//i, ""); const exact = state.examples.filter((example) => [example.id, example.source ?? ""].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.examples.filter((example) => matchesText(example.id, query) || matchesText(example.title, query)); }
 function resolveGuide(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^guides\//i, ""); const exact = state.guides.filter((guide) => [guide.id, guide.source ?? ""].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.guides.filter((guide) => matchesText(guide.id, query) || matchesText(guide.title, query)); }
 function expandedMember(member, includeRawXml) { const result = { ...memberSummary(member), remarks: member.remarks, returns: member.returns, value: member.value, availability: member.availability, parameters: member.parameters, typeParameters: member.typeParameters, exceptions: member.exceptions, seeAlso: member.seeAlso, exampleRefs: member.exampleRefs }; if (includeRawXml) result.rawXml = member.rawXml; return result; }
@@ -232,7 +285,7 @@ function searchState(state, options) {
   const add = (kind, label, text, path, extra = {}) => { if (results.length >= limit || !matchesText(text, query, caseSensitive)) return; results.push({ kind, label, path, snippet: snippet(text, query, 180, caseSensitive), ...extra }); };
   if (scope === "all" || scope === "types") for (const type of state.types) { if (!matchesAssembly(type.assembly, options.assembly, caseSensitive)) continue; if (options.kind && type.kind !== options.kind) continue; add(type.kind, type.fullName, typeSearchText(type, state), typePath(type), { id: type.id, assembly: type.assembly }); }
   if (scope === "all" || scope === "members") for (const member of state.members.filter((item) => !isTypeRecord(item))) { if (!matchesAssembly(member.assembly, options.assembly, caseSensitive)) continue; if (options.kind && options.kind !== "member" && member.kind !== options.kind) continue; add(member.kind, member.fullName, memberSearchText(member, state), memberPath(member), { id: member.id, assembly: member.assembly, type: member.typeFullName }); }
-  if (scope === "all" || scope === "examples") for (const example of state.examples) { if (options.language && !matchesText(example.language, options.language, caseSensitive)) continue; add("example", example.title, `${example.id} ${example.title} ${example.language} ${example.source ?? ""} ${example.memberIds.join(" ")} ${example.content}`, `examples/${example.id}`, { id: example.id, language: example.language, members: example.memberIds }); }
+  if (scope === "all" || scope === "examples") for (const example of state.examples) { if (!exampleMatchesAssembly(state, example, options.assembly, caseSensitive)) continue; if (options.language && !matchesText(example.language, options.language, caseSensitive)) continue; add("example", example.title, `${example.id} ${example.title} ${example.language} ${example.source ?? ""} ${example.memberIds.join(" ")} ${example.content}`, `examples/${example.id}`, { id: example.id, language: example.language, members: example.memberIds }); }
   if (scope === "all" || scope === "guides") for (const guide of state.guides) add("guide", guide.title, `${guide.id} ${guide.title} ${guide.content}`, `guides/${guide.id}`, { id: guide.id, root: guide.root });
   if (scope === "files") for (const [file, content] of state.rawFiles) add("file", file, content, `files/${file}`, { id: file });
   return { query, scope, caseSensitive, count: results.length, results };
@@ -243,6 +296,63 @@ async function pathExists(path) { try { await fs.access(path); return true; } ca
 async function readJson(path) { try { return JSON.parse(await fs.readFile(path, "utf8")); } catch { return null; } }
 function sha256(buffer) { return createHash("sha256").update(buffer).digest("hex"); }
 function parseDigest(value) { return String(value ?? "").replace(/^sha256:/i, "").toLowerCase(); }
+const CACHE_LOCK_RETRY_MS = 50;
+const CACHE_LOCK_TIMEOUT_MS = 120_000;
+const CACHE_LOCK_STALE_MS = 900_000;
+async function acquireCacheLock(cacheDir) {
+  await fs.mkdir(cacheDir, { recursive: true });
+  const lockPath = join(cacheDir, ".lock");
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      return { handle: await fs.open(lockPath, "wx"), lockPath };
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      try {
+        const lockStats = await fs.stat(lockPath);
+        if (Date.now() - lockStats.mtimeMs > CACHE_LOCK_STALE_MS) {
+          await fs.rm(lockPath, { force: true });
+          continue;
+        }
+      } catch (lockError) {
+        if (lockError.code !== "ENOENT") throw lockError;
+        continue;
+      }
+      if (Date.now() - startedAt >= CACHE_LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for SolidWorks documentation cache lock: ${cacheDir}`);
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, CACHE_LOCK_RETRY_MS));
+    }
+  }
+}
+async function withCacheLock(cacheDir, callback) {
+  const { handle, lockPath } = await acquireCacheLock(cacheDir);
+  try {
+    return await callback();
+  } finally {
+    await handle.close();
+    await fs.rm(lockPath, { force: true });
+  }
+}
+async function cleanupReleaseDirectories(cacheDir, keepDir) {
+  const extractedRoot = join(cacheDir, "extracted");
+  let entries;
+  try {
+    entries = await fs.readdir(extractedRoot, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  const keepPath = resolve(keepDir);
+  await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("release-"))
+    .map(async (entry) => {
+      const entryPath = join(extractedRoot, entry.name);
+      if (resolve(entryPath) === keepPath) return;
+      await fs.rm(entryPath, { recursive: true, force: true });
+    }));
+}
+function releaseCacheDirectory(cacheDir, tag, digest) {
+  const safeTag = String(tag ?? "latest").replace(/[^A-Za-z0-9._-]/g, "_");
+  return join(cacheDir, "extracted", `release-${safeTag}-${digest.slice(0, 16)}`);
+}
 export function selectReleaseAsset(assets = []) { const zipAssets = assets.filter((asset) => /\.zip$/i.test(asset.name ?? "") && /xmldoc/i.test(asset.name ?? "")); if (!zipAssets.length) return null; const rank = (name) => /^offline-solidworks-docs\.xmldoc\.zip$/i.test(name) ? 0 : /^SolidWorks\.Interop\.xmldoc\.v?[\w.-]+\.zip$/i.test(name) ? 1 : /SolidWorks\.Interop\.xmldoc/i.test(name) ? 2 : 3; return [...zipAssets].sort((left, right) => rank(left.name) - rank(right.name) || left.name.localeCompare(right.name))[0]; }
 async function fetchJson(url, fetchImpl) { const response = await fetchImpl(url, { headers: { Accept: "application/vnd.github+json", "User-Agent": "developing-solidworks-mcp" } }); if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${url}`); return response.json(); }
 async function downloadBuffer(url, fetchImpl) { const response = await fetchImpl(url, { headers: { Accept: "application/zip", "User-Agent": "developing-solidworks-mcp" } }); if (!response.ok) throw new Error(`HTTP ${response.status} downloading ${url}`); return Buffer.from(await response.arrayBuffer()); }
@@ -251,17 +361,84 @@ export async function unpackZip(buffer, targetDir) { const end = findEndOfCentra
 
 export class SolidWorksDocs {
   constructor(options = {}) { this.env = options.env ?? process.env; this.fetchImpl = options.fetchImpl ?? globalThis.fetch; this.cacheDir = resolve(options.cacheDir ?? safeCacheRoot(this.env)); this.bundlePath = options.bundlePath ?? this.env.SOLIDWORKS_DOCS_BUNDLE ?? null; this.releaseApi = options.releaseApi ?? RELEASE_API; this.state = null; this.bundleMetadata = null; }
-  async ensure(force = false) { const metadata = force || !this.bundleMetadata ? await this.ensureBundle(force) : this.bundleMetadata; this.bundleMetadata = metadata; if (!this.state || this.state.metadata.digest !== metadata.digest || this.state.metadata.extractedDir !== metadata.extractedDir) this.state = await loadIndex(metadata.extractedDir, metadata); return this.state; }
-  async ensureBundle(force = false) {
-    await fs.mkdir(this.cacheDir, { recursive: true }); const metadataPath = join(this.cacheDir, "bundle.json"); const existing = await readJson(metadataPath); const localPath = this.bundlePath ?? this.env.SOLIDWORKS_DOCS_BUNDLE;
-    if (localPath) { const sourcePath = resolve(localPath); const buffer = await fs.readFile(sourcePath); const digest = sha256(buffer); const extractedDir = join(this.cacheDir, "extracted", `local-${digest.slice(0, 16)}`); if (!force && existing?.source === "local" && existing.digest === digest && await pathExists(extractedDir)) return existing; await this.replaceBundle({ buffer, metadata: { source: "local", sourcePath, repository: REPOSITORY, tag: "local", assetName: basename(sourcePath), assetUrl: null, digest }, extractedDir, metadataPath }); return readJson(metadataPath); }
-    let release; try { release = await fetchJson(this.releaseApi, this.fetchImpl); } catch (error) { if (existing?.extractedDir && await pathExists(existing.extractedDir)) return existing; throw new Error(`Unable to fetch SolidWorks XMLDoc release metadata: ${error.message}`); }
-    const asset = selectReleaseAsset(release.assets); if (!asset) { if (existing?.extractedDir && await pathExists(existing.extractedDir)) return existing; throw new Error("The latest SolidWorks release has no xmldoc ZIP asset"); }
-    const digest = parseDigest(asset.digest); const extractedDir = join(this.cacheDir, "extracted", `release-${String(release.tag_name ?? "latest").replace(/[^A-Za-z0-9._-]/g, "_")}`); if (!force && existing?.source === "release" && existing.tag === release.tag_name && existing.digest === digest && await pathExists(extractedDir)) return existing;
-    let buffer; try { buffer = await downloadBuffer(asset.browser_download_url, this.fetchImpl); } catch (error) { if (existing?.extractedDir && await pathExists(existing.extractedDir)) return existing; throw new Error(`Unable to download SolidWorks XMLDoc bundle: ${error.message}`); }
-    const actualDigest = sha256(buffer); if (digest && digest !== actualDigest) throw new Error(`SolidWorks XMLDoc bundle checksum mismatch: expected ${digest}, got ${actualDigest}`); await this.replaceBundle({ buffer, metadata: { source: "release", sourcePath: null, repository: REPOSITORY, tag: release.tag_name ?? "latest", assetName: asset.name, assetUrl: asset.browser_download_url, digest: actualDigest, releaseUrl: release.html_url ?? null }, extractedDir, metadataPath }); return readJson(metadataPath);
+  async ensure(force = false) {
+    if (!force && this.state && this.bundleMetadata) return this.state;
+    return withCacheLock(this.cacheDir, async () => {
+      const metadata = force || !this.bundleMetadata || !this.state ? await this.ensureBundle(force) : this.bundleMetadata;
+      this.bundleMetadata = metadata;
+      if (!this.state || this.state.metadata.digest !== metadata.digest || this.state.metadata.extractedDir !== metadata.extractedDir) this.state = await loadIndex(metadata.extractedDir, metadata);
+      return this.state;
+    });
   }
-  async replaceBundle({ buffer, metadata, extractedDir, metadataPath }) { const temporaryDir = `${extractedDir}.tmp-${process.pid}-${Date.now()}`; await fs.rm(temporaryDir, { recursive: true, force: true }); await fs.mkdir(temporaryDir, { recursive: true }); try { await unpackZip(buffer, temporaryDir); await fs.rm(extractedDir, { recursive: true, force: true }); await fs.rename(temporaryDir, extractedDir); const completeMetadata = { ...metadata, extractedDir, cachedAt: new Date().toISOString() }; const temporaryMetadata = `${metadataPath}.tmp-${process.pid}`; await fs.writeFile(temporaryMetadata, JSON.stringify(completeMetadata, null, 2)); await fs.rename(temporaryMetadata, metadataPath); } catch (error) { await fs.rm(temporaryDir, { recursive: true, force: true }); throw error; } }
+  async ensureBundle(force = false) {
+    await fs.mkdir(this.cacheDir, { recursive: true });
+    const metadataPath = join(this.cacheDir, "bundle.json");
+    const existing = await readJson(metadataPath);
+    const localPath = this.bundlePath ?? this.env.SOLIDWORKS_DOCS_BUNDLE;
+    if (localPath) {
+      const sourcePath = resolve(localPath);
+      const buffer = await fs.readFile(sourcePath);
+      const digest = sha256(buffer);
+      const extractedDir = join(this.cacheDir, "extracted", `local-${digest.slice(0, 16)}`);
+      if (!force && existing?.source === "local" && existing.digest === digest && await pathExists(extractedDir)) return existing;
+      await this.replaceBundle({ buffer, metadata: { source: "local", sourcePath, repository: REPOSITORY, tag: "local", assetName: basename(sourcePath), assetUrl: null, digest }, extractedDir, metadataPath });
+      return readJson(metadataPath);
+    }
+    let release;
+    try {
+      release = await fetchJson(this.releaseApi, this.fetchImpl);
+    } catch (error) {
+      if (!force && existing?.extractedDir && await pathExists(existing.extractedDir)) return existing;
+      throw new Error(`Unable to fetch SolidWorks XMLDoc release metadata: ${error.message}`);
+    }
+    const asset = selectReleaseAsset(release.assets);
+    if (!asset) {
+      if (!force && existing?.extractedDir && await pathExists(existing.extractedDir)) return existing;
+      throw new Error("The latest SolidWorks release has no xmldoc ZIP asset");
+    }
+    const tag = release.tag_name ?? "latest";
+    const digest = parseDigest(asset.digest);
+    const cachedRelease = !force
+      && existing?.source === "release"
+      && existing.tag === tag
+      && existing.assetName === asset.name
+      && (!existing.assetUrl || existing.assetUrl === asset.browser_download_url)
+      && (!digest || existing.digest === digest)
+      && existing.extractedDir
+      && await pathExists(existing.extractedDir);
+    if (cachedRelease) return existing;
+    let buffer;
+    try {
+      buffer = await downloadBuffer(asset.browser_download_url, this.fetchImpl);
+    } catch (error) {
+      if (!force && existing?.extractedDir && await pathExists(existing.extractedDir)) return existing;
+      throw new Error(`Unable to download SolidWorks XMLDoc bundle: ${error.message}`);
+    }
+    const actualDigest = sha256(buffer);
+    if (digest && digest !== actualDigest) throw new Error(`SolidWorks XMLDoc bundle checksum mismatch: expected ${digest}, got ${actualDigest}`);
+    const extractedDir = releaseCacheDirectory(this.cacheDir, tag, actualDigest);
+    await this.replaceBundle({ buffer, metadata: { source: "release", sourcePath: null, repository: REPOSITORY, tag, assetName: asset.name, assetUrl: asset.browser_download_url, digest: actualDigest, releaseUrl: release.html_url ?? null }, extractedDir, metadataPath });
+    return readJson(metadataPath);
+  }
+  async replaceBundle({ buffer, metadata, extractedDir, metadataPath }) {
+    const suffix = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const temporaryDir = `${extractedDir}.tmp-${suffix}`;
+    await fs.rm(temporaryDir, { recursive: true, force: true });
+    await fs.mkdir(temporaryDir, { recursive: true });
+    try {
+      await unpackZip(buffer, temporaryDir);
+      if (await pathExists(extractedDir)) await fs.rm(temporaryDir, { recursive: true, force: true });
+      else await fs.rename(temporaryDir, extractedDir);
+      const completeMetadata = { ...metadata, extractedDir, cachedAt: new Date().toISOString() };
+      const temporaryMetadata = `${metadataPath}.tmp-${suffix}`;
+      await fs.writeFile(temporaryMetadata, JSON.stringify(completeMetadata, null, 2));
+      await fs.rename(temporaryMetadata, metadataPath);
+      if (metadata.source === "release") await cleanupReleaseDirectories(this.cacheDir, extractedDir);
+    } catch (error) {
+      await fs.rm(temporaryDir, { recursive: true, force: true });
+      throw error;
+    }
+  }
   async status() { return statusFromState(await this.ensure(false)); }
   async refresh() { this.state = null; this.bundleMetadata = null; return statusFromState(await this.ensure(true)); }
   async glob(pattern, limit, caseSensitive = false) { const state = await this.ensure(false); const regex = globToRegExp(pattern, caseSensitive); const matches = state.virtualEntries.flatMap((entry) => { const matchedPath = [entry.path, ...(entry.aliases ?? [])].find((path) => regex.test(path)); if (!matchedPath) return []; const { aliases: _aliases, ...result } = entry; return [{ ...result, matchedPath }]; }).slice(0, clampLimit(limit)); return { pattern: normalizePath(pattern), caseSensitive, count: matches.length, matches }; }
@@ -272,7 +449,7 @@ export class SolidWorksDocs {
   async listMembers(options) { const state = await this.ensure(false); const types = resolveType(state, options.type, options.assembly); if (types.length !== 1) return { found: false, matchCount: types.length, types: types.slice(0, MAX_LIMIT).map(typeSummary) }; const type = types[0]; const query = options.query?.trim(); const kind = options.kind ?? "all"; const members = state.members.filter((member) => !isTypeRecord(member) && member.typeFullName?.toLowerCase() === type.fullName.toLowerCase() && (kind === "all" || member.kind === kind) && (!query || matchesText(`${member.fullName} ${member.summary} ${member.signature?.display}`, query))).slice(0, clampLimit(options.limit)); return { found: true, type: typeSummary(type), count: members.length, members: members.map(memberSummary) }; }
   async getMember(options) { const state = await this.ensure(false); const matches = resolveMembers(state, options.name, options); if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(memberSummary) }; return { found: true, member: expandedMember(matches[0], options.includeRawXml === true) }; }
   async listEnums(options = {}) { return this.listTypes({ ...options, kind: "enum" }); }
-  async getEnum(options) { const result = await this.getType({ ...options, includeMembers: true }); if (!result.found || result.type.kind !== "enum") return result; return result; }
+  async getEnum(options) { const result = await this.getType({ ...options, includeMembers: true }); if (!result.found) return result; if (result.type.kind === "enum") return result; return { found: false, matchCount: 0, matches: [] }; }
   async listExamples(options = {}) { const state = await this.ensure(false); const query = options.query?.trim(); const member = options.member?.trim(); const examples = state.examples.filter((example) => (!query || matchesText(`${example.id} ${example.title} ${example.language} ${example.content}`, query)) && (!options.language || matchesText(example.language, options.language)) && (!member || example.memberIds.some((id) => matchesText(id, member)))).slice(0, clampLimit(options.limit)); return { count: examples.length, examples: examples.map(exampleSummary) }; }
   async getExample(options) { const state = await this.ensure(false); const matches = resolveExample(state, options.name); if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(exampleSummary) }; const example = matches[0]; const result = { ...exampleSummary(example), content: example.content }; if (options.includeRawXml === true) result.rawXml = example.rawXml; return { found: true, example: result }; }
   async listGuides(options = {}) { const state = await this.ensure(false); const query = options.query?.trim(); const guides = state.guides.filter((guide) => (!query || matchesText(`${guide.id} ${guide.title} ${guide.content}`, query)) && (!options.root || guide.root?.toLowerCase() === options.root.toLowerCase())).slice(0, clampLimit(options.limit)); return { count: guides.length, guides: guides.map(guideSummary) }; }
