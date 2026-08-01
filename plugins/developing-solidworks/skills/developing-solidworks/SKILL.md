@@ -96,14 +96,13 @@ This plugin bundles a stdio MCP server in `mcp/solidworks-docs-mcp.mjs` using th
 Use the MCP tools when the host exposes them:
 
 - `status` — verify the cached bundle version and report the newest release metadata when the cached bundle came from the release feed. It never downloads a replacement just to report status; inspect `latestOnline` and `updateAvailable` before deciding to refresh.
-- `search` — full-text search IDs, prose, signatures, parameter metadata, examples, and guide content. Omit `scope` to search all API and companion-documentation records; restrict with `scope`, `assembly`, `kind`, or `language`. Results are paginated with a default page size of 10; follow `nextOffset` while `truncated` is true. API hits include grounded documentation fields and example links; example hits preview only the first 50 content lines.
+- `search` — full-text search IDs, prose, signatures, parameter metadata, examples, and guide content. Filter with `kind` and `assembly`; `kind` defaults to `all` and uses the same assembly, type, enum, member, example, and guide categories as `list`. Results are paginated with a default page size of 10; follow `nextOffset` while `truncated` is true. API hits include grounded documentation fields and example links; example hits preview only the first 50 content lines.
 - `glob` — browse virtual paths such as `types/IModelDoc2/**`, `enums/swEndConditions_e`, `examples/**`, and `guides/**`. `*` matches across path separators; `**` supports recursive path segments; `?` matches one non-`/` character.
 - `list` — return one paginated catalog for assemblies, types, enums, members, examples, or guides. Filter with `kind`, `query`, `assembly`, `type`, `member`, `language`, or `root`; use `offset` and `limit` for large catalogs.
-- `get_type` — retrieve a complete type or enum, including its paginated `members`; pass `memberOffset` and `memberLimit` when the member list is large.
-- `get_example` and `get_guide` — retrieve complete grounded companion-documentation content; pass `includeRawXml` only when the XMLDoc representation itself matters.
+- `get` — retrieve complete grounded content by `kind`: use `type` or `enum` for API types and their paginated `members`, `example` for a complete code example, and `guide` for a complete Markdown guide. Pass `includeRawXml` only when the XMLDoc representation itself matters.
 - `refresh` — explicitly replace the cached bundle with the latest release.
 
-Prefer `get_type` over a separate member lookup when you need an API signature or member documentation. Use `get_example` before writing a new automation pattern, and use `get_guide` for conceptual workflows. The MCP index preserves XMLDoc IDs, overload parameter syntax, by-reference markers, enum members, multilingual examples, and companion guide pages; it is a lookup aid, not a substitute for running the SolidWorks code.
+Prefer `get` with `kind: "type"` over a separate member lookup when you need an API signature or member documentation. Use `get` with `kind: "example"` before writing a new automation pattern, and `get` with `kind: "guide"` for conceptual workflows. The MCP index preserves XMLDoc IDs, overload parameter syntax, by-reference markers, enum members, multilingual examples, and companion guide pages; it is a lookup aid, not a substitute for running the SolidWorks code.
 
 ## How to navigate the docs — use the Bash tool, NOT the Glob/Grep tools
 

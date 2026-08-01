@@ -12,3 +12,6 @@ __pycache__/
 *.pyc
 
 /tmp/
+
+# Playwright CLI session artifacts
+/.playwright-cli/

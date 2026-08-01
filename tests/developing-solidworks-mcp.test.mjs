@@ -176,7 +176,7 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.equal(textFromXml("List&lt;Widget&gt; and x &lt; 5"), "List<Widget> and x < 5");
     assert.equal(textFromXml("<![CDATA[List<Widget>]]>"), "List<Widget>");
     assert.equal(textFromXml("one<para>two</para><br/>three"), "one two\n\nthree");
-    const type = await docs.getType({ name: "Widget" });
+    const type = await docs.get({ kind: "type", name: "Widget" });
     assert.match(type.type.summary, /List<Widget> and x < 5/);
     const typeMember = type.type.members.find((member) => member.id === "M:Demo.Widget.DoThing(System.Int32@)");
     assert.ok(typeMember);
@@ -187,16 +187,16 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.deepEqual(typeMember.seeAlso.map((reference) => reference.cref).sort(), ["T:Demo.Other", "T:Demo.Widget"]);
     assert.equal(typeMember.seeAlso.find((reference) => reference.cref === "T:Demo.Other").text, "Other reference");
 
-    const enumResult = await docs.getEnum({ name: "enums/Options_e" });
+    const enumResult = await docs.get({ kind: "enum", name: "enums/Options_e" });
     assert.equal(enumResult.found, true);
-    assert.equal((await docs.getEnum({ name: "Widget" })).found, false);
+    assert.equal((await docs.get({ kind: "enum", name: "Widget" })).found, false);
     assert.equal(enumResult.type.members[0].enumValue, 3);
 
-    const example = await docs.getExample({ name: "examples/Examples/DoThing.htm" });
+    const example = await docs.get({ kind: "example", name: "examples/Examples/DoThing.htm" });
     assert.equal(example.found, true);
     assert.match(example.example.content, /<code>var result/);
 
-    const guide = await docs.getGuide({ name: "root1/Guide.md" });
+    const guide = await docs.get({ kind: "guide", name: "root1/Guide.md" });
     assert.equal(guide.found, true);
     assert.match(guide.guide.content, /Literal <tag> content/);
 
@@ -206,18 +206,19 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.equal(glob.count, 1);
     const overview = await docs.glob("types/Widget/_overview.md");
     assert.equal(overview.count, 1);
-    assert.equal((await docs.getType({ name: "types/Widget/_overview.md" })).found, true);
+    assert.equal((await docs.get({ kind: "type", name: "types/Widget/_overview.md" })).found, true);
     assert.equal(glob.matches[0].id, "T:Demo.Widget");
 
-    assert.equal((await docs.search({ query: "ref int value", scope: "members" })).count, 1);
-    assert.equal((await docs.search({ query: "C#", scope: "members" })).count, 1);
-    const search = await docs.search({ query: "DoThing", scope: "members", caseSensitive: true });
+    assert.equal((await docs.search({ query: "ref int value", kind: "member" })).count, 1);
+    assert.equal((await docs.search({ query: "C#", kind: "member" })).count, 1);
+    const search = await docs.search({ query: "DoThing", kind: "member", caseSensitive: true });
     assert.equal(search.caseSensitive, true);
     assert.equal(search.count, 1);
-    const kindSearch = await docs.search({ query: "Do", kind: "method", scope: "all", limit: 20 });
+    const kindSearch = await docs.search({ query: "Do", kind: "method", limit: 20 });
     assert.ok(kindSearch.results.length > 0);
     assert.ok(kindSearch.results.every((result) => result.kind === "method"));
-    assert.equal((await docs.search({ query: "Do", kind: "method", scope: "examples" })).count, 0);
+    const exampleSearch = await docs.search({ query: "Do", kind: "example" });
+    assert.equal(exampleSearch.count, 1);
 
     const dispatched = await dispatchTool(docs, "list", { kind: "type", query: "Widget" });
     assert.equal(dispatched.count, 1);
@@ -227,6 +228,9 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     const listedTypeMembers = await dispatchTool(docs, "list", { kind: "member", type: "types/Demo/Widget" });
     assert.equal(listedTypeMembers.count, 1);
     assert.equal(listedTypeMembers.items[0].id, "M:Demo.Widget.DoThing(System.Int32@)");
+    const dispatchedGet = await dispatchTool(docs, "get", { kind: "type", name: "Widget" });
+    assert.equal(dispatchedGet.found, true);
+    assert.equal(dispatchedGet.type.fullName, "Demo.Widget");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -242,9 +246,10 @@ test("returns proactive API details while bounding search example previews", asy
     assert.equal(status.bundleVersion, "local");
 
     const searchDefinition = TOOL_DEFINITIONS.find((tool) => tool.name === "search");
-    assert.equal(searchDefinition.inputSchema.required.includes("scope"), false);
+    assert.equal(searchDefinition.inputSchema.properties.scope, undefined);
+    assert.equal(searchDefinition.inputSchema.properties.language, undefined);
 
-    const type = await docs.getType({ name: "Widget" });
+    const type = await docs.get({ kind: "type", name: "Widget" });
     assert.equal(type.type.members.length, 1);
     assert.equal(type.type.members[0].parameters[0].description, "needle-parameter");
     assert.equal(type.type.members[0].exceptions[0].description, "needle-exception");
@@ -253,12 +258,12 @@ test("returns proactive API details while bounding search example previews", asy
     assert.equal(missingExample.language, "VB.NET");
     assert.equal(missingExample.source, "/Samples\\Missing.cs");
 
-    const enumResult = await docs.getEnum({ name: "Options_e" });
+    const enumResult = await docs.get({ kind: "enum", name: "Options_e" });
     assert.equal(enumResult.type.members[0].enumCode, 16);
     assert.equal(enumResult.type.members[0].value, "needle-value");
     assert.equal(enumResult.type.members.find((member) => member.name === "Fallback").enumCode, 32);
     const search = await docs.search({ query: "needle-remarks" });
-    assert.equal(search.scope, "all");
+    assert.equal(search.kind, "all");
     assert.equal(search.count, 1);
     assert.equal(search.results[0].returns, "needle-returns");
     assert.equal(search.results[0].availability, "needle-availability");
@@ -270,14 +275,14 @@ test("returns proactive API details while bounding search example previews", asy
     assert.equal(valueSearch.count, 1);
     assert.equal(valueSearch.results[0].enumCode, 16);
 
-    const preview = await docs.search({ query: "line-55", scope: "examples" });
+    const preview = await docs.search({ query: "line-55", kind: "example" });
     assert.equal(preview.count, 1);
     assert.equal(preview.results[0].contentLineCount, 50);
     assert.equal(preview.results[0].totalLineCount, 55);
     assert.equal(preview.results[0].contentTruncated, true);
     assert.doesNotMatch(preview.results[0].content, /line-55/);
 
-    const example = await docs.getExample({ name: "Examples/Long.htm" });
+    const example = await docs.get({ kind: "example", name: "Examples/Long.htm" });
     assert.match(example.example.content, /line-55/);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -290,10 +295,10 @@ test("normalizes Windows and leading-slash catalog source paths", async () => {
   const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
 
   try {
-    const example = await docs.getExample({ name: "examples/Samples/Example.cs" });
+    const example = await docs.get({ kind: "example", name: "examples/Samples/Example.cs" });
     assert.equal(example.found, true);
     assert.equal(example.example.id, "Catalog/Example.htm");
-    const guide = await docs.getGuide({ name: "guides/docs/Guide.md" });
+    const guide = await docs.get({ kind: "guide", name: "guides/docs/Guide.md" });
     assert.equal(guide.found, true);
     assert.equal(guide.guide.id, "catalog/Guide.md");
   } finally {
@@ -308,9 +313,9 @@ test("preserves qualified lookup paths and filters example searches by assembly"
   const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
 
   try {
-    const type = await docs.getType({ name: "types/Assembly.A/Widget" });
+    const type = await docs.get({ kind: "type", name: "types/Assembly.A/Widget" });
     assert.equal(type.found, true);
-    const qualifiedWithAssembly = await docs.getType({ name: "types/Assembly.A/Widget", assembly: "Assembly.A" });
+    const qualifiedWithAssembly = await docs.get({ kind: "type", name: "types/Assembly.A/Widget", assembly: "Assembly.A" });
     assert.equal(qualifiedWithAssembly.found, true);
     assert.equal(type.type.assembly, "Assembly.A");
     const member = type.type.members.find((candidate) => candidate.id === "M:Assembly.A.Widget.DoThing");
@@ -318,7 +323,7 @@ test("preserves qualified lookup paths and filters example searches by assembly"
     assert.equal(member.assembly, "Assembly.A");
     assert.deepEqual(member.exampleIds, ["Examples/A.htm"]);
     assert.equal(member.examples[0].id, "Examples/A.htm");
-    const examples = await docs.search({ query: "Shared", scope: "examples", assembly: "Assembly.A" });
+    const examples = await docs.search({ query: "Shared", kind: "example", assembly: "Assembly.A" });
     assert.deepEqual(examples.results.map((result) => result.id), ["Examples/A.htm"]);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -332,8 +337,8 @@ test("keeps XMLDoc identities assembly-scoped and indexes duplicate embedded exa
   const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
 
   try {
-    const assemblyA = await docs.getType({ name: "types/Assembly.A/Widget" });
-    const assemblyB = await docs.getType({ name: "types/Assembly.B/Widget" });
+    const assemblyA = await docs.get({ kind: "type", name: "types/Assembly.A/Widget" });
+    const assemblyB = await docs.get({ kind: "type", name: "types/Assembly.B/Widget" });
     assert.equal(assemblyA.found, true);
     assert.equal(assemblyB.found, true);
     assert.equal(assemblyA.type.assembly, "Assembly.A");
@@ -345,7 +350,7 @@ test("keeps XMLDoc identities assembly-scoped and indexes duplicate embedded exa
       "Assembly.A/M:Shared.Widget.DoThing#example-1",
       "Assembly.B/M:Shared.Widget.DoThing#example-1",
     ]);
-    const example = await docs.getExample({ name: "Examples/Embedded.htm" });
+    const example = await docs.get({ kind: "example", name: "Examples/Embedded.htm" });
     assert.equal(example.found, true);
     assert.match(example.example.content, /^Intro embedded <tag> example outro$/);
   } finally {
@@ -360,21 +365,21 @@ test("pages type members and search results", async () => {
   const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
 
   try {
-    const type = await docs.getType({ name: "Page.Widget", memberOffset: 1, memberLimit: 1 });
+    const type = await docs.get({ kind: "type", name: "Page.Widget", memberOffset: 1, memberLimit: 1 });
     assert.equal(type.found, true);
     assert.equal(type.type.memberOffset, 1);
     assert.equal(type.type.membersTotal, 12);
     assert.deepEqual(type.type.members.map((member) => member.name), ["Field2"]);
     assert.equal(type.type.membersTruncated, true);
 
-    const firstSearch = await docs.search({ query: "Field", scope: "members" });
+    const firstSearch = await docs.search({ query: "Field", kind: "member" });
     assert.equal(firstSearch.limit, 10);
     assert.equal(firstSearch.offset, 0);
     assert.equal(firstSearch.count, 10);
     assert.equal(firstSearch.total, 12);
     assert.equal(firstSearch.truncated, true);
     assert.equal(firstSearch.nextOffset, 10);
-    const secondSearch = await docs.search({ query: "Field", scope: "members", offset: firstSearch.nextOffset });
+    const secondSearch = await docs.search({ query: "Field", kind: "member", offset: firstSearch.nextOffset });
     assert.equal(secondSearch.offset, 10);
     assert.equal(secondSearch.count, 2);
     assert.equal(secondSearch.total, 12);
@@ -445,7 +450,7 @@ test("downloads a release asset once and reuses the extracted cache", async () =
     assert.equal(firstStatus.latestOnline.bundleVersion, "v-test");
     assert.equal(firstStatus.latestOnline.releaseUrl, "https://release.test/v-test");
     assert.equal(firstStatus.updateAvailable, false);
-    assert.equal((await docs.search({ query: "DoThing", scope: "members" })).count, 1);
+    assert.equal((await docs.search({ query: "DoThing", kind: "member" })).count, 1);
     assert.equal(metadataRequests, 1);
     assert.equal(assetRequests, 1);
     const secondStatus = await docs.status();
@@ -687,20 +692,22 @@ test("passes the bundled skill through MCP server instructions", () => {
 });
 
 test("publishes the consolidated documented MCP tool set", () => {
-  assert.equal(SERVER_VERSION, "0.9.7");
+  assert.equal(SERVER_VERSION, "0.9.8");
   assert.deepEqual(TOOL_DEFINITIONS.map((tool) => tool.name), [
-    "status", "refresh", "glob", "search", "list",
-    "get_type", "get_enum", "get_example", "get_guide",
+    "status", "refresh", "glob", "search", "list", "get",
   ]);
+  assert.equal(TOOL_DEFINITIONS.some((tool) => tool.name.startsWith("get_")), false);
   assert.equal(TOOL_DEFINITIONS.some((tool) => tool.name === "list_members" || tool.name === "get_member"), false);
   const list = TOOL_DEFINITIONS.find((tool) => tool.name === "list");
-  const getType = TOOL_DEFINITIONS.find((tool) => tool.name === "get_type");
-  const getEnum = TOOL_DEFINITIONS.find((tool) => tool.name === "get_enum");
+  const get = TOOL_DEFINITIONS.find((tool) => tool.name === "get");
   const search = TOOL_DEFINITIONS.find((tool) => tool.name === "search");
   assert.deepEqual(list.inputSchema.properties.kind.default, "all");
   assert.deepEqual(list.inputSchema.properties.type, { type: "string", minLength: 1 });
   assert.deepEqual(list.inputSchema.properties.root, { type: "string" });
-  assert.equal(getType.inputSchema.properties.memberOffset.default, undefined);
-  assert.equal(getEnum.inputSchema.properties.memberOffset.default, undefined);
+  assert.deepEqual(get.inputSchema.properties.kind.enum, ["type", "enum", "example", "guide"]);
+  assert.deepEqual(get.inputSchema.required, ["kind", "name"]);
+  assert.equal(search.inputSchema.properties.scope, undefined);
+  assert.equal(search.inputSchema.properties.language, undefined);
+  assert.deepEqual(search.inputSchema.properties.kind.enum, list.inputSchema.properties.kind.enum);
   assert.equal(search.inputSchema.properties.limit.default, 10);
 });
