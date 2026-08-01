@@ -89,6 +89,21 @@ All paths below are relative to this `SKILL.md` (the skill directory). They are 
 
 If `./types/` or `./enums/` ever looks empty mid-session, jump back to **First-time setup** above.
 
+## MCP documentation server
+
+This plugin bundles a stdio MCP server in `mcp/solidworks-docs-mcp.mjs`. Claude Code loads it from the plugin's `.mcp.json`; the server downloads and caches the latest `SolidWorks.Interop.xmldoc.zip` release on first use. Set `SOLIDWORKS_DOCS_BUNDLE` to an absolute local ZIP path for offline or fixture-driven use, or `SOLIDWORKS_DOCS_CACHE_DIR` to control the cache location.
+
+Use the MCP tools when the host exposes them:
+
+- `status` — verify the bundle version, extracted files, assemblies, types, members, examples, and guides.
+- `search` — full-text search IDs, prose, signatures, parameter metadata, examples, and guide content. Restrict with `scope`, `assembly`, `kind`, or `language`.
+- `glob` — browse virtual paths such as `types/IModelDoc2/**`, `enums/swEndConditions_e`, `examples/**`, and `guides/**`.
+- `list_assemblies`, `list_types`, `list_enums`, `list_members`, and `list_examples` — discover API surface without reading the whole archive.
+- `get_type`, `get_enum`, `get_member`, `get_example`, and `get_guide` — retrieve complete grounded content; pass `includeRawXml` only when the XMLDoc representation itself matters.
+- `refresh` — explicitly replace the cached bundle with the latest release.
+
+Prefer `get_member` or `get_type` over guessed API signatures. Use `get_example` before writing a new automation pattern, and use `get_guide` for conceptual workflows. The MCP index preserves XMLDoc IDs, overload parameter syntax, by-reference markers, enum members, multilingual examples, and companion guide pages; it is a lookup aid, not a substitute for running the SolidWorks code.
+
 ## How to navigate the docs — use the Bash tool, NOT the Glob/Grep tools
 
 > **The `Glob` and `Grep` tools do not work on this bundle. Do not use them.** They silently return "No files found" / "No matches found" even though the files exist — regardless of the path you pass them.
