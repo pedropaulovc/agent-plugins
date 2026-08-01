@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
-export const SERVER_VERSION = "0.9.0";
+export const SERVER_VERSION = "0.9.1";
 export const REPOSITORY = "pedropaulovc/offline-solidworks-api-docs";
 export const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 

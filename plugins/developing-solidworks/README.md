@@ -26,6 +26,7 @@ The doc tree (`types/`, `enums/`, `docs/`, `examples/`, `index/`) is excluded fr
 - SolidWorks installed locally (the helper script searches the standard install paths)
 - .NET Framework (the SolidWorks SDK is .NET Framework only — not .NET Core/5+)
 - `dotnet` on `PATH` for the run-before-claiming-success workflow
+- Node.js 18+ for the bundled `@modelcontextprotocol/sdk` stdio server
 
 ## Source
 

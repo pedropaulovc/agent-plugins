@@ -91,7 +91,7 @@ If `./types/` or `./enums/` ever looks empty mid-session, jump back to **First-t
 
 ## MCP documentation server
 
-This plugin bundles a stdio MCP server in `mcp/solidworks-docs-mcp.mjs`. Claude Code loads it from the plugin's `.mcp.json`; the server downloads and caches the latest `SolidWorks.Interop.xmldoc.zip` release on first use. Set `SOLIDWORKS_DOCS_BUNDLE` to an absolute local ZIP path for offline or fixture-driven use, or `SOLIDWORKS_DOCS_CACHE_DIR` to control the cache location.
+This plugin bundles a stdio MCP server in `mcp/solidworks-docs-mcp.mjs` using the official `@modelcontextprotocol/sdk`. Claude Code loads it from the plugin's `.mcp.json`; the server downloads and caches the latest `SolidWorks.Interop.xmldoc.zip` release on first use. Set `SOLIDWORKS_DOCS_BUNDLE` to an absolute local ZIP path for offline or fixture-driven use, or `SOLIDWORKS_DOCS_CACHE_DIR` to control the cache location.
 
 Use the MCP tools when the host exposes them:
 

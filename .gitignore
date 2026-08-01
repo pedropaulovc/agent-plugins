@@ -10,3 +10,5 @@
 # Python bytecode caches from the skill helpers
 __pycache__/
 *.pyc
+
+/tmp/

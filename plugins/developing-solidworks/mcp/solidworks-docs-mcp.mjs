@@ -1,5 +1,7 @@
 import { pathToFileURL } from "node:url";
-import { createInterface } from "node:readline";
+import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   SERVER_VERSION,
   SolidWorksDocs,
@@ -7,106 +9,72 @@ import {
   dispatchTool,
 } from "./solidworks-docs.mjs";
 
-const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
-const SUPPORTED_PROTOCOL_VERSIONS = new Set([
-  "2025-06-18",
-  "2025-03-26",
-  "2024-11-05",
-]);
+const SERVER_NAME = "developing-solidworks-docs";
+const SERVER_INSTRUCTIONS = "Use status first when the bundle state is unknown. Use search/glob for discovery, then get_type/get_member/get_example/get_guide for complete content.";
 
-function send(message) {
-  process.stdout.write(`${JSON.stringify(message)}\n`);
+function propertySchemaToZod(property) {
+  let schema;
+  if (property.enum) schema = z.enum(property.enum);
+  else if (property.type === "string") schema = z.string();
+  else if (property.type === "integer") schema = z.number().int();
+  else if (property.type === "number") schema = z.number();
+  else if (property.type === "boolean") schema = z.boolean();
+  else schema = z.unknown();
+
+  if (property.minLength !== undefined && schema instanceof z.ZodString) schema = schema.min(property.minLength);
+  if (property.minimum !== undefined && schema instanceof z.ZodNumber) schema = schema.min(property.minimum);
+  if (property.maximum !== undefined && schema instanceof z.ZodNumber) schema = schema.max(property.maximum);
+  if (property.description) schema = schema.describe(property.description);
+  if (Object.hasOwn(property, "default")) return schema.default(property.default);
+  return schema;
 }
 
-function respond(id, result) {
-  send({ jsonrpc: "2.0", id, result });
+export function inputSchemaToZodShape(inputSchema) {
+  const properties = inputSchema?.properties ?? {};
+  const required = new Set(inputSchema?.required ?? []);
+  return Object.fromEntries(Object.entries(properties).map(([name, property]) => {
+    const schema = propertySchemaToZod(property);
+    return [name, required.has(name) || Object.hasOwn(property, "default") ? schema : schema.optional()];
+  }));
 }
 
-function respondError(id, code, message, data) {
-  send({ jsonrpc: "2.0", id, error: { code, message, ...(data === undefined ? {} : { data }) } });
+function toolResult(result) {
+  return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
 }
 
-function negotiatedProtocolVersion(requested) {
-  if (SUPPORTED_PROTOCOL_VERSIONS.has(requested)) return requested;
-  return DEFAULT_PROTOCOL_VERSION;
+function toolError(error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[solidworks-docs] ${message}`);
+  return { isError: true, content: [{ type: "text", text: message }] };
 }
 
-export function createMcpHandlers({ docs = new SolidWorksDocs() } = {}) {
-  let initialized = false;
+export function createMcpServer({ docs = new SolidWorksDocs() } = {}) {
+  const server = new McpServer(
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { instructions: SERVER_INSTRUCTIONS },
+  );
 
-  return async function handleMessage(message) {
-    if (!message || message.jsonrpc !== "2.0" || typeof message.method !== "string") {
-      if (message?.id !== undefined) respondError(message.id, -32600, "Invalid JSON-RPC request");
-      return;
-    }
-
-    const isNotification = message.id === undefined;
-    const params = message.params ?? {};
-
-    if (message.method === "notifications/initialized" || message.method === "notifications/cancelled") return;
-    if (message.method === "ping") {
-      if (!isNotification) respond(message.id, {});
-      return;
-    }
-    if (message.method === "initialize") {
-      initialized = true;
-      if (!isNotification) {
-        respond(message.id, {
-          protocolVersion: negotiatedProtocolVersion(params.protocolVersion),
-          capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: "developing-solidworks-docs", version: SERVER_VERSION },
-          instructions: "Use status first when the bundle state is unknown. Use search/glob for discovery, then get_type/get_member/get_example/get_guide for complete content.",
-        });
-      }
-      return;
-    }
-    if (!initialized && message.method !== "notifications/initialized") {
-      if (!isNotification) respondError(message.id, -32002, "Server must be initialized before this request");
-      return;
-    }
-    if (message.method === "tools/list") {
-      if (!isNotification) respond(message.id, { tools: TOOL_DEFINITIONS });
-      return;
-    }
-    if (message.method === "tools/call") {
-      if (isNotification) return;
-      if (typeof params.name !== "string") {
-        respondError(message.id, -32602, "tools/call requires a string name");
-        return;
-      }
-      try {
-        const result = await dispatchTool(docs, params.name, params.arguments ?? {});
-        respond(message.id, { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] });
-      } catch (error) {
-        const messageText = error instanceof Error ? error.message : String(error);
-        console.error(`[solidworks-docs] ${messageText}`);
-        respond(message.id, { isError: true, content: [{ type: "text", text: messageText }] });
-      }
-      return;
-    }
-    if (!isNotification) respondError(message.id, -32601, `Method not found: ${message.method}`);
-  };
-}
-
-export async function runMcpServer() {
-  const handleMessage = createMcpHandlers();
-  const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
-  for await (const line of input) {
-    if (!line.trim()) continue;
-    let message;
-    try {
-      message = JSON.parse(line);
-    } catch (error) {
-      console.error(`[solidworks-docs] Invalid JSON input: ${error.message}`);
-      continue;
-    }
-    try {
-      await handleMessage(message);
-    } catch (error) {
-      console.error(`[solidworks-docs] Request failed: ${error instanceof Error ? error.stack : String(error)}`);
-      if (message.id !== undefined) respondError(message.id, -32603, "Internal server error");
-    }
+  for (const definition of TOOL_DEFINITIONS) {
+    server.registerTool(
+      definition.name,
+      { description: definition.description, inputSchema: inputSchemaToZodShape(definition.inputSchema) },
+      async (args) => {
+        try {
+          return toolResult(await dispatchTool(docs, definition.name, args ?? {}));
+        } catch (error) {
+          return toolError(error);
+        }
+      },
+    );
   }
+
+  return server;
+}
+
+export async function runMcpServer({ docs } = {}) {
+  const server = createMcpServer({ docs });
+  await server.connect(new StdioServerTransport());
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
