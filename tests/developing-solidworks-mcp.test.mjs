@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { deflateRawSync } from "node:zlib";
 import {
+  SERVER_VERSION,
   SolidWorksDocs,
   TOOL_DEFINITIONS,
   dispatchTool,
@@ -94,7 +95,7 @@ function fixtureEntries(label = "") {
 function qualifiedFixtureEntries() {
   const assemblyXml = (assembly, marker) => `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>${assembly}</name></assembly><members>
 <member name="T:${assembly}.Widget"><summary>${marker} widget</summary><sw:signature kind="type" display="class Widget" /></member>
-<member name="M:${assembly}.Widget.DoThing"><summary>${marker} shared example</summary><sw:example-ref id="Examples/${marker}.htm" language="C#" source="/Examples/${marker}.htm" /></member>
+<member name="M:${assembly}.Widget.DoThing"><summary>${marker} shared example</summary></member>
 </members></doc>`;
   const examplesXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SolidWorks.Interop.examples</name></assembly><members /><sw:examples>
 <sw:example id="Examples/A.htm" title="Shared A" language="C#" source="/Examples/A.htm"><sw:applies-to cref="M:Assembly.A.Widget.DoThing" /><sw:content format="solidworks-example"><![CDATA[Shared marker]]></sw:content></sw:example>
@@ -110,7 +111,7 @@ function qualifiedFixtureEntries() {
 function duplicateAssemblyFixtureEntries() {
   const assemblyXml = (assembly, marker) => `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>${assembly}</name></assembly><members>
 <member name="T:Shared.Widget"><summary>${marker} widget</summary><sw:signature kind="type" display="class Widget" /></member>
-<member name="M:Shared.Widget.DoThing"><summary>${marker} method</summary><sw:signature kind="method" display="void DoThing()" /></member>
+<member name="M:Shared.Widget.DoThing"><summary>${marker} method</summary><sw:signature kind="method" display="void DoThing()" /><sw:example sw:language="C#" sw:title="${marker} embedded">${marker} embedded content</sw:example></member>
 </members></doc>`;
   const duplicateMemberXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Assembly.A</name></assembly><members>
 <member name="M:Shared.Widget.DoThing"><sw:example sw:language="C#" sw:source="/Examples/Embedded.htm" sw:title="Embedded">Intro <code><![CDATA[embedded <tag> example]]></code> outro</sw:example></member>
@@ -138,6 +139,12 @@ function proactiveFixtureEntries() {
   const examplesXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SolidWorks.Interop.examples</name></assembly><members /><sw:examples><sw:example id="Examples/Long.htm" title="Long example" language="C#" source="/Examples/Long.htm"><sw:applies-to cref="M:Proactive.Widget.DoThing(System.String)" /><sw:content format="solidworks-example"><![CDATA[${content}]]></sw:content></sw:example></sw:examples></doc>`;
   return [["Proactive.xml", memberXml], ["SolidWorks.Interop.examples.xml", examplesXml]];
 }
+function sourcePathFixtureEntries() {
+  const apiXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SourcePaths</name></assembly><members><member name="T:SourcePaths.Widget"><summary>Widget</summary></member></members></doc>`;
+  const examplesXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SolidWorks.Interop.examples</name></assembly><members /><sw:examples><sw:example id="Catalog/Example.htm" title="Source example" source="/Samples\\Example.cs" language="C#"><sw:content><![CDATA[source example]]></sw:content></sw:example></sw:examples></doc>`;
+  const guidesXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SolidWorks.Interop.guides</name></assembly><members /><sw:guides><sw:guide id="catalog/Guide.md" title="Source guide" source="docs\\Guide.md"><sw:content><![CDATA[source guide]]></sw:content></sw:guide></sw:guides></doc>`;
+  return [["SourcePaths.xml", apiXml], ["SolidWorks.Interop.examples.xml", examplesXml], ["SolidWorks.Interop.guides.xml", guidesXml]];
+}
 
 test("indexes XMLDoc members, signatures, enum values, examples, guides, and globs", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-docs-test-"));
@@ -150,6 +157,7 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.deepEqual(status.counts, { assemblies: 1, types: 2, enums: 1, members: 2, examples: 1, guides: 1 });
     assert.equal(textFromXml("List&lt;Widget&gt; and x &lt; 5"), "List<Widget> and x < 5");
     assert.equal(textFromXml("<![CDATA[List<Widget>]]>"), "List<Widget>");
+    assert.equal(textFromXml("one<para>two</para><br/>three"), "one two\n\nthree");
     const type = await docs.getType({ name: "Widget" });
     assert.match(type.type.summary, /List<Widget> and x < 5/);
 
@@ -246,6 +254,23 @@ test("returns proactive API details while bounding search example previews", asy
     await rm(root, { recursive: true, force: true });
   }
 });
+test("normalizes Windows and leading-slash catalog source paths", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-source-path-test-"));
+  const bundle = path.join(root, "fixture.xmldoc.zip");
+  await writeFile(bundle, zip(sourcePathFixtureEntries()));
+  const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
+
+  try {
+    const example = await docs.getExample({ name: "examples/Samples/Example.cs" });
+    assert.equal(example.found, true);
+    assert.equal(example.example.id, "Catalog/Example.htm");
+    const guide = await docs.getGuide({ name: "guides/docs/Guide.md" });
+    assert.equal(guide.found, true);
+    assert.equal(guide.guide.id, "catalog/Guide.md");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("preserves qualified lookup paths and filters example searches by assembly", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-qualified-test-"));
@@ -262,6 +287,8 @@ test("preserves qualified lookup paths and filters example searches by assembly"
     const member = await docs.getMember({ name: "members/Assembly.A/Widget/DoThing" });
     assert.equal(member.found, true);
     assert.equal(member.member.assembly, "Assembly.A");
+    assert.deepEqual(member.member.exampleIds, ["Examples/A.htm"]);
+    assert.equal(member.member.examples[0].id, "Examples/A.htm");
     const examples = await docs.search({ query: "Shared", scope: "examples", assembly: "Assembly.A" });
     assert.deepEqual(examples.results.map((result) => result.id), ["Examples/A.htm"]);
   } finally {
@@ -284,6 +311,11 @@ test("keeps XMLDoc identities assembly-scoped and indexes duplicate embedded exa
     assert.equal(assemblyB.type.assembly, "Assembly.B");
     assert.equal((await docs.listMembers({ type: "types/Assembly.A/Widget" })).members[0].assembly, "Assembly.A");
     assert.equal((await docs.getMember({ name: "members/Assembly.B/Widget/DoThing" })).member.assembly, "Assembly.B");
+    const generatedExamples = await docs.listExamples({ query: "embedded content", limit: 10 });
+    assert.deepEqual(generatedExamples.examples.map((item) => item.id).sort(), [
+      "Assembly.A/M:Shared.Widget.DoThing#example-1",
+      "Assembly.B/M:Shared.Widget.DoThing#example-1",
+    ]);
     const example = await docs.getExample({ name: "Examples/Embedded.htm" });
     assert.equal(example.found, true);
     assert.match(example.example.content, /^Intro embedded <tag> example outro$/);
@@ -310,6 +342,8 @@ test("pages type members and list-member results", async () => {
     assert.equal(members.offset, 2);
     assert.deepEqual(members.members.map((member) => member.name), ["Field3"]);
     assert.equal(members.truncated, false);
+    const genericMembers = await docs.listMembers({ type: "Page.Widget", kind: "member", limit: 10 });
+    assert.equal(genericMembers.total, 3);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -340,6 +374,9 @@ test("rejects ZIP CRC mismatches, unsafe directories, and bounded deflate expans
 
     const unsafeDirectory = zip([["../", ""]]);
     await assert.rejects(unpackZip(unsafeDirectory, path.join(root, "directory")), /Unsafe ZIP entry path/);
+    const emptyDeflateDir = path.join(root, "empty-deflate");
+    await unpackZip(zip([["empty.txt", "", 8]]), emptyDeflateDir);
+    assert.equal((await readFile(path.join(emptyDeflateDir, "empty.txt"))).length, 0);
 
     const deflateExpansion = zip([["bomb.txt", "x".repeat(1024), 8]]);
     const deflateCentralOffset = deflateExpansion.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
@@ -488,7 +525,7 @@ test("keeps the previous cache when replacement validation fails", async () => {
   const cacheDir = path.join(root, "cache");
   const releaseApi = "https://release.test/latest";
   const validBundle = zip(fixtureEntries("valid"));
-  const invalidBundle = zip([["notes.txt", "not XMLDoc"]]);
+  const invalidBundle = zip([["manifest.xml", `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Invalid</name></assembly><members><member name="T:"><summary>malformed</summary></member></members></doc>`]]);
   const validRelease = { tag_name: "v-valid", assets: [{ name: "SolidWorks.Interop.xmldoc.v-valid.zip", browser_download_url: "https://release.test/valid.zip" }] };
   const invalidRelease = { tag_name: "v-invalid", assets: [{ name: "SolidWorks.Interop.xmldoc.v-invalid.zip", browser_download_url: "https://release.test/invalid.zip" }] };
 
@@ -502,7 +539,7 @@ test("keeps the previous cache when replacement validation fails", async () => {
     const invalidFetch = async (url) => url === releaseApi
       ? { ok: true, json: async () => invalidRelease }
       : { ok: true, arrayBuffer: async () => invalidBundle };
-    await assert.rejects(new SolidWorksDocs({ cacheDir, releaseApi, fetchImpl: invalidFetch }).refresh(), /contains no XML files/);
+    await assert.rejects(new SolidWorksDocs({ cacheDir, releaseApi, fetchImpl: invalidFetch }).refresh(), /no indexed API types/);
 
     const currentMetadata = JSON.parse(await readFile(path.join(cacheDir, "bundle.json"), "utf8"));
     assert.equal(currentMetadata.extractedDir, previousMetadata.extractedDir);
@@ -555,6 +592,7 @@ test("reports forced refresh acquisition failures instead of stale success", asy
 });
 
 test("publishes the complete documented MCP tool set", () => {
+  assert.equal(SERVER_VERSION, "0.9.4");
   assert.deepEqual(TOOL_DEFINITIONS.map((tool) => tool.name), [
     "status", "refresh", "glob", "search", "list_assemblies", "list_types",
     "get_type", "list_members", "get_member", "list_enums", "get_enum",

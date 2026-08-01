@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
-export const SERVER_VERSION = "0.9.3";
+export const SERVER_VERSION = "0.9.4";
 export const REPOSITORY = "pedropaulovc/offline-solidworks-api-docs";
 export const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 
@@ -93,6 +93,7 @@ function textFromXml(source, preserveWhitespace = false) {
     .replace(/<\s*(?:paramref|typeparamref)\b([^>]*)\/\s*>/gi, (_, rawAttributes) => parseAttributes(rawAttributes).name ?? "")
     .replace(/<\s*(?:code|c)\b[^>]*>/gi, "")
     .replace(/<\s*\/(?:code|c)\s*>/gi, "")
+    .replace(/<\s*(\/?)\s*(?:para|br|p|div|section|list|listheader|item|listitem|term|description)(?=[\s/>])[^>]*?(\/?)\s*>/gi, (_, closing, selfClosing) => closing || selfClosing ? "\n" : " ")
     .replace(/<[^>]+>/g, "");
   value = decodeXml(value).replace(/\u0000CDATA(\d+)\u0000/g, (_, index) => cdata[Number(index)] ?? "").replace(/\r\n?/g, "\n");
   if (preserveWhitespace) return value.trim();
@@ -115,11 +116,22 @@ function parseExampleRefs(inner) {
   return elements.map((element) => ({ id: normalizePath(element.attributes.id ?? element.attributes.source ?? "").replace(/^\//, ""), language: element.attributes.language ?? null, source: element.attributes.source ?? null })).filter((reference) => reference.id);
 }
 function memberKey(assembly, id) { return `${String(assembly ?? "").toLowerCase()}\u0000${String(id ?? "")}`; }
+function companionMembers(state, cref) {
+  const candidates = state.membersByXmlId.get(cref) ?? [];
+  if (candidates.length <= 1) return candidates;
+  const separator = String(cref).indexOf(":");
+  const fullName = separator >= 0 ? String(cref).slice(separator + 1) : String(cref);
+  const qualified = candidates.filter((member) => {
+    const assembly = String(member.assembly ?? "");
+    return member.fullName === fullName && fullName.toLowerCase().startsWith(`${assembly.toLowerCase()}.`);
+  });
+  return qualified;
+}
 function typeKey(assembly, fullName) { return memberKey(assembly, fullName); }
 function parseExamples(inner, ownerId, assembly) {
   return collectElements(inner, "example").map((element, index) => {
     const source = element.attributes["sw:source"] ?? element.attributes.source ?? "";
-    const id = normalizePath(source).replace(/^\//, "") || `${ownerId}#example-${index + 1}`;
+    const id = normalizePath(source).replace(/^\//, "") || `${assembly}/${ownerId}#example-${index + 1}`;
     const contentElement = firstElement(element.inner, "content");
     return { id, title: element.attributes["sw:title"] ?? element.attributes.title ?? id, language: element.attributes["sw:language"] ?? element.attributes.language ?? "Unknown", source: source || null, content: contentElement ? rawContentText(contentElement.inner) : rawContentText(element.inner), memberIds: [ownerId], memberKeys: [memberKey(assembly, ownerId)], rawXml: element.raw, embedded: true };
   });
@@ -211,6 +223,15 @@ async function loadIndex(extractedDir, metadata) {
     members.push(member);
     state.membersByTypeKey.set(key, members);
   }
+  for (const example of state.examples) {
+    for (const cref of example.memberIds ?? []) {
+      for (const member of companionMembers(state, cref)) {
+        member.exampleIds = unique((member.exampleIds ?? []).concat(example.id));
+        example.memberIds = unique(example.memberIds.concat(member.id));
+        example.memberKeys = unique((example.memberKeys ?? []).concat(memberKey(member.assembly, member.id)));
+      }
+    }
+  }
   for (const type of state.types) {
     const children = state.membersByTypeKey.get(typeKey(type.assembly, type.fullName)) ?? [];
     type.memberKeys = children.map((member) => memberKey(member.assembly, member.id));
@@ -218,7 +239,7 @@ async function loadIndex(extractedDir, metadata) {
     type.memberCount = children.length;
     type.isEnum = inferEnum(type, children);
     type.kind = type.isEnum ? "enum" : "type";
-    type.exampleIds = unique(type.exampleRefs.map((reference) => reference.id).concat(type.examples.map((example) => example.id)));
+    type.exampleIds = unique((type.exampleIds ?? []).concat(type.exampleRefs.map((reference) => reference.id), type.examples.map((example) => example.id)));
   }
   state.types.sort(compareName); state.members.sort(compareName); state.examples.sort(compareName); state.guides.sort(compareName); state.files.sort(); state.virtualEntries = buildVirtualEntries(state); return state;
 }
@@ -383,8 +404,8 @@ function resolveMembers(state, name, options = {}) {
   if (exact.length) return exact;
   return candidates.filter((member) => matchesText(member.fullName, query) || matchesText(member.shortName, query));
 }
-function resolveExample(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^examples\//i, ""); const exact = state.examples.filter((example) => [example.id, example.source ?? ""].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.examples.filter((example) => matchesText(example.id, query) || matchesText(example.title, query)); }
-function resolveGuide(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^guides\//i, ""); const exact = state.guides.filter((guide) => [guide.id, guide.source ?? ""].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.guides.filter((guide) => matchesText(guide.id, query) || matchesText(guide.title, query)); }
+function resolveExample(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^examples\//i, ""); const exact = state.examples.filter((example) => [example.id, normalizePath(example.source ?? "")].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.examples.filter((example) => matchesText(example.id, query) || matchesText(example.title, query)); }
+function resolveGuide(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^guides\//i, ""); const exact = state.guides.filter((guide) => [guide.id, normalizePath(guide.source ?? "")].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.guides.filter((guide) => matchesText(guide.id, query) || matchesText(guide.title, query)); }
 function expandedType(state, type, options = {}) {
   const result = { ...typeSummary(type, state), remarks: type.remarks, returns: type.returns, value: type.value, availability: type.availability, parameters: type.parameters, typeParameters: type.typeParameters, exceptions: type.exceptions, seeAlso: type.seeAlso, exampleRefs: type.exampleRefs };
   if (options.includeRawXml === true) result.rawXml = type.rawXml;
@@ -553,7 +574,7 @@ export async function unpackZip(buffer, targetDir) {
     const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
     let content;
     if (method === 0) content = compressed;
-    else if (method === 8) content = inflateRawSync(compressed, { maxOutputLength: Math.min(uncompressedSize, MAX_UNCOMPRESSED_ENTRY_BYTES, MAX_UNCOMPRESSED_TOTAL_BYTES - totalBytes) });
+    else if (method === 8) content = inflateRawSync(compressed, { maxOutputLength: Math.max(1, Math.min(uncompressedSize, MAX_UNCOMPRESSED_ENTRY_BYTES, MAX_UNCOMPRESSED_TOTAL_BYTES - totalBytes)) });
     else throw new Error(`Unsupported ZIP compression method ${method}: ${name}`);
     if (content.length !== uncompressedSize) throw new Error(`ZIP size mismatch: ${name}`);
     if (crc32(content) !== expectedCrc) throw new Error(`ZIP CRC mismatch: ${name}`);
@@ -635,7 +656,7 @@ export class SolidWorksDocs {
       await unpackZip(buffer, temporaryDir);
       const stagedMetadata = { ...metadata, extractedDir: temporaryDir };
       const stagedState = await loadIndex(temporaryDir, stagedMetadata);
-      if (!stagedState.files.some((file) => extname(file).toLowerCase() === ".xml")) throw new Error("SolidWorks XMLDoc bundle contains no XML files");
+      if (!stagedState.types.some((type) => type.fullName?.trim() && type.assembly?.trim())) throw new Error("SolidWorks XMLDoc bundle contains no indexed API types");
       await fs.rm(extractedDir, { recursive: true, force: true });
       await fs.rename(temporaryDir, extractedDir);
       const completeMetadata = { ...metadata, extractedDir, cachedAt: new Date().toISOString() };
@@ -676,7 +697,7 @@ export class SolidWorksDocs {
     const offset = clampOffset(options.offset);
     const limit = clampLimit(options.limit);
     const allMembers = state.membersByTypeKey.get(typeKey(type.assembly, type.fullName)) ?? [];
-    const filteredMembers = allMembers.filter((member) => (kind === "all" || member.kind === kind) && (!query || matchesText(`${member.fullName} ${member.summary} ${member.signature?.display}`, query)));
+    const filteredMembers = allMembers.filter((member) => (kind === "all" || kind === "member" || member.kind === kind) && (!query || matchesText(`${member.fullName} ${member.summary} ${member.signature?.display}`, query)));
     const members = filteredMembers.slice(offset, offset + limit);
     return { found: true, type: typeSummary(type, state), count: members.length, total: filteredMembers.length, offset, limit, truncated: offset + members.length < filteredMembers.length, members: members.map((member) => memberSummary(member, state)) };
   }

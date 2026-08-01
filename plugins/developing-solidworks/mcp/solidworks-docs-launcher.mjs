@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
@@ -8,6 +9,8 @@ const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageJson = join(pluginRoot, "package.json");
 const LOCK_RETRY_MS = 100;
 const LOCK_TIMEOUT_MS = 120_000;
+const LOCK_STALE_MS = LOCK_TIMEOUT_MS;
+const LOCK_METADATA_NAME = "owner.json";
 
 function dependenciesAvailable() {
   try {
@@ -21,15 +24,76 @@ function dependenciesAvailable() {
   }
 }
 
+async function readInstallLockMetadata(lockPath) {
+  try {
+    return JSON.parse(await fs.readFile(join(lockPath, LOCK_METADATA_NAME), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
+async function reclaimStaleInstallLock(lockPath) {
+  let lockStats;
+  try {
+    lockStats = await fs.stat(lockPath);
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  const metadata = await readInstallLockMetadata(lockPath);
+  const createdAt = typeof metadata?.createdAt === "number" ? metadata.createdAt : NaN;
+  const age = Number.isFinite(createdAt) ? Date.now() - createdAt : Date.now() - lockStats.mtimeMs;
+  const pid = Number(metadata?.pid);
+  if (Number.isInteger(pid) && pid > 0) {
+    if (processIsAlive(pid)) return false;
+  } else if (age <= LOCK_STALE_MS) {
+    return false;
+  }
+  const stalePath = `${lockPath}.stale-${randomUUID()}`;
+  try {
+    await fs.rename(lockPath, stalePath);
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+  const movedMetadata = await readInstallLockMetadata(stalePath);
+  if (movedMetadata?.token !== metadata?.token) {
+    try {
+      await fs.rename(stalePath, lockPath);
+    } catch {
+      // Another process acquired the lock while it was being inspected.
+    }
+    return false;
+  }
+  await fs.rm(stalePath, { recursive: true, force: true });
+  return true;
+}
+
 async function withInstallLock(callback) {
   const lockPath = join(pluginRoot, ".mcp-install-lock");
+  const token = randomUUID();
   const startedAt = Date.now();
   while (true) {
+    let created = false;
     try {
       await fs.mkdir(lockPath);
+      created = true;
+      await fs.writeFile(join(lockPath, LOCK_METADATA_NAME), JSON.stringify({ pid: process.pid, createdAt: Date.now(), token }), { flag: "wx" });
       break;
     } catch (error) {
+      if (created) await fs.rm(lockPath, { recursive: true, force: true });
       if (error.code !== "EEXIST") throw error;
+      if (await reclaimStaleInstallLock(lockPath)) continue;
       if (Date.now() - startedAt >= LOCK_TIMEOUT_MS) throw new Error(`Timed out waiting for MCP dependency installation lock: ${lockPath}`);
       await new Promise((resolvePromise) => setTimeout(resolvePromise, LOCK_RETRY_MS));
     }
@@ -37,7 +101,8 @@ async function withInstallLock(callback) {
   try {
     return await callback();
   } finally {
-    await fs.rm(lockPath, { recursive: true, force: true });
+    const metadata = await readInstallLockMetadata(lockPath);
+    if (metadata?.token === token) await fs.rm(lockPath, { recursive: true, force: true });
   }
 }
 
