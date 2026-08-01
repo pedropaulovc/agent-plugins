@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
-export const SERVER_VERSION = "0.9.6";
+export const SERVER_VERSION = "0.9.7";
 export const REPOSITORY = "pedropaulovc/offline-solidworks-api-docs";
 export const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 
@@ -310,15 +310,24 @@ function typePath(type) { return `${type.isEnum ? "enums" : "types"}/${type.asse
 function signatureDetails(signature) { return signature ? { ...signature, returnType: signature.returnType ?? null } : null; }
 function exampleLinks(state, ids = [], refs = []) {
   const links = [];
-  const seen = new Set();
+  const seen = new Map();
   const add = (id, fallback = {}) => {
     const normalized = normalizePath(id).replace(/^\/+/, "");
-    if (!normalized || seen.has(normalized.toLowerCase())) return;
-    seen.add(normalized.toLowerCase());
-    const example = state?.examplesById.get(normalized.toLowerCase());
-    links.push(example
+    if (!normalized) return;
+    const key = normalized.toLowerCase();
+    const existing = seen.get(key);
+    if (existing) {
+      if (existing.title === existing.id && fallback.title) existing.title = fallback.title;
+      if (existing.language == null && fallback.language != null) existing.language = fallback.language;
+      if (existing.source == null && fallback.source != null) existing.source = fallback.source;
+      return;
+    }
+    const example = state?.examplesById.get(key);
+    const link = example
       ? { id: example.id, title: example.title, language: example.language, source: example.source, path: `examples/${example.id}` }
-      : { id: normalized, title: fallback.title ?? normalized, language: fallback.language ?? null, source: fallback.source ?? null, path: `examples/${normalized}` });
+      : { id: normalized, title: fallback.title ?? normalized, language: fallback.language ?? null, source: fallback.source ?? null, path: `examples/${normalized}` };
+    seen.set(key, link);
+    links.push(link);
   };
   for (const id of ids) add(id);
   for (const reference of refs) add(reference.id, reference);
@@ -540,6 +549,7 @@ function crc32(buffer) {
 const CACHE_LOCK_RETRY_MS = 50;
 const CACHE_LOCK_TIMEOUT_MS = METADATA_TIMEOUT_MS + DOWNLOAD_TIMEOUT_MS + 120_000;
 const CACHE_LOCK_STALE_MS = CACHE_LOCK_TIMEOUT_MS + 120_000;
+const CACHE_STAGING_STALE_MS = CACHE_LOCK_STALE_MS;
 async function acquireCacheLock(cacheDir) {
   await fs.mkdir(cacheDir, { recursive: true });
   const lockPath = join(cacheDir, ".lock");
@@ -582,11 +592,21 @@ async function cleanupReleaseDirectories(cacheDir, keepDir, prefix = "release-")
     return;
   }
   const keepPath = resolve(keepDir);
+  const now = Date.now();
   await Promise.all(entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix) && !entry.name.includes(".tmp-"))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
     .map(async (entry) => {
       const entryPath = join(extractedRoot, entry.name);
       if (resolve(entryPath) === keepPath) return;
+      if (entry.name.includes(".tmp-")) {
+        let stats;
+        try {
+          stats = await fs.stat(entryPath);
+        } catch {
+          return;
+        }
+        if (now - stats.mtimeMs <= CACHE_STAGING_STALE_MS) return;
+      }
       await fs.rm(entryPath, { recursive: true, force: true });
     }));
 }

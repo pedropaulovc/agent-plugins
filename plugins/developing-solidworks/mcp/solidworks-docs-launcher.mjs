@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { promises as fs } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -11,6 +11,7 @@ const LOCK_RETRY_MS = 100;
 const LOCK_TIMEOUT_MS = 120_000;
 const LOCK_STALE_MS = LOCK_TIMEOUT_MS;
 const INSTALL_TIMEOUT_MS = 100_000;
+const LOCK_ABSOLUTE_MAX_MS = LOCK_STALE_MS * 5;
 const LOCK_METADATA_NAME = "owner.json";
 
 function dependenciesAvailable() {
@@ -56,7 +57,7 @@ async function reclaimStaleInstallLock(lockPath) {
   const age = Number.isFinite(createdAt) ? Date.now() - createdAt : Date.now() - lockStats.mtimeMs;
   const pid = Number(metadata?.pid);
   if (Number.isInteger(pid) && pid > 0) {
-    if (processIsAlive(pid)) return false;
+    if (processIsAlive(pid) && age <= LOCK_ABSOLUTE_MAX_MS) return false;
   } else if (age <= LOCK_STALE_MS) {
     return false;
   }
@@ -130,6 +131,11 @@ async function installDependencies() {
   });
 }
 
-await installDependencies();
-const { runMcpServer } = await import(pathToFileURL(join(pluginRoot, "mcp", "solidworks-docs-mcp.mjs")));
-await runMcpServer();
+const isMain = process.argv[1] ? resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url)) : false;
+if (isMain) {
+  await installDependencies();
+  const { runMcpServer } = await import(pathToFileURL(join(pluginRoot, "mcp", "solidworks-docs-mcp.mjs")));
+  await runMcpServer();
+}
+
+export { reclaimStaleInstallLock };

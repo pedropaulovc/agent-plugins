@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ import {
   unpackZip,
   textFromXml,
 } from "../plugins/developing-solidworks/mcp/solidworks-docs.mjs";
+import { reclaimStaleInstallLock } from "../plugins/developing-solidworks/mcp/solidworks-docs-launcher.mjs";
 import { SERVER_INSTRUCTIONS } from "../plugins/developing-solidworks/mcp/solidworks-docs-mcp.mjs";
 
 const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
@@ -132,7 +133,7 @@ function proactiveFixtureEntries() {
   const content = Array.from({ length: 55 }, (_, index) => `line-${index + 1}`).join("\n");
   const memberXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Proactive</name></assembly><members>
 <member name="T:Proactive.Widget"><summary>Widget summary</summary><remarks>Widget remarks</remarks><sw:signature kind="type" display="class Widget" /></member>
-<member name="M:Proactive.Widget.DoThing(System.String)"><summary>Method summary</summary><remarks>needle-remarks</remarks><returns>needle-returns</returns><availability>needle-availability</availability><param name="value">needle-parameter</param><typeparam name="T">needle-type-parameter</typeparam><exception cref="System.Exception">needle-exception</exception><seealso cref="T:Proactive.Other" href="https://example.test">needle-seealso</seealso><sw:signature kind="method" display="string DoThing(string value)" return-type="System.String" /><sw:example-ref id="Examples/Long.htm" language="C#" source="/Examples/Long.htm" /></member>
+<member name="M:Proactive.Widget.DoThing(System.String)"><summary>Method summary</summary><remarks>needle-remarks</remarks><returns>needle-returns</returns><availability>needle-availability</availability><param name="value">needle-parameter</param><typeparam name="T">needle-type-parameter</typeparam><exception cref="System.Exception">needle-exception</exception><seealso cref="T:Proactive.Other" href="https://example.test">needle-seealso</seealso><sw:signature kind="method" display="string DoThing(string value)" return-type="System.String" /><sw:example-ref id="Examples/Long.htm" language="C#" source="/Examples/Long.htm" /><sw:example-ref id="Examples/Missing.cs" language="VB.NET" source="/Samples\\Missing.cs" /></member>
 <member name="T:Proactive.Options_e"><summary>Options.</summary></member>
 <member name="F:Proactive.Options_e.Flag"><summary>0x10; Flag description</summary><value>needle-value</value></member>
 <member name="F:Proactive.Options_e.Fallback"><summary>Fallback field</summary><value>0x20</value></member>
@@ -146,6 +147,22 @@ function sourcePathFixtureEntries() {
   const guidesXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SolidWorks.Interop.guides</name></assembly><members /><sw:guides><sw:guide id="catalog/Guide.md" title="Source guide" source="docs\\Guide.md"><sw:content><![CDATA[source guide]]></sw:content></sw:guide></sw:guides></doc>`;
   return [["SourcePaths.xml", apiXml], ["SolidWorks.Interop.examples.xml", examplesXml], ["SolidWorks.Interop.guides.xml", guidesXml]];
 }
+test("reclaims live-PID install locks past the absolute age ceiling", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-install-lock-test-"));
+  const lockPath = path.join(root, "lock");
+  try {
+    await mkdir(lockPath);
+    await writeFile(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: process.pid,
+      createdAt: Date.now() - 601_000,
+      token: "stale-test",
+    }));
+    assert.equal(await reclaimStaleInstallLock(lockPath), true);
+    await assert.rejects(access(lockPath), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("indexes XMLDoc members, signatures, enum values, examples, guides, and globs", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-docs-test-"));
@@ -232,6 +249,9 @@ test("returns proactive API details while bounding search example previews", asy
     assert.equal(type.type.members[0].parameters[0].description, "needle-parameter");
     assert.equal(type.type.members[0].exceptions[0].description, "needle-exception");
     assert.equal(type.type.members[0].seeAlso[0].text, "needle-seealso");
+    const missingExample = type.type.members[0].examples.find((example) => example.id === "Examples/Missing.cs");
+    assert.equal(missingExample.language, "VB.NET");
+    assert.equal(missingExample.source, "/Samples\\Missing.cs");
 
     const enumResult = await docs.getEnum({ name: "Options_e" });
     assert.equal(enumResult.type.members[0].enumCode, 16);
@@ -569,6 +589,22 @@ test("prunes obsolete local bundle extractions", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+test("prunes stale temporary bundle extractions", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-staging-cleanup-test-"));
+  const cacheDir = path.join(root, "cache");
+  const bundle = path.join(root, "bundle.xmldoc.zip");
+  const stalePath = path.join(cacheDir, "extracted", "local-crashed.tmp-old");
+  try {
+    await writeFile(bundle, zip(fixtureEntries("staging")));
+    await mkdir(stalePath, { recursive: true });
+    const staleTime = new Date(Date.now() - 901_000);
+    await utimes(stalePath, staleTime, staleTime);
+    await new SolidWorksDocs({ bundlePath: bundle, cacheDir }).status();
+    await assert.rejects(access(stalePath), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("keeps the previous cache when replacement validation fails", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-invalid-cache-test-"));
@@ -651,7 +687,7 @@ test("passes the bundled skill through MCP server instructions", () => {
 });
 
 test("publishes the consolidated documented MCP tool set", () => {
-  assert.equal(SERVER_VERSION, "0.9.6");
+  assert.equal(SERVER_VERSION, "0.9.7");
   assert.deepEqual(TOOL_DEFINITIONS.map((tool) => tool.name), [
     "status", "refresh", "glob", "search", "list",
     "get_type", "get_enum", "get_example", "get_guide",
