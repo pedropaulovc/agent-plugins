@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { inflateRawSync } from "node:zlib";
 
-export const SERVER_VERSION = "0.9.2";
+export const SERVER_VERSION = "0.9.3";
 export const REPOSITORY = "pedropaulovc/offline-solidworks-api-docs";
 export const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 
@@ -81,26 +81,24 @@ function collectSelfClosingElements(source, localName) {
 function firstElement(source, localName) { return collectElements(source, localName)[0] ?? null; }
 function elementText(source, localName, preserveWhitespace = false) { const element = firstElement(source, localName); return element ? textFromXml(element.inner, preserveWhitespace) : null; }
 function textFromXml(source, preserveWhitespace = false) {
-  let value = String(source ?? "")
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+  const cdata = [];
+  let value = String(source ?? "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, content) => {
+    const token = `\u0000CDATA${cdata.length}\u0000`;
+    cdata.push(content);
+    return token;
+  })
     .replace(/<\s*(?:see|seealso)\b([^>]*)\/\s*>/gi, (_, rawAttributes) => shortReference(parseAttributes(rawAttributes).cref ?? parseAttributes(rawAttributes).href ?? ""))
     .replace(/<\s*(?:see|seealso)\b[^>]*>([\s\S]*?)<\/\s*(?:see|seealso)\s*>/gi, "$1")
     .replace(/<\s*(?:paramref|typeparamref)\b([^>]*)\/\s*>/gi, (_, rawAttributes) => parseAttributes(rawAttributes).name ?? "")
     .replace(/<\s*(?:code|c)\b[^>]*>/gi, "")
     .replace(/<\s*\/(?:code|c)\s*>/gi, "")
     .replace(/<[^>]+>/g, "");
-  value = decodeXml(value).replace(/\r\n?/g, "\n");
+  value = decodeXml(value).replace(/\u0000CDATA(\d+)\u0000/g, (_, index) => cdata[Number(index)] ?? "").replace(/\r\n?/g, "\n");
   if (preserveWhitespace) return value.trim();
   return value.split("\n").map((line) => line.trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 function rawContentText(source) {
-  const cdata = [];
-  const protectedSource = String(source ?? "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, (_, value) => {
-    const token = `\u0000CDATA${cdata.length}\u0000`;
-    cdata.push(value);
-    return token;
-  });
-  return textFromXml(protectedSource, true).replace(/\u0000CDATA(\d+)\u0000/g, (_, index) => cdata[Number(index)] ?? "").replace(/\r\n?/g, "\n").trim();
+  return textFromXml(source, true);
 }
 function shortReference(value) { const reference = String(value ?? "").replace(/^[A-Z]:/, "").split("(")[0]; return reference.slice(reference.lastIndexOf(".") + 1) || reference; }
 function parseParameters(inner, localName = "param") { return collectElements(inner, localName).map((element) => ({ name: element.attributes.name ?? "", description: textFromXml(element.inner) })).filter((parameter) => parameter.name); }
@@ -311,7 +309,8 @@ function resolveType(state, name, assembly) {
   const segments = rawQuery.split("/").filter(Boolean);
   let requestedAssembly = assembly;
   if (segments.length > 1 && (!assembly || matchesAssembly(segments[0], assembly))) {
-    requestedAssembly ??= segments.shift();
+    const consumed = segments.shift();
+    requestedAssembly ??= consumed;
   }
   const query = segments.join(".") || rawQuery;
   const candidates = state.types.filter((type) => matchesAssembly(type.assembly, requestedAssembly));
@@ -432,7 +431,7 @@ async function withCacheLock(cacheDir, callback) {
     await fs.rm(lockPath, { force: true });
   }
 }
-async function cleanupReleaseDirectories(cacheDir, keepDir) {
+async function cleanupReleaseDirectories(cacheDir, keepDir, prefix = "release-") {
   const extractedRoot = join(cacheDir, "extracted");
   let entries;
   try {
@@ -442,7 +441,7 @@ async function cleanupReleaseDirectories(cacheDir, keepDir) {
   }
   const keepPath = resolve(keepDir);
   await Promise.all(entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("release-"))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
     .map(async (entry) => {
       const entryPath = join(extractedRoot, entry.name);
       if (resolve(entryPath) === keepPath) return;
@@ -573,13 +572,16 @@ export class SolidWorksDocs {
     await fs.mkdir(temporaryDir, { recursive: true });
     try {
       await unpackZip(buffer, temporaryDir);
+      const stagedMetadata = { ...metadata, extractedDir: temporaryDir };
+      const stagedState = await loadIndex(temporaryDir, stagedMetadata);
+      if (!stagedState.files.some((file) => extname(file).toLowerCase() === ".xml")) throw new Error("SolidWorks XMLDoc bundle contains no XML files");
       await fs.rm(extractedDir, { recursive: true, force: true });
       await fs.rename(temporaryDir, extractedDir);
       const completeMetadata = { ...metadata, extractedDir, cachedAt: new Date().toISOString() };
       const temporaryMetadata = `${metadataPath}.tmp-${suffix}`;
       await fs.writeFile(temporaryMetadata, JSON.stringify(completeMetadata, null, 2));
       await fs.rename(temporaryMetadata, metadataPath);
-      if (metadata.source === "release") await cleanupReleaseDirectories(this.cacheDir, extractedDir);
+      await cleanupReleaseDirectories(this.cacheDir, extractedDir, metadata.source === "release" ? "release-" : "local-");
     } catch (error) {
       await fs.rm(temporaryDir, { recursive: true, force: true });
       throw error;

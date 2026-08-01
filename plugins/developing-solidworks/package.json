@@ -1,6 +1,6 @@
 {
   "name": "@pedropaulovc/developing-solidworks",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "SolidWorks API development skills for OpenCode",
   "type": "module",
   "main": ".opencode/plugins/developing-solidworks.js",
