@@ -79,7 +79,7 @@ function zip(entries) {
 function fixtureEntries(label = "") {
   const memberXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Demo</name></assembly><members>
 <member name="T:Demo.Widget"><summary>A Widget type ${label}; List&lt;Widget&gt; and x &lt; 5.</summary><sw:signature kind="type" display="class Widget" /></member>
-<member name="M:Demo.Widget.DoThing(System.Int32@)"><summary>Does a thing.</summary><param name="value">The input &lt;value&gt;.</param><returns>The result.</returns><sw:signature kind="method" display="int DoThing(ref int value)" return-type="System.Int32"><sw:parameter name="value" type="System.Int32@" direction="byref" /></sw:signature><sw:example-ref id="Examples/DoThing.htm" language="C#" source="/Examples/DoThing.htm" /></member>
+<member name="M:Demo.Widget.DoThing(System.Int32@)"><summary>Does a thing.</summary><param name="value">The input &lt;value&gt;.</param><returns>The result.</returns><seealso cref="T:Demo.Widget" /><seealso cref="T:Demo.Other">Other reference</seealso><sw:signature kind="method" display="int DoThing(ref int value)" return-type="System.Int32"><sw:parameter name="value" type="System.Int32@" direction="byref" /></sw:signature><sw:example-ref id="Examples/DoThing.htm" language="C#" source="/Examples/DoThing.htm" /></member>
 <member name="T:Demo.Options_e"><summary>Options.</summary></member>
 <member name="F:Demo.Options_e.OptionA"><summary>3; a documented value</summary></member>
 </members></doc>`;
@@ -167,6 +167,8 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.equal(member.member.parameters[0].description, "The input <value>.");
     assert.equal(member.member.parameters[0].name, "value");
     assert.equal(member.member.exampleRefs[0].id, "Examples/DoThing.htm");
+    assert.deepEqual(member.member.seeAlso.map((reference) => reference.cref).sort(), ["T:Demo.Other", "T:Demo.Widget"]);
+    assert.equal(member.member.seeAlso.find((reference) => reference.cref === "T:Demo.Other").text, "Other reference");
 
     const enumResult = await docs.getEnum({ name: "enums/Options_e" });
     assert.equal(enumResult.found, true);
@@ -600,4 +602,9 @@ test("publishes the complete documented MCP tool set", () => {
   ]);
   const listMembers = TOOL_DEFINITIONS.find((tool) => tool.name === "list_members");
   assert.deepEqual(listMembers.inputSchema.properties.assembly, { type: "string" });
+  const getType = TOOL_DEFINITIONS.find((tool) => tool.name === "get_type");
+  const getEnum = TOOL_DEFINITIONS.find((tool) => tool.name === "get_enum");
+  assert.equal(getType.inputSchema.properties.memberOffset.default, undefined);
+  assert.equal(getEnum.inputSchema.properties.memberOffset.default, undefined);
+  assert.equal(listMembers.inputSchema.properties.offset.default, 0);
 });

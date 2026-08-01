@@ -10,6 +10,7 @@ const packageJson = join(pluginRoot, "package.json");
 const LOCK_RETRY_MS = 100;
 const LOCK_TIMEOUT_MS = 120_000;
 const LOCK_STALE_MS = LOCK_TIMEOUT_MS;
+const INSTALL_TIMEOUT_MS = 100_000;
 const LOCK_METADATA_NAME = "owner.json";
 
 function dependenciesAvailable() {
@@ -122,7 +123,8 @@ async function installDependencies() {
       "--fund=false",
       "--audit=false",
       "--loglevel=error",
-    ], { stdio: ["ignore", "ignore", "inherit"] });
+    ], { stdio: ["ignore", "ignore", "inherit"], timeout: INSTALL_TIMEOUT_MS });
+    if (result.error?.code === "ETIMEDOUT") throw new Error(`Timed out installing SolidWorks MCP dependencies with ${npm} after ${INSTALL_TIMEOUT_MS} ms; check network access and retry`);
     if (result.error) throw new Error(`Unable to install SolidWorks MCP dependencies with ${npm}: ${result.error.message}`);
     if (result.status !== 0 || !dependenciesAvailable()) throw new Error(`Unable to install SolidWorks MCP dependencies with ${npm}; exit status ${result.status ?? "unknown"}`);
   });
