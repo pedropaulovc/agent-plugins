@@ -126,6 +126,18 @@ function paginationFixtureEntries() {
   const members = Array.from({ length: 3 }, (_, index) => `<member name="F:Page.Widget.Field${index + 1}"><summary>Field ${index + 1}</summary></member>`).join("");
   return [["Page.xml", `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Page</name></assembly><members><member name="T:Page.Widget"><summary>Page widget</summary></member>${members}</members></doc>`]];
 }
+function proactiveFixtureEntries() {
+  const content = Array.from({ length: 55 }, (_, index) => `line-${index + 1}`).join("\n");
+  const memberXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Proactive</name></assembly><members>
+<member name="T:Proactive.Widget"><summary>Widget summary</summary><remarks>Widget remarks</remarks><sw:signature kind="type" display="class Widget" /></member>
+<member name="M:Proactive.Widget.DoThing(System.String)"><summary>Method summary</summary><remarks>needle-remarks</remarks><returns>needle-returns</returns><availability>needle-availability</availability><param name="value">needle-parameter</param><typeparam name="T">needle-type-parameter</typeparam><exception cref="System.Exception">needle-exception</exception><seealso cref="T:Proactive.Other" href="https://example.test">needle-seealso</seealso><sw:signature kind="method" display="string DoThing(string value)" return-type="System.String" /><sw:example-ref id="Examples/Long.htm" language="C#" source="/Examples/Long.htm" /></member>
+<member name="T:Proactive.Options_e"><summary>Options.</summary></member>
+<member name="F:Proactive.Options_e.Flag"><summary>0x10; Flag description</summary><value>needle-value</value></member>
+<member name="F:Proactive.Options_e.Fallback"><summary>Fallback field</summary><value>0x20</value></member>
+</members></doc>`;
+  const examplesXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>SolidWorks.Interop.examples</name></assembly><members /><sw:examples><sw:example id="Examples/Long.htm" title="Long example" language="C#" source="/Examples/Long.htm"><sw:applies-to cref="M:Proactive.Widget.DoThing(System.String)" /><sw:content format="solidworks-example"><![CDATA[${content}]]></sw:content></sw:example></sw:examples></doc>`;
+  return [["Proactive.xml", memberXml], ["SolidWorks.Interop.examples.xml", examplesXml]];
+}
 
 test("indexes XMLDoc members, signatures, enum values, examples, guides, and globs", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-docs-test-"));
@@ -181,6 +193,55 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
 
     const dispatched = await dispatchTool(docs, "list_types", { query: "Widget" });
     assert.equal(dispatched.count, 1);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+test("returns proactive API details while bounding search example previews", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-proactive-test-"));
+  const bundle = path.join(root, "fixture.xmldoc.zip");
+  await writeFile(bundle, zip(proactiveFixtureEntries()));
+  const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
+
+  try {
+    const status = await docs.status();
+    assert.equal(status.bundleVersion, "local");
+
+    const searchDefinition = TOOL_DEFINITIONS.find((tool) => tool.name === "search");
+    assert.equal(searchDefinition.inputSchema.required.includes("scope"), false);
+
+    const type = await docs.getType({ name: "Widget" });
+    assert.equal(type.type.members.length, 1);
+    assert.equal(type.type.members[0].parameters[0].description, "needle-parameter");
+    assert.equal(type.type.members[0].exceptions[0].description, "needle-exception");
+    assert.equal(type.type.members[0].seeAlso[0].text, "needle-seealso");
+
+    const enumResult = await docs.getEnum({ name: "Options_e" });
+    assert.equal(enumResult.type.members[0].enumCode, 16);
+    assert.equal(enumResult.type.members[0].value, "needle-value");
+    assert.equal(enumResult.type.members.find((member) => member.name === "Fallback").enumCode, 32);
+    const search = await docs.search({ query: "needle-remarks" });
+    assert.equal(search.scope, "all");
+    assert.equal(search.count, 1);
+    assert.equal(search.results[0].returns, "needle-returns");
+    assert.equal(search.results[0].availability, "needle-availability");
+    assert.equal(search.results[0].parameters[0].description, "needle-parameter");
+    assert.equal(search.results[0].typeParameters[0].description, "needle-type-parameter");
+    assert.equal(search.results[0].examples[0].id, "Examples/Long.htm");
+
+    const valueSearch = await docs.search({ query: "needle-value" });
+    assert.equal(valueSearch.count, 1);
+    assert.equal(valueSearch.results[0].enumCode, 16);
+
+    const preview = await docs.search({ query: "line-55", scope: "examples" });
+    assert.equal(preview.count, 1);
+    assert.equal(preview.results[0].contentLineCount, 50);
+    assert.equal(preview.results[0].totalLineCount, 55);
+    assert.equal(preview.results[0].contentTruncated, true);
+    assert.doesNotMatch(preview.results[0].content, /line-55/);
+
+    const example = await docs.getExample({ name: "Examples/Long.htm" });
+    assert.match(example.example.content, /line-55/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -306,11 +367,13 @@ test("downloads a release asset once and reuses the extracted cache", async () =
 
   try {
     const docs = new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl });
+    assert.equal((await docs.status()).bundleVersion, "v-test");
     assert.equal((await docs.status()).counts.types, 2);
     assert.equal((await docs.search({ query: "DoThing", scope: "members" })).count, 1);
     assert.equal(metadataRequests, 1);
     assert.equal(assetRequests, 1);
     const onlineDocs = new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl });
+    assert.equal((await onlineDocs.status()).bundleVersion, "v-test");
     assert.equal((await onlineDocs.status()).counts.types, 2);
     assert.equal(metadataRequests, 2);
     assert.equal(assetRequests, 1);

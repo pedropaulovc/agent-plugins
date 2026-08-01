@@ -96,7 +96,7 @@ This plugin bundles a stdio MCP server in `mcp/solidworks-docs-mcp.mjs` using th
 Use the MCP tools when the host exposes them:
 
 - `status` — verify the bundle version, extracted files, assemblies, types, members, examples, and guides.
-- `search` — full-text search IDs, prose, signatures, parameter metadata, examples, and guide content. Restrict with `scope`, `assembly`, `kind`, or `language`.
+- `search` — full-text search IDs, prose, signatures, parameter metadata, examples, and guide content. Omit `scope` to search all API and companion-documentation records; restrict with `scope`, `assembly`, `kind`, or `language`. API hits include grounded documentation fields and example links; example hits preview only the first 50 content lines.
 - `glob` — browse virtual paths such as `types/IModelDoc2/**`, `enums/swEndConditions_e`, `examples/**`, and `guides/**`.
 - `list_assemblies`, `list_types`, `list_enums`, `list_members`, and `list_examples` — discover API surface without reading the whole archive.
 - `get_type`, `get_enum`, `get_member`, `get_example`, and `get_guide` — retrieve complete grounded content; pass `includeRawXml` only when the XMLDoc representation itself matters.

@@ -24,6 +24,7 @@ for (let index = 0; index < CRC32_TABLE.length; index += 1) {
 const KIND_BY_PREFIX = { T: "type", M: "method", P: "property", F: "field", E: "event" };
 
 const TOOL_LIMIT_SCHEMA = { type: "integer", minimum: 1, maximum: MAX_LIMIT, default: DEFAULT_LIMIT };
+const TOOL_MEMBER_LIMIT_SCHEMA = { type: "integer", minimum: 1, maximum: MAX_LIMIT };
 const TOOL_OFFSET_SCHEMA = { type: "integer", minimum: 0, default: 0 };
 
 function objectSchema(properties, required = []) {
@@ -31,19 +32,19 @@ function objectSchema(properties, required = []) {
 }
 
 export const TOOL_DEFINITIONS = [
-  { name: "status", description: "Show the cached SolidWorks XMLDoc bundle, release, extracted files, and indexed counts. Downloads the latest release when no usable cache exists.", inputSchema: objectSchema({}) },
+  { name: "status", description: "Show the cached SolidWorks XMLDoc bundle version, release, extracted files, and indexed counts. Downloads the latest release when no usable cache exists.", inputSchema: objectSchema({}) },
   { name: "refresh", description: "Fetch the latest SolidWorks.Interop.xmldoc.zip release asset, replace the cache, unpack it, and rebuild the semantic index.", inputSchema: objectSchema({}) },
   { name: "glob", description: "Match virtual documentation paths with a glob pattern. Paths include types/, members/, examples/, guides/, and files/ entries.", inputSchema: objectSchema({ pattern: { type: "string", minLength: 1 }, caseSensitive: { type: "boolean", default: false }, limit: TOOL_LIMIT_SCHEMA }, ["pattern"]) },
-  { name: "search", description: "Full-text search the SolidWorks XMLDoc bundle, including signatures, member documentation, embedded and catalog examples, and programming guides.", inputSchema: objectSchema({ query: { type: "string", minLength: 1 }, caseSensitive: { type: "boolean", default: false }, scope: { type: "string", enum: ["all", "types", "members", "examples", "guides", "files"], default: "all" }, assembly: { type: "string" }, kind: { type: "string", enum: ["type", "enum", "method", "property", "field", "event", "member"] }, language: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }, ["query"]) },
+  { name: "search", description: "Search every indexed documentation field, including descriptions, remarks, signatures, return types, parameters, examples, and guides. Scope is optional and defaults to all; API results include grounded details and example links, while example results include the first 50 content lines.", inputSchema: objectSchema({ query: { type: "string", minLength: 1 }, caseSensitive: { type: "boolean", default: false }, scope: { type: "string", enum: ["all", "types", "members", "examples", "guides", "files"] }, assembly: { type: "string" }, kind: { type: "string", enum: ["type", "enum", "method", "property", "field", "event", "member"] }, language: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }, ["query"]) },
   { name: "list_assemblies", description: "List the SolidWorks interop assemblies and the number of indexed types and members in each.", inputSchema: objectSchema({}) },
   { name: "list_types", description: "List indexed API types by name, assembly, or enum/type kind.", inputSchema: objectSchema({ query: { type: "string" }, assembly: { type: "string" }, kind: { type: "string", enum: ["all", "type", "enum"], default: "all" }, limit: TOOL_LIMIT_SCHEMA }) },
-  { name: "get_type", description: "Fetch one API type, including documentation, member summaries, signatures, example links, and optional raw XML. Use memberOffset with memberLimit to page through large types.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, assembly: { type: "string" }, includeMembers: { type: "boolean", default: true }, memberLimit: TOOL_LIMIT_SCHEMA, memberOffset: TOOL_OFFSET_SCHEMA, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
+  { name: "get_type", description: "Fetch one API type with all members by default. Every member includes documentation, remarks, signatures, return types, parameters, and example links; pass memberOffset/memberLimit only when pagination is explicitly needed.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, assembly: { type: "string" }, includeMembers: { type: "boolean", default: true }, memberLimit: TOOL_MEMBER_LIMIT_SCHEMA, memberOffset: TOOL_OFFSET_SCHEMA, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
   { name: "list_members", description: "List methods, properties, fields, events, and other members belonging to a type. Use offset with limit to page through large types.", inputSchema: objectSchema({ type: { type: "string", minLength: 1 }, assembly: { type: "string" }, query: { type: "string" }, kind: { type: "string", enum: ["all", "method", "property", "field", "event", "member"], default: "all" }, limit: TOOL_LIMIT_SCHEMA, offset: TOOL_OFFSET_SCHEMA }, ["type"]) },
   { name: "get_member", description: "Fetch one API member by XMLDoc ID, full name, short name, or type/member name. Returns full documentation, parameters, signatures, examples, and optional raw XML.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, type: { type: "string" }, assembly: { type: "string" }, kind: { type: "string", enum: ["all", "method", "property", "field", "event", "member"], default: "all" }, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
-  { name: "list_enums", description: "List enum types and their member counts. Use get_enum with memberOffset and memberLimit to page through all enum values.", inputSchema: objectSchema({ query: { type: "string" }, assembly: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }) },
-  { name: "get_enum", description: "Fetch an enum type and its documented values, including integer/value descriptions when present. Use memberOffset with memberLimit to page through large enums.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, assembly: { type: "string" }, memberLimit: TOOL_LIMIT_SCHEMA, memberOffset: TOOL_OFFSET_SCHEMA, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
+  { name: "list_enums", description: "List enum types and their member counts. Use get_enum with memberOffset and memberLimit to page through large enum lists.", inputSchema: objectSchema({ query: { type: "string" }, assembly: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }) },
+  { name: "get_enum", description: "Fetch an enum and all documented values by default. Each value includes its enum code, description, signature, return type when available, and example links; pass memberOffset/memberLimit only when pagination is explicitly needed.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, assembly: { type: "string" }, memberLimit: TOOL_MEMBER_LIMIT_SCHEMA, memberOffset: TOOL_OFFSET_SCHEMA, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
   { name: "list_examples", description: "List multilingual SolidWorks examples from the companion catalog or embedded member documentation, optionally filtered by member, language, or text.", inputSchema: objectSchema({ query: { type: "string" }, member: { type: "string" }, language: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }) },
-  { name: "get_example", description: "Fetch a complete example by catalog ID, source path, title, or virtual examples/ path.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
+  { name: "get_example", description: "Fetch a complete example by catalog ID, source path, title, or virtual examples/ path. Unlike search previews, this returns the full example content.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
   { name: "list_guides", description: "List programming and how-to guide pages embedded in the companion guide catalog.", inputSchema: objectSchema({ query: { type: "string" }, root: { type: "string" }, limit: TOOL_LIMIT_SCHEMA }) },
   { name: "get_guide", description: "Fetch a complete Markdown programming or how-to guide by guide ID, source path, or title.", inputSchema: objectSchema({ name: { type: "string", minLength: 1 }, includeRawXml: { type: "boolean", default: false } }, ["name"]) },
 ];
@@ -123,6 +124,11 @@ function parseExamples(inner, ownerId, assembly) {
     return { id, title: element.attributes["sw:title"] ?? element.attributes.title ?? id, language: element.attributes["sw:language"] ?? element.attributes.language ?? "Unknown", source: source || null, content: contentElement ? rawContentText(contentElement.inner) : rawContentText(element.inner), memberIds: [ownerId], memberKeys: [memberKey(assembly, ownerId)], rawXml: element.raw, embedded: true };
   });
 }
+function parseEnumCode(summary) {
+  const token = String(summary ?? "").trim().match(/^([+-]?(?:0x[0-9a-f]+|\d+(?:\.\d+)?))(?=\s*(?:;|=|\bor\b|$))/i)?.[1];
+  if (!token) return null;
+  return /^[-+]?0x/i.test(token) ? Number.parseInt(token, 16) : Number(token);
+}
 function parseMember(element, assembly, sourceFile) {
   const id = element.attributes.name ?? "";
   const separator = id.indexOf(":");
@@ -130,8 +136,8 @@ function parseMember(element, assembly, sourceFile) {
   const fullName = separator > 0 ? id.slice(separator + 1) : id;
   const kind = KIND_BY_PREFIX[prefix] ?? "member";
   const summary = elementText(element.inner, "summary");
-  const enumValueText = summary?.match(/^[-+]?\d+(?:\.\d+)?(?=\s*(?:;|$))/)?.[0] ?? null;
-  return { id, prefix, kind, fullName, shortName: shortReference(fullName), assembly, sourceFile, summary, enumValue: enumValueText === null ? null : Number(enumValueText), remarks: elementText(element.inner, "remarks"), returns: elementText(element.inner, "returns"), value: elementText(element.inner, "value"), availability: elementText(element.inner, "availability"), parameters: parseParameters(element.inner, "param"), typeParameters: parseParameters(element.inner, "typeparam"), exceptions: collectElements(element.inner, "exception").map((exception) => ({ cref: exception.attributes.cref ?? null, description: textFromXml(exception.inner) })), seeAlso: [...collectElements(element.inner, "seealso"), ...collectSelfClosingElements(element.inner, "seealso")].map((reference) => ({ cref: reference.attributes.cref ?? null, href: reference.attributes.href ?? null, text: textFromXml(reference.inner) })), signature: parseSignature(element.inner), exampleRefs: parseExampleRefs(element.inner), examples: parseExamples(element.inner, id, assembly), typeFullName: kind === "type" ? fullName : containingType(fullName), rawXml: element.raw, searchText: textFromXml(element.raw, true) };
+  const value = elementText(element.inner, "value");
+  return { id, prefix, kind, fullName, shortName: shortReference(fullName), assembly, sourceFile, summary, enumValue: parseEnumCode(summary) ?? parseEnumCode(value), remarks: elementText(element.inner, "remarks"), returns: elementText(element.inner, "returns"), value, availability: elementText(element.inner, "availability"), parameters: parseParameters(element.inner, "param"), typeParameters: parseParameters(element.inner, "typeparam"), exceptions: collectElements(element.inner, "exception").map((exception) => ({ cref: exception.attributes.cref ?? null, description: textFromXml(exception.inner) })), seeAlso: [...collectElements(element.inner, "seealso"), ...collectSelfClosingElements(element.inner, "seealso")].map((reference) => ({ cref: reference.attributes.cref ?? null, href: reference.attributes.href ?? null, text: textFromXml(reference.inner) })), signature: parseSignature(element.inner), exampleRefs: parseExampleRefs(element.inner), examples: parseExamples(element.inner, id, assembly), typeFullName: kind === "type" ? fullName : containingType(fullName), rawXml: element.raw, searchText: textFromXml(element.raw, true) };
 }
 function containingType(fullName) { const withoutParameters = String(fullName ?? "").split("(")[0]; const separator = withoutParameters.lastIndexOf("."); return separator > 0 ? withoutParameters.slice(0, separator) : null; }
 function isTypeRecord(member) { return member.prefix === "T"; }
@@ -263,15 +269,49 @@ function globToRegExp(pattern, caseSensitive = false) {
 }
 function memberPath(member) { const typeName = member.typeFullName?.split(".").at(-1) ?? "global"; return `members/${member.assembly}/${typeName}/${member.shortName}`; }
 function typePath(type) { return `${type.isEnum ? "enums" : "types"}/${type.assembly}/${type.shortName}`; }
-function memberSummary(member) { return { id: member.id, name: member.shortName, fullName: member.fullName, kind: member.kind, assembly: member.assembly, type: member.typeFullName, summary: member.summary, enumValue: member.enumValue, value: member.value, remarks: member.remarks, signature: member.signature, examples: member.exampleIds ?? [], path: memberPath(member) }; }
-function expandedMember(member, includeRawXml) {
-  const result = { ...memberSummary(member), remarks: member.remarks, returns: member.returns, value: member.value, availability: member.availability, parameters: member.parameters, typeParameters: member.typeParameters, exceptions: member.exceptions, seeAlso: member.seeAlso, exampleRefs: member.exampleRefs };
+function signatureDetails(signature) { return signature ? { ...signature, returnType: signature.returnType ?? null } : null; }
+function exampleLinks(state, ids = [], refs = []) {
+  const links = [];
+  const seen = new Set();
+  const add = (id, fallback = {}) => {
+    const normalized = normalizePath(id).replace(/^\/+/, "");
+    if (!normalized || seen.has(normalized.toLowerCase())) return;
+    seen.add(normalized.toLowerCase());
+    const example = state?.examplesById.get(normalized.toLowerCase());
+    links.push(example
+      ? { id: example.id, title: example.title, language: example.language, source: example.source, path: `examples/${example.id}` }
+      : { id: normalized, title: fallback.title ?? normalized, language: fallback.language ?? null, source: fallback.source ?? null, path: `examples/${normalized}` });
+  };
+  for (const id of ids) add(id);
+  for (const reference of refs) add(reference.id, reference);
+  return links;
+}
+function memberSummary(member, state) {
+  const signature = signatureDetails(member.signature);
+  const examples = exampleLinks(state, member.exampleIds, member.exampleRefs);
+  return { id: member.id, name: member.shortName, fullName: member.fullName, kind: member.kind, assembly: member.assembly, type: member.typeFullName, description: member.summary, summary: member.summary, enumValue: member.enumValue, enumCode: member.enumValue, value: member.value, availability: member.availability, remarks: member.remarks, returns: member.returns, returnType: signature?.returnType ?? null, signature, parameters: member.parameters, typeParameters: member.typeParameters, exceptions: member.exceptions, seeAlso: member.seeAlso, examples, exampleIds: member.exampleIds ?? [], exampleRefs: member.exampleRefs, path: memberPath(member) };
+}
+function expandedMember(member, includeRawXml, state) {
+  const result = { ...memberSummary(member, state) };
   if (includeRawXml) result.rawXml = member.rawXml;
   return result;
 }
-function typeSummary(type) { return { id: type.id, name: type.shortName, fullName: type.fullName, kind: type.kind, assembly: type.assembly, summary: type.summary, signature: type.signature, memberCount: type.memberCount ?? 0, examples: type.exampleIds ?? [], path: typePath(type) }; }
+function typeSummary(type, state) {
+  const signature = signatureDetails(type.signature);
+  const examples = exampleLinks(state, type.exampleIds, type.exampleRefs);
+  return { id: type.id, name: type.shortName, fullName: type.fullName, kind: type.kind, assembly: type.assembly, description: type.summary, summary: type.summary, remarks: type.remarks, returns: type.returns, value: type.value, availability: type.availability, returnType: signature?.returnType ?? null, signature, parameters: type.parameters, typeParameters: type.typeParameters, exceptions: type.exceptions, seeAlso: type.seeAlso, memberCount: type.memberCount ?? 0, examples, exampleIds: type.exampleIds ?? [], exampleRefs: type.exampleRefs, path: typePath(type) };
+}
 function exampleSummary(example) { return { id: example.id, title: example.title, language: example.language, source: example.source, members: example.memberIds, path: `examples/${example.id}` }; }
 function guideSummary(guide) { return { id: guide.id, title: guide.title, source: guide.source, root: guide.root, format: guide.format, path: `guides/${guide.id}` }; }
+function firstLines(value, limit = 50) {
+  const lines = String(value ?? "").split(/\r?\n/);
+  return { content: lines.slice(0, limit).join("\n"), contentLineCount: Math.min(lines.length, limit), totalLineCount: lines.length, contentTruncated: lines.length > limit };
+}
+function searchResultDetails(state, record, description = record.summary) {
+  const signature = signatureDetails(record.signature);
+  const examples = exampleLinks(state, record.exampleIds, record.exampleRefs);
+  return { description: description ?? null, summary: record.summary ?? null, type: record.typeFullName ?? null, enumValue: record.enumValue ?? null, enumCode: record.enumValue ?? null, value: record.value ?? null, availability: record.availability ?? null, signature, returnType: signature?.returnType ?? null, parameters: record.parameters ?? [], typeParameters: record.typeParameters ?? [], exceptions: record.exceptions ?? [], seeAlso: record.seeAlso ?? [], remarks: record.remarks ?? null, returns: record.returns ?? null, memberCount: record.memberCount ?? null, examples, exampleIds: record.exampleIds ?? [], exampleRefs: record.exampleRefs ?? [] };
+}
 function matchesText(value, query, caseSensitive = false) { const left = String(value ?? ""); const right = String(query ?? ""); return caseSensitive ? left.includes(right) : left.toLowerCase().includes(right.toLowerCase()); }
 function matchesAssembly(value, assembly, caseSensitive = false) { return !assembly || (caseSensitive ? String(value ?? "") === String(assembly) : String(value ?? "").toLowerCase() === String(assembly).toLowerCase()); }
 function snippet(text, query, radius = 180, caseSensitive = false) { const source = String(text ?? "").replace(/\s+/g, " ").trim(); const haystack = caseSensitive ? source : source.toLowerCase(); const needle = caseSensitive ? String(query) : String(query).toLowerCase(); const index = haystack.indexOf(needle); if (index < 0) return source.slice(0, radius * 2); const start = Math.max(0, index - radius); const end = Math.min(source.length, index + String(query).length + radius); return `${start > 0 ? "…" : ""}${source.slice(start, end)}${end < source.length ? "…" : ""}`; }
@@ -285,18 +325,21 @@ function exampleMatchesAssembly(state, example, assembly, caseSensitive = false)
   });
   return example.memberIds.some((memberId) => (state.membersByXmlId.get(memberId) ?? []).some((member) => matchesAssembly(member.assembly, assembly, caseSensitive)));
 }
+function exampleSearchText(example) { return searchText([example.id, example.title, example.language, example.source, example.memberIds, example.memberKeys, example.content, example.rawXml]); }
+function guideSearchText(guide) { return searchText([guide.id, guide.title, guide.source, guide.root, guide.format, guide.content, guide.rawXml]); }
 function memberSearchText(member, state) {
   const signature = member.signature ?? {};
   const signatureParameters = (signature.parameters ?? []).flatMap((parameter) => [parameter.name, parameter.type, parameter.direction]);
-  const documentationParameters = (member.parameters ?? []).flatMap((parameter) => [parameter.name, parameter.description]);
+  const documentationParameters = [...(member.parameters ?? []), ...(member.typeParameters ?? [])].flatMap((parameter) => [parameter.name, parameter.description]);
   const references = [...(member.exampleRefs ?? []).flatMap((reference) => [reference.id, reference.language, reference.source]), ...(member.seeAlso ?? []).flatMap((reference) => [reference.cref, reference.href, reference.text]), ...(member.exceptions ?? []).flatMap((exception) => [exception.cref, exception.description])];
-  const examples = [...(member.examples ?? []), ...linkedExamples(state, member.exampleIds)].flatMap((example) => [example.id, example.title, example.language, example.source, example.content]);
-  return searchText([member.searchText, member.id, member.fullName, member.shortName, member.summary, member.remarks, member.returns, member.value, member.availability, signature.kind, signature.display, signature.returnType, signatureParameters, documentationParameters, references, examples]);
+  const examples = [...(member.examples ?? []), ...linkedExamples(state, member.exampleIds)].flatMap((example) => [example.id, example.title, example.language, example.source, example.content, example.rawXml]);
+  return searchText([member.searchText, member.id, member.prefix, member.fullName, member.shortName, member.assembly, member.sourceFile, member.typeFullName, member.kind, member.summary, member.remarks, member.returns, member.value, member.availability, member.enumValue, signature.kind, signature.display, signature.returnType, signatureParameters, documentationParameters, references, examples]);
 }
 function typeSearchText(type, state) {
   const signature = type.signature ?? {};
-  const examples = linkedExamples(state, type.exampleIds).flatMap((example) => [example.id, example.title, example.language, example.source, example.content]);
-  return searchText([type.searchText, type.id, type.fullName, type.shortName, type.summary, type.remarks, type.returns, type.value, type.availability, signature.kind, signature.display, signature.returnType, type.seeAlso?.flatMap((reference) => [reference.cref, reference.href, reference.text]), examples]);
+  const examples = linkedExamples(state, type.exampleIds).flatMap((example) => [example.id, example.title, example.language, example.source, example.content, example.rawXml]);
+  const references = [...(type.exampleRefs ?? []).flatMap((reference) => [reference.id, reference.language, reference.source]), ...(type.seeAlso ?? []).flatMap((reference) => [reference.cref, reference.href, reference.text])];
+  return searchText([type.searchText, type.id, type.fullName, type.shortName, type.assembly, type.sourceFile, type.kind, type.isEnum, type.memberIds, type.memberKeys, type.summary, type.remarks, type.returns, type.value, type.availability, signature.kind, signature.display, signature.returnType, references, examples]);
 }
 function matchesTypeQualifier(member, query) {
   if (!query) return true;
@@ -342,8 +385,23 @@ function resolveMembers(state, name, options = {}) {
 }
 function resolveExample(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^examples\//i, ""); const exact = state.examples.filter((example) => [example.id, example.source ?? ""].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.examples.filter((example) => matchesText(example.id, query) || matchesText(example.title, query)); }
 function resolveGuide(state, name) { const query = normalizePath(String(name ?? "").trim()).replace(/^guides\//i, ""); const exact = state.guides.filter((guide) => [guide.id, guide.source ?? ""].some((value) => value.toLowerCase() === query.toLowerCase())); if (exact.length) return exact; return state.guides.filter((guide) => matchesText(guide.id, query) || matchesText(guide.title, query)); }
-function expandedType(state, type, options) { const result = { ...typeSummary(type), remarks: type.remarks, returns: type.returns, value: type.value, availability: type.availability, parameters: type.parameters, typeParameters: type.typeParameters, exceptions: type.exceptions, seeAlso: type.seeAlso, exampleRefs: type.exampleRefs }; if (options.includeMembers !== false) { const limit = clampLimit(options.memberLimit, MAX_LIMIT); const offset = clampOffset(options.memberOffset); const allMembers = (type.memberKeys ?? []).map((key) => state.membersById.get(key)).filter(Boolean); const members = allMembers.slice(offset, offset + limit); result.members = members.map(memberSummary); result.memberOffset = offset; result.memberLimit = limit; result.membersTotal = allMembers.length; result.membersShown = members.length; result.membersTruncated = offset + members.length < allMembers.length; } if (options.includeRawXml) result.rawXml = type.rawXml; return result; }
-function searchState(state, options) {
+function expandedType(state, type, options = {}) {
+  const result = { ...typeSummary(type, state), remarks: type.remarks, returns: type.returns, value: type.value, availability: type.availability, parameters: type.parameters, typeParameters: type.typeParameters, exceptions: type.exceptions, seeAlso: type.seeAlso, exampleRefs: type.exampleRefs };
+  if (options.includeRawXml === true) result.rawXml = type.rawXml;
+  if (options.includeMembers === false) return result;
+  const allMembers = (type.memberKeys ?? []).map((key) => state.membersById.get(key)).filter(Boolean);
+  const paginated = options.memberLimit !== undefined || options.memberOffset !== undefined;
+  const offset = clampOffset(options.memberOffset);
+  const limit = paginated ? clampLimit(options.memberLimit, MAX_LIMIT) : allMembers.length;
+  const members = paginated ? allMembers.slice(offset, offset + limit) : allMembers.slice(offset);
+  result.members = members.map((member) => expandedMember(member, false, state));
+  result.memberOffset = offset;
+  result.memberLimit = limit;
+  result.membersTotal = allMembers.length;
+  result.membersTruncated = offset + members.length < allMembers.length;
+  return result;
+}
+function searchState(state, options = {}) {
   const query = String(options.query ?? "").trim();
   const scope = options.scope ?? "all";
   const limit = clampLimit(options.limit);
@@ -359,32 +417,35 @@ function searchState(state, options) {
     if (results.length >= limit) break;
     if (!matchesAssembly(type.assembly, options.assembly, caseSensitive)) continue;
     if (options.kind && type.kind !== options.kind) continue;
-    add(type.kind, type.fullName, () => typeSearchText(type, state), typePath(type), { id: type.id, assembly: type.assembly });
+    add(type.kind, type.fullName, () => typeSearchText(type, state), typePath(type), { id: type.id, assembly: type.assembly, ...searchResultDetails(state, type) });
   }
   if (scope === "all" || scope === "members") for (const member of state.members) {
     if (results.length >= limit) break;
     if (isTypeRecord(member)) continue;
     if (!matchesAssembly(member.assembly, options.assembly, caseSensitive)) continue;
     if (options.kind && options.kind !== "member" && member.kind !== options.kind) continue;
-    add(member.kind, member.fullName, () => memberSearchText(member, state), memberPath(member), { id: member.id, assembly: member.assembly, type: member.typeFullName });
+    add(member.kind, member.fullName, () => memberSearchText(member, state), memberPath(member), { id: member.id, assembly: member.assembly, type: member.typeFullName, ...searchResultDetails(state, member) });
   }
   if (!options.kind && (scope === "all" || scope === "examples")) for (const example of state.examples) {
-    if (results.length >= limit) break;
     if (!exampleMatchesAssembly(state, example, options.assembly, caseSensitive)) continue;
     if (options.language && !matchesText(example.language, options.language, caseSensitive)) continue;
-    add("example", example.title, () => `${example.id} ${example.title} ${example.language} ${example.source ?? ""} ${example.memberIds.join(" ")} ${example.content}`, `examples/${example.id}`, { id: example.id, language: example.language, members: example.memberIds });
+    const preview = firstLines(example.content);
+    add("example", example.title, () => exampleSearchText(example), `examples/${example.id}`, { id: example.id, language: example.language, members: example.memberIds, ...searchResultDetails(state, example, example.title), ...preview });
   }
   if (!options.kind && (scope === "all" || scope === "guides")) for (const guide of state.guides) {
     if (results.length >= limit) break;
-    add("guide", guide.title, () => `${guide.id} ${guide.title} ${guide.content}`, `guides/${guide.id}`, { id: guide.id, root: guide.root });
+    add("guide", guide.title, () => guideSearchText(guide), `guides/${guide.id}`, { id: guide.id, root: guide.root, ...searchResultDetails(state, guide, guide.title) });
   }
   if (!options.kind && scope === "files") for (const [file, content] of state.rawFiles) {
     if (results.length >= limit) break;
-    add("file", file, content, `files/${file}`, { id: file });
+    add("file", file, () => `${file} ${content}`, `files/${file}`, { id: file, ...searchResultDetails(state, {}) });
   }
   return { query, scope, caseSensitive, count: results.length, results };
 }
-function statusFromState(state) { const assemblies = [...state.assemblies.values()].map((assembly) => ({ name: assembly.name, sourceFiles: assembly.sourceFiles, types: state.types.filter((type) => type.assembly === assembly.name).length, members: state.members.filter((member) => member.assembly === assembly.name && !isTypeRecord(member)).length })); return { ...state.metadata, extractedFiles: state.files, counts: { assemblies: assemblies.length, types: state.types.length, enums: state.types.filter((type) => type.isEnum).length, members: state.members.filter((member) => !isTypeRecord(member)).length, examples: state.examples.length, guides: state.guides.length }, assemblies }; }
+function statusFromState(state) {
+  const assemblies = [...state.assemblies.values()].map((assembly) => ({ name: assembly.name, sourceFiles: assembly.sourceFiles, types: state.types.filter((type) => type.assembly === assembly.name).length, members: state.members.filter((member) => member.assembly === assembly.name && !isTypeRecord(member)).length }));
+  return { ...state.metadata, bundleVersion: state.metadata.bundleVersion ?? state.metadata.tag ?? "unknown", extractedFiles: state.files, counts: { assemblies: assemblies.length, types: state.types.length, enums: state.types.filter((type) => type.isEnum).length, members: state.members.filter((member) => !isTypeRecord(member)).length, examples: state.examples.length, guides: state.guides.length }, assemblies };
+}
 function safeCacheRoot(env = process.env) { if (env.SOLIDWORKS_DOCS_CACHE_DIR) return resolve(env.SOLIDWORKS_DOCS_CACHE_DIR); if (env.CLAUDE_PLUGIN_DATA) return join(resolve(env.CLAUDE_PLUGIN_DATA), "solidworks-docs"); if (env.XDG_CACHE_HOME) return join(resolve(env.XDG_CACHE_HOME), "developing-solidworks"); if (process.platform === "win32" && env.LOCALAPPDATA) return join(resolve(env.LOCALAPPDATA), "developing-solidworks"); return join(homedir(), ".cache", "developing-solidworks"); }
 async function pathExists(path) { try { await fs.access(path); return true; } catch { return false; } }
 async function readJson(path) { try { return JSON.parse(await fs.readFile(path, "utf8")); } catch { return null; } }
@@ -526,7 +587,7 @@ export class SolidWorksDocs {
       const digest = sha256(buffer);
       const extractedDir = join(this.cacheDir, "extracted", `local-${digest.slice(0, 16)}`);
       if (!force && existing?.source === "local" && existing.digest === digest && await pathExists(extractedDir)) return existing;
-      await this.replaceBundle({ buffer, metadata: { source: "local", sourcePath, repository: REPOSITORY, tag: "local", assetName: basename(sourcePath), assetUrl: null, digest }, extractedDir, metadataPath });
+      await this.replaceBundle({ buffer, metadata: { source: "local", sourcePath, repository: REPOSITORY, tag: "local", bundleVersion: this.env.SOLIDWORKS_DOCS_BUNDLE_VERSION ?? "local", assetName: basename(sourcePath), assetUrl: null, digest }, extractedDir, metadataPath });
       return readJson(metadataPath);
     }
     let release;
@@ -562,7 +623,7 @@ export class SolidWorksDocs {
     const actualDigest = sha256(buffer);
     if (digest && digest !== actualDigest) throw new Error(`SolidWorks XMLDoc bundle checksum mismatch: expected ${digest}, got ${actualDigest}`);
     const extractedDir = releaseCacheDirectory(this.cacheDir, tag, actualDigest);
-    await this.replaceBundle({ buffer, metadata: { source: "release", sourcePath: null, repository: REPOSITORY, tag, assetName: asset.name, assetUrl: asset.browser_download_url, digest: actualDigest, releaseUrl: release.html_url ?? null }, extractedDir, metadataPath });
+    await this.replaceBundle({ buffer, metadata: { source: "release", sourcePath: null, repository: REPOSITORY, tag, bundleVersion: tag, assetName: asset.name, assetUrl: asset.browser_download_url, digest: actualDigest, releaseUrl: release.html_url ?? null }, extractedDir, metadataPath });
     return readJson(metadataPath);
   }
   async replaceBundle({ buffer, metadata, extractedDir, metadataPath }) {
@@ -592,12 +653,23 @@ export class SolidWorksDocs {
   async glob(pattern, limit, caseSensitive = false) { const state = await this.ensure(false); const regex = globToRegExp(pattern, caseSensitive); const matches = state.virtualEntries.flatMap((entry) => { const matchedPath = [entry.path, ...(entry.aliases ?? [])].find((path) => regex.test(path)); if (!matchedPath) return []; const { aliases: _aliases, ...result } = entry; return [{ ...result, matchedPath }]; }).slice(0, clampLimit(limit)); return { pattern: normalizePath(pattern), caseSensitive, count: matches.length, matches }; }
   async search(options) { return searchState(await this.ensure(false), options); }
   async listAssemblies() { const state = await this.ensure(false); return { count: state.assemblies.size, assemblies: [...state.assemblies.values()].map((assembly) => ({ name: assembly.name, sourceFiles: assembly.sourceFiles, types: state.types.filter((type) => type.assembly === assembly.name).length, members: state.members.filter((member) => member.assembly === assembly.name && !isTypeRecord(member)).length })).sort((left, right) => left.name.localeCompare(right.name)) }; }
-  async listTypes(options = {}) { const state = await this.ensure(false); const query = options.query?.trim(); const kind = options.kind ?? "all"; const types = state.types.filter((type) => matchesAssembly(type.assembly, options.assembly) && (kind === "all" || type.kind === kind) && (!query || matchesText(`${type.fullName} ${type.summary}`, query))).slice(0, clampLimit(options.limit)); return { count: types.length, types: types.map(typeSummary) }; }
-  async getType(options) { const state = await this.ensure(false); const matches = resolveType(state, options.name, options.assembly); if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(typeSummary) }; return { found: true, type: expandedType(state, matches[0], options) }; }
+  async listTypes(options = {}) {
+    const state = await this.ensure(false);
+    const query = options.query?.trim();
+    const kind = options.kind ?? "all";
+    const types = state.types.filter((type) => matchesAssembly(type.assembly, options.assembly) && (kind === "all" || type.kind === kind) && (!query || matchesText(`${type.fullName} ${type.summary}`, query))).slice(0, clampLimit(options.limit));
+    return { count: types.length, types: types.map((type) => typeSummary(type, state)) };
+  }
+  async getType(options) {
+    const state = await this.ensure(false);
+    const matches = resolveType(state, options.name, options.assembly);
+    if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map((type) => typeSummary(type, state)) };
+    return { found: true, type: expandedType(state, matches[0], options) };
+  }
   async listMembers(options) {
     const state = await this.ensure(false);
     const types = resolveType(state, options.type, options.assembly);
-    if (types.length !== 1) return { found: false, matchCount: types.length, types: types.slice(0, MAX_LIMIT).map(typeSummary) };
+    if (types.length !== 1) return { found: false, matchCount: types.length, types: types.slice(0, MAX_LIMIT).map((type) => typeSummary(type, state)) };
     const type = types[0];
     const query = options.query?.trim();
     const kind = options.kind ?? "all";
@@ -606,13 +678,37 @@ export class SolidWorksDocs {
     const allMembers = state.membersByTypeKey.get(typeKey(type.assembly, type.fullName)) ?? [];
     const filteredMembers = allMembers.filter((member) => (kind === "all" || member.kind === kind) && (!query || matchesText(`${member.fullName} ${member.summary} ${member.signature?.display}`, query)));
     const members = filteredMembers.slice(offset, offset + limit);
-    return { found: true, type: typeSummary(type), count: members.length, total: filteredMembers.length, offset, limit, truncated: offset + members.length < filteredMembers.length, members: members.map(memberSummary) };
+    return { found: true, type: typeSummary(type, state), count: members.length, total: filteredMembers.length, offset, limit, truncated: offset + members.length < filteredMembers.length, members: members.map((member) => memberSummary(member, state)) };
   }
-  async getMember(options) { const state = await this.ensure(false); const matches = resolveMembers(state, options.name, options); if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(memberSummary) }; return { found: true, member: expandedMember(matches[0], options.includeRawXml === true) }; }
+  async getMember(options) {
+    const state = await this.ensure(false);
+    const matches = resolveMembers(state, options.name, options);
+    if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map((member) => memberSummary(member, state)) };
+    return { found: true, member: expandedMember(matches[0], options.includeRawXml === true, state) };
+  }
   async listEnums(options = {}) { return this.listTypes({ ...options, kind: "enum" }); }
-  async getEnum(options) { const result = await this.getType({ ...options, includeMembers: true }); if (!result.found) return result; if (result.type.kind === "enum") return result; return { found: false, matchCount: 0, matches: [] }; }
-  async listExamples(options = {}) { const state = await this.ensure(false); const query = options.query?.trim(); const member = options.member?.trim(); const examples = state.examples.filter((example) => (!query || matchesText(`${example.id} ${example.title} ${example.language} ${example.content}`, query)) && (!options.language || matchesText(example.language, options.language)) && (!member || example.memberIds.some((id) => matchesText(id, member)))).slice(0, clampLimit(options.limit)); return { count: examples.length, examples: examples.map(exampleSummary) }; }
-  async getExample(options) { const state = await this.ensure(false); const matches = resolveExample(state, options.name); if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(exampleSummary) }; const example = matches[0]; const result = { ...exampleSummary(example), content: example.content }; if (options.includeRawXml === true) result.rawXml = example.rawXml; return { found: true, example: result }; }
+  async getEnum(options) {
+    const result = await this.getType({ ...options, includeMembers: true });
+    if (!result.found) return result;
+    if (result.type.kind === "enum") return result;
+    return { found: false, matchCount: 0, matches: [] };
+  }
+  async listExamples(options = {}) {
+    const state = await this.ensure(false);
+    const query = options.query?.trim();
+    const member = options.member?.trim();
+    const examples = state.examples.filter((example) => (!query || matchesText(`${example.id} ${example.title} ${example.language} ${example.content}`, query)) && (!options.language || matchesText(example.language, options.language)) && (!member || example.memberIds.some((id) => matchesText(id, member)))).slice(0, clampLimit(options.limit));
+    return { count: examples.length, examples: examples.map(exampleSummary) };
+  }
+  async getExample(options) {
+    const state = await this.ensure(false);
+    const matches = resolveExample(state, options.name);
+    if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(exampleSummary) };
+    const example = matches[0];
+    const result = { ...exampleSummary(example), content: example.content };
+    if (options.includeRawXml === true) result.rawXml = example.rawXml;
+    return { found: true, example: result };
+  }
   async listGuides(options = {}) { const state = await this.ensure(false); const query = options.query?.trim(); const guides = state.guides.filter((guide) => (!query || matchesText(`${guide.id} ${guide.title} ${guide.content}`, query)) && (!options.root || guide.root?.toLowerCase() === options.root.toLowerCase())).slice(0, clampLimit(options.limit)); return { count: guides.length, guides: guides.map(guideSummary) }; }
   async getGuide(options) { const state = await this.ensure(false); const matches = resolveGuide(state, options.name); if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map(guideSummary) }; const guide = matches[0]; const result = { ...guideSummary(guide), content: guide.content }; if (options.includeRawXml === true) result.rawXml = guide.rawXml; return { found: true, guide: result }; }
 }
