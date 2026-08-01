@@ -2,7 +2,7 @@
   "mcpServers": {
     "solidworks-docs": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/solidworks-docs-mcp.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/solidworks-docs-launcher.mjs"]
     }
   }
 }

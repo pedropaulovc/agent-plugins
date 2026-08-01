@@ -3,6 +3,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { deflateRawSync } from "node:zlib";
 import {
   SolidWorksDocs,
   TOOL_DEFINITIONS,
@@ -13,22 +14,34 @@ import {
 } from "../plugins/developing-solidworks/mcp/solidworks-docs.mjs";
 
 const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
-
+const CRC32_TABLE = new Uint32Array(256);
+for (let index = 0; index < CRC32_TABLE.length; index += 1) {
+  let value = index;
+  for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+  CRC32_TABLE[index] = value >>> 0;
+}
+function crc32(buffer) {
+  let value = 0xffffffff;
+  for (const byte of buffer) value = CRC32_TABLE[(value ^ byte) & 0xff] ^ (value >>> 8);
+  return (value ^ 0xffffffff) >>> 0;
+}
 function zip(entries) {
   const localParts = [];
   const centralParts = [];
   let offset = 0;
-  for (const [name, value] of entries) {
+  for (const [name, value, method = 0] of entries) {
     const nameBuffer = Buffer.from(name);
-    const data = Buffer.from(value);
+    const content = Buffer.from(value);
+    const data = method === 8 ? deflateRawSync(content) : content;
+    const checksum = crc32(content);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
     local.writeUInt16LE(0, 6);
-    local.writeUInt16LE(0, 8);
-    local.writeUInt32LE(0, 14);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(checksum, 14);
     local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
+    local.writeUInt32LE(content.length, 22);
     local.writeUInt16LE(nameBuffer.length, 26);
     local.writeUInt16LE(0, 28);
     localParts.push(Buffer.concat([local, nameBuffer, data]));
@@ -38,10 +51,10 @@ function zip(entries) {
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
     central.writeUInt16LE(0, 8);
-    central.writeUInt16LE(0, 10);
-    central.writeUInt32LE(0, 16);
+    central.writeUInt16LE(method, 10);
+    central.writeUInt32LE(checksum, 16);
     central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(data.length, 24);
+    central.writeUInt32LE(content.length, 24);
     central.writeUInt16LE(nameBuffer.length, 28);
     central.writeUInt16LE(0, 30);
     central.writeUInt16LE(0, 32);
@@ -94,6 +107,26 @@ function qualifiedFixtureEntries() {
   ];
 }
 
+function duplicateAssemblyFixtureEntries() {
+  const assemblyXml = (assembly, marker) => `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>${assembly}</name></assembly><members>
+<member name="T:Shared.Widget"><summary>${marker} widget</summary><sw:signature kind="type" display="class Widget" /></member>
+<member name="M:Shared.Widget.DoThing"><summary>${marker} method</summary><sw:signature kind="method" display="void DoThing()" /></member>
+</members></doc>`;
+  const duplicateMemberXml = `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Assembly.A</name></assembly><members>
+<member name="M:Shared.Widget.DoThing"><sw:example sw:language="C#" sw:source="/Examples/Embedded.htm" sw:title="Embedded">Intro <code><![CDATA[embedded <tag> example]]></code> outro</sw:example></member>
+</members></doc>`;
+  return [
+    ["Assembly.A.xml", assemblyXml("Assembly.A", "A")],
+    ["Assembly.B.xml", assemblyXml("Assembly.B", "B")],
+    ["Assembly.A.duplicate.xml", duplicateMemberXml],
+  ];
+}
+
+function paginationFixtureEntries() {
+  const members = Array.from({ length: 3 }, (_, index) => `<member name="F:Page.Widget.Field${index + 1}"><summary>Field ${index + 1}</summary></member>`).join("");
+  return [["Page.xml", `<doc xmlns:sw="${XML_NAMESPACE}"><assembly><name>Page</name></assembly><members><member name="T:Page.Widget"><summary>Page widget</summary></member>${members}</members></doc>`]];
+}
+
 test("indexes XMLDoc members, signatures, enum values, examples, guides, and globs", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-docs-test-"));
   const bundle = path.join(root, "fixture.xmldoc.zip");
@@ -140,6 +173,10 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     const search = await docs.search({ query: "DoThing", scope: "members", caseSensitive: true });
     assert.equal(search.caseSensitive, true);
     assert.equal(search.count, 1);
+    const kindSearch = await docs.search({ query: "Do", kind: "method", scope: "all", limit: 20 });
+    assert.ok(kindSearch.results.length > 0);
+    assert.ok(kindSearch.results.every((result) => result.kind === "method"));
+    assert.equal((await docs.search({ query: "Do", kind: "method", scope: "examples" })).count, 0);
 
     const dispatched = await dispatchTool(docs, "list_types", { query: "Widget" });
     assert.equal(dispatched.count, 1);
@@ -168,6 +205,52 @@ test("preserves qualified lookup paths and filters example searches by assembly"
   }
 });
 
+test("keeps XMLDoc identities assembly-scoped and indexes duplicate embedded examples", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-identity-test-"));
+  const bundle = path.join(root, "fixture.xmldoc.zip");
+  await writeFile(bundle, zip(duplicateAssemblyFixtureEntries()));
+  const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
+
+  try {
+    const assemblyA = await docs.getType({ name: "types/Assembly.A/Widget" });
+    const assemblyB = await docs.getType({ name: "types/Assembly.B/Widget" });
+    assert.equal(assemblyA.found, true);
+    assert.equal(assemblyB.found, true);
+    assert.equal(assemblyA.type.assembly, "Assembly.A");
+    assert.equal(assemblyB.type.assembly, "Assembly.B");
+    assert.equal((await docs.listMembers({ type: "types/Assembly.A/Widget" })).members[0].assembly, "Assembly.A");
+    assert.equal((await docs.getMember({ name: "members/Assembly.B/Widget/DoThing" })).member.assembly, "Assembly.B");
+    const example = await docs.getExample({ name: "Examples/Embedded.htm" });
+    assert.equal(example.found, true);
+    assert.match(example.example.content, /^Intro embedded <tag> example outro$/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("pages type members and list-member results", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-pagination-test-"));
+  const bundle = path.join(root, "fixture.xmldoc.zip");
+  await writeFile(bundle, zip(paginationFixtureEntries()));
+  const docs = new SolidWorksDocs({ bundlePath: bundle, cacheDir: path.join(root, "cache") });
+
+  try {
+    const type = await docs.getType({ name: "Page.Widget", memberOffset: 1, memberLimit: 1 });
+    assert.equal(type.found, true);
+    assert.equal(type.type.memberOffset, 1);
+    assert.equal(type.type.membersTotal, 3);
+    assert.deepEqual(type.type.members.map((member) => member.name), ["Field2"]);
+    assert.equal(type.type.membersTruncated, true);
+    const members = await docs.listMembers({ type: "Page.Widget", offset: 2, limit: 1 });
+    assert.equal(members.total, 3);
+    assert.equal(members.offset, 2);
+    assert.deepEqual(members.members.map((member) => member.name), ["Field3"]);
+    assert.equal(members.truncated, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("selects the canonical release asset and rejects unsafe ZIP paths", async () => {
   assert.equal(selectReleaseAsset([
     { name: "notes.txt" },
@@ -178,6 +261,26 @@ test("selects the canonical release asset and rejects unsafe ZIP paths", async (
   const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-zip-test-"));
   try {
     await assert.rejects(unpackZip(zip([["../escape.txt", "no"]]), path.join(root, "out")), /Unsafe ZIP entry path/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects ZIP CRC mismatches, unsafe directories, and bounded deflate expansion", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-zip-integrity-test-"));
+  try {
+    const crcCorrupt = zip([["ok.txt", "content"]]);
+    const centralOffset = crcCorrupt.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    crcCorrupt.writeUInt32LE(0, centralOffset + 16);
+    await assert.rejects(unpackZip(crcCorrupt, path.join(root, "crc")), /ZIP CRC mismatch/);
+
+    const unsafeDirectory = zip([["../", ""]]);
+    await assert.rejects(unpackZip(unsafeDirectory, path.join(root, "directory")), /Unsafe ZIP entry path/);
+
+    const deflateExpansion = zip([["bomb.txt", "x".repeat(1024), 8]]);
+    const deflateCentralOffset = deflateExpansion.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
+    deflateExpansion.writeUInt32LE(1, deflateCentralOffset + 24);
+    await assert.rejects(unpackZip(deflateExpansion, path.join(root, "deflate")), /larger than the maximum buffer size|Cannot create a buffer larger|output/i);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -217,6 +320,41 @@ test("downloads a release asset once and reuses the extracted cache", async () =
     });
     assert.equal((await offlineDocs.status()).counts.guides, 1);
     await assert.rejects(offlineDocs.refresh(), /Unable to fetch SolidWorks XMLDoc release metadata/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects a release asset whose digest does not match", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-digest-test-"));
+  const bundle = zip(fixtureEntries());
+  const releaseApi = "https://release.test/latest";
+  const fetchImpl = async (url) => url === releaseApi
+    ? { ok: true, json: async () => ({ tag_name: "v-bad", assets: [{ name: "SolidWorks.Interop.xmldoc.v-bad.zip", browser_download_url: "https://release.test/bundle.zip", digest: `sha256:${"0".repeat(64)}` }] }) }
+    : { ok: true, arrayBuffer: async () => bundle };
+  try {
+    const docs = new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl });
+    await assert.rejects(docs.status(), /checksum mismatch/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("sets abort timeouts on release metadata and asset requests", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "solidworks-timeout-test-"));
+  const bundle = zip(fixtureEntries());
+  const releaseApi = "https://release.test/latest";
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    requests.push({ url, options });
+    return url === releaseApi
+      ? { ok: true, json: async () => ({ tag_name: "v-timeout", assets: [{ name: "SolidWorks.Interop.xmldoc.v-timeout.zip", browser_download_url: "https://release.test/bundle.zip" }] }) }
+      : { ok: true, arrayBuffer: async () => bundle };
+  };
+  try {
+    await new SolidWorksDocs({ cacheDir: path.join(root, "cache"), releaseApi, fetchImpl }).status();
+    assert.equal(requests.length, 2);
+    assert.ok(requests.every(({ options }) => options.signal instanceof AbortSignal));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -304,4 +442,6 @@ test("publishes the complete documented MCP tool set", () => {
     "get_type", "list_members", "get_member", "list_enums", "get_enum",
     "list_examples", "get_example", "list_guides", "get_guide",
   ]);
+  const listMembers = TOOL_DEFINITIONS.find((tool) => tool.name === "list_members");
+  assert.deepEqual(listMembers.inputSchema.properties.assembly, { type: "string" });
 });
