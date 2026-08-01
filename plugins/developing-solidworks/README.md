@@ -11,6 +11,7 @@ Auto-activates whenever you're touching `.cs` / `.csproj` files that reference t
 - Code-quality rules tuned for SolidWorks: named parameters, null-check discipline, enum/interface casting patterns
 - A `learnings/` directory with documented fixes for real problems (`FeatureCut4` returning null, extrusion failures, faulty-geometry detection, broken-mate detection via `GetWhatsWrong`)
 - A `scripts/find_api_redist.py` helper that locates the latest installed `SolidWorks.Interop.*` redistributable folder
+- A bundled `solidworks-docs` MCP server with cached XMLDoc search, type/member/enum lookup, multilingual examples, and guide retrieval
 
 ## Slash commands
 
@@ -25,6 +26,7 @@ The doc tree (`types/`, `enums/`, `docs/`, `examples/`, `index/`) is excluded fr
 - SolidWorks installed locally (the helper script searches the standard install paths)
 - .NET Framework (the SolidWorks SDK is .NET Framework only — not .NET Core/5+)
 - `dotnet` on `PATH` for the run-before-claiming-success workflow
+- Node.js 18+ for the bundled `@modelcontextprotocol/sdk` stdio server
 
 ## Source
 

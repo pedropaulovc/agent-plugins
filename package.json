@@ -13,6 +13,7 @@
     "test:usage": "node --test tests/record-memory-usage.test.mjs"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@modelcontextprotocol/sdk": "^1.30.0"
   }
 }

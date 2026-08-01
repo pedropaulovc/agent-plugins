@@ -1,7 +1,11 @@
 {
   "name": "@pedropaulovc/developing-solidworks",
-  "version": "0.8.9",
+  "version": "0.9.7",
   "description": "SolidWorks API development skills for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/developing-solidworks.js"
+  "main": ".opencode/plugins/developing-solidworks.js",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
 }
