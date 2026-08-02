@@ -1,0 +1,17 @@
+{
+  "name": "@pedropaulovc/omp-persist-system-prompt",
+  "version": "0.1.0",
+  "description": "Persist effective OMP system prompts in session transcripts",
+  "type": "module",
+  "keywords": [
+    "omp",
+    "pi-package",
+    "system-prompt",
+    "session"
+  ],
+  "omp": {
+    "extensions": [
+      "./extensions/persist-system-prompt.ts"
+    ]
+  }
+}

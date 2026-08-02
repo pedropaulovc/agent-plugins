@@ -73,6 +73,10 @@
     {
       "name": "onepassword",
       "source": "./plugins/onepassword"
+    },
+    {
+      "name": "omp-persist-system-prompt",
+      "source": "./plugins/omp-persist-system-prompt"
     }
   ]
 }
