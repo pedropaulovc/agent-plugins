@@ -26,16 +26,15 @@ contain no repository commands; `reset.py` is the only reset implementation.
 
 - `--force` discards tracked, untracked, ignored, and repository-wide stashed changes
   without confirmation.
-- `--clean` removes exactly the reviewed untracked paths supplied with `--clean-path`.
-- `--clean-path PATH` names one reviewed untracked path; repeat it once per path with
-  `--clean`.
+- `--confirm` removes the reviewed untracked files after the user approves the list
+  reported by the normal safety phase.
 - `--all` also updates every other linked worktree.
 - An optional folder name selects the branch associated with the current worktree; resetting
   that folder-named branch additionally requires `--force`.
 
 Forward every argument supplied to `/reset` or `$reset` to the script unchanged. If the
 normal safety phase reports untracked files, preserve all original arguments and append
-`--clean` plus one `--clean-path PATH` for each path the user approved.
+`--confirm` after the user approves the reported list.
 
 ## Run
 

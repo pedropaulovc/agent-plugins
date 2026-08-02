@@ -249,25 +249,19 @@ def prepare_worktree(worktree: Path, args: argparse.Namespace) -> None:
         print("\n".join(tracked), file=sys.stderr)
         raise ResetBlocked("preserve tracked changes outside this worktree, or use --force")
 
-    if untracked and not args.clean:
+    if untracked and not args.confirm:
         print("Reset stopped: the worktree has untracked files:", file=sys.stderr)
         print("\n".join(untracked), file=sys.stderr)
-        paths = " ".join(f"--clean-path {untracked_path(entry)!r}" for entry in untracked)
-        raise ResetBlocked(f"review them, then rerun with --clean {paths} or --force")
+        raise ResetBlocked("review them, then rerun with --confirm or --force")
 
     if untracked:
-        reviewed = set(args.clean_path)
-        current = {untracked_path(entry) for entry in untracked}
-        if reviewed != current:
-            missing = sorted(current - reviewed)
-            extra = sorted(reviewed - current)
-            details = []
-            if missing:
-                details.append(f"unreviewed files: {', '.join(missing)}")
-            if extra:
-                details.append(f"no longer untracked: {', '.join(extra)}")
-            raise ResetBlocked("reviewed paths changed; " + "; ".join(details))
-        git("clean", "-df", "--", *args.clean_path, cwd=worktree)
+        git(
+            "clean",
+            "-df",
+            "--",
+            *(untracked_path(entry) for entry in untracked),
+            cwd=worktree,
+        )
 
     stashes = stash_entries(worktree)
     if stashes:
@@ -356,15 +350,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--all", action="store_true", help="update all linked worktrees")
     parser.add_argument(
-        "--clean",
+        "--confirm",
         action="store_true",
-        help="remove exactly the reviewed paths supplied with --clean-path",
-    )
-    parser.add_argument(
-        "--clean-path",
-        action="append",
-        default=[],
-        help="reviewed untracked path to remove; repeat once per path with --clean",
+        help="remove reviewed untracked files after explicit confirmation",
     )
     parser.add_argument(
         "--force",

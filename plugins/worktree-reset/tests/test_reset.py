@@ -164,30 +164,26 @@ esac
         self.assertIn("uncommitted changes", result.stderr)
         self.assertNotIn("git fetch --prune", self.log.read_text())
 
-    def test_requires_clean_for_untracked_files(self) -> None:
+    def test_requires_confirmation_for_untracked_files(self) -> None:
         result = self.run_script(extra_env={"STATUS_OUTPUT": "?? disposable.txt"})
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("untracked files", result.stderr)
-        self.assertIn("--clean-path", result.stderr)
+        self.assertIn("--confirm", result.stderr)
         self.assertNotIn("git fetch --prune", self.log.read_text())
 
-    def test_clean_removes_reviewed_untracked_files(self) -> None:
+    def test_confirm_removes_reviewed_untracked_files(self) -> None:
         result = self.run_script(
-            "--clean",
-            "--clean-path",
-            "disposable.txt",
+            "--confirm",
             extra_env={"STATUS_OUTPUT": "?? disposable.txt"},
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("git clean -df -- disposable.txt", self.log.read_text())
 
-    def test_clean_still_blocks_tracked_changes(self) -> None:
+    def test_confirm_still_blocks_tracked_changes(self) -> None:
         result = self.run_script(
-            "--clean",
-            "--clean-path",
-            "tracked.txt",
+            "--confirm",
             extra_env={"STATUS_OUTPUT": " M tracked.txt"},
         )
 

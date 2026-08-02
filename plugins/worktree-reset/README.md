@@ -7,7 +7,8 @@ implementation owns the complete repository flow and dependency installation.
 
 Arguments:
 
-- `--clean` removes exactly the reviewed paths supplied with repeated `--clean-path` options.
+- `--confirm` removes the reviewed untracked files after the user approves the safety
+  report.
 - `--force` discards tracked, untracked, ignored, and repository-wide stashed changes
   without confirmation.
 - `--all` also updates every linked worktree.
