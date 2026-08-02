@@ -101,13 +101,18 @@ test("reuses a persisted prompt after extension reload", async () => {
 		{
 			type: "custom",
 			customType: "omp-system-prompt",
+			data: { systemPrompt: ["base"] },
+		},
+		{
+			type: "custom",
+			customType: "omp-system-prompt",
 			data: { systemPrompt: ["base", "tool instructions"] },
 		},
 	];
 
 	await agentStart(
 		{ type: "agent_start" },
-		context(["base", "tool instructions"], entries, "session-2"),
+		context(["base"], entries, "session-2"),
 	);
 
 	assert.deepEqual(appends, []);

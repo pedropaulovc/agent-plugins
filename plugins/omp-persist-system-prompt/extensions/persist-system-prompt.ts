@@ -21,8 +21,7 @@ export default function persistSystemPrompt(api: ExtensionAPI): void {
 		const sessionId = ctx.sessionManager.getSessionId();
 		if (sessionId === cachedSessionId && samePrompt(cachedSystemPrompt, systemPrompt)) return;
 
-		const previousPrompt = findLatestPrompt(ctx.sessionManager.getBranch());
-		if (samePrompt(previousPrompt, systemPrompt)) {
+		if (hasPersistedPrompt(ctx.sessionManager.getBranch(), systemPrompt)) {
 			cachedSessionId = sessionId;
 			cachedSystemPrompt = [...systemPrompt];
 			return;
@@ -35,7 +34,7 @@ export default function persistSystemPrompt(api: ExtensionAPI): void {
 	});
 }
 
-function findLatestPrompt(entries: readonly unknown[]): unknown {
+function hasPersistedPrompt(entries: readonly unknown[], current: readonly string[]): boolean {
 	for (let index = entries.length - 1; index >= 0; index -= 1) {
 		const entry = entries[index];
 		if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
@@ -45,10 +44,10 @@ function findLatestPrompt(entries: readonly unknown[]): unknown {
 		const data = entry.data;
 		if (typeof data !== "object" || data === null || Array.isArray(data)) continue;
 		if (!("systemPrompt" in data) || !Array.isArray(data.systemPrompt)) continue;
-		return data.systemPrompt;
+		if (samePrompt(data.systemPrompt, current)) return true;
 	}
 
-	return undefined;
+	return false;
 }
 
 function samePrompt(previous: unknown, current: readonly string[]): boolean {
