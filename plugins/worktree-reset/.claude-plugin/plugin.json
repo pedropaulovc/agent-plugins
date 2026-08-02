@@ -1,7 +1,7 @@
 {
   "name": "worktree-reset",
   "description": "Skill (/reset) that tears down harness agent state, protects normal worktrees, resets the current worktree to origin/main, and reinstalls dependencies. Supports --clean, --force, and --all.",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

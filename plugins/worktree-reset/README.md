@@ -1,13 +1,15 @@
 # worktree-reset plugin
 
-Provides the explicit `/reset` skill (`$reset` in Codex). Harness-specific agent-state
-teardown lives in sibling instruction files; the shared `reset.py` implementation owns
-the complete repository flow and dependency installation.
+Provides the explicit `/reset` skill (`$reset` in Codex). This is a breaking rename from
+the former `/m` and `$m` entry points; no compatibility alias remains. Harness-specific
+agent-state teardown lives in sibling instruction files, and the shared `reset.py`
+implementation owns the complete repository flow and dependency installation.
 
 Arguments:
 
-- `--clean` removes reviewed untracked files while preserving ignored files.
-- `--force` discards tracked, untracked, ignored, and stashed changes without confirmation.
+- `--clean` removes exactly the reviewed paths supplied with repeated `--clean-path` options.
+- `--force` discards tracked, untracked, ignored, and repository-wide stashed changes
+  without confirmation.
 - `--all` also updates every linked worktree.
 
 The script handles stale locks, unfinished operations, safety checks, remote

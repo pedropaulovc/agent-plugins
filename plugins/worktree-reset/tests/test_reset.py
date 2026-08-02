@@ -63,21 +63,23 @@ class WorktreeResetTests(unittest.TestCase):
         return f'''#!/bin/sh
 printf 'git %s [cwd=%s]\\n' "$*" "$PWD" >> "$COMMAND_LOG"
 case "$*" in
-  'status --porcelain=v1 --untracked-files=all')
+  'status --porcelain=v1 --untracked-files=all -z')
     if [ -n "${{STATUS_OUTPUT:-}}" ]; then printf '%s\\n' "$STATUS_OUTPUT"; fi
     ;;
   'stash list')
     if [ -n "${{STASH_OUTPUT:-}}" ]; then printf '%s\\n' "$STASH_OUTPUT"; fi
     ;;
   'branch -vv')
-    printf '%s\\n' '  stale abc123 [origin/stale: gone] {COMMIT_SUBJECT}' '  C:/src/codjiflo abc [origin/keep: gone]'
+    printf '%s\\n' '  stale abc123 [origin/stale: gone] {COMMIT_SUBJECT}' '  +linked abc [origin/linked: gone]'
     ;;
-  'show-ref --verify --quiet refs/heads/feature') exit 0 ;;
+  'show-ref --verify --quiet refs/heads/feature'|'show-ref --verify --quiet refs/heads/feature-link') exit 0 ;;
   'worktree list --porcelain')
     printf 'worktree {self.repo}\\nHEAD one\\nbranch refs/heads/main\\n\\nworktree {self.linked}\\nHEAD two\\nbranch refs/heads/feature\\n'
     ;;
   'branch --show-current') printf '{CURRENT_BRANCH}\\n' ;;
-  'rebase origin/main') exit 1 ;;
+  'rebase origin/main')
+    if [ "${{REBASE_STATUS:-1}}" -ne 0 ]; then exit 1; fi
+    ;;
 esac
 '''
 
@@ -117,6 +119,7 @@ esac
         self.assertIn("git fetch --prune", log)
         self.assertIn("git worktree prune", log)
         self.assertIn("git branch -D stale", log)
+        self.assertIn("git branch -D linked", log)
         self.assertIn("git checkout main", log)
         self.assertIn("git reset --hard origin/main", log)
         self.assertIn("npm install", log)
@@ -125,10 +128,10 @@ esac
         alias = self.root / "feature-link"
         alias.symlink_to(self.repo, target_is_directory=True)
 
-        result = self.run_script(cwd=alias)
+        result = self.run_script("--force", cwd=alias)
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"git checkout feature-link [cwd={alias}]", self.log.read_text())
+        self.assertIn(f"git checkout -f feature-link [cwd={alias}]", self.log.read_text())
 
     def test_ignores_a_stale_inherited_pwd(self) -> None:
         result = self.run_script(cwd=self.repo, pwd=self.root)
@@ -136,11 +139,11 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn(f"git checkout {self.root.name}", self.log.read_text())
 
-    def test_all_updates_linked_worktrees_and_aborts_failed_rebases(self) -> None:
-        result = self.run_script("--all", "feature")
+    def test_all_updates_linked_worktrees_and_reports_failed_rebases(self) -> None:
+        result = self.run_script("--all", "feature", extra_env={"REBASE_STATUS": "1"})
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("=== All worktrees updated ===", result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("=== Worktrees failed ===", result.stderr)
         log = self.log.read_text()
         self.assertIn(f"git rebase origin/main [cwd={self.linked}]", log)
         self.assertIn(f"git rebase --abort [cwd={self.linked}]", log)
@@ -148,7 +151,7 @@ esac
         self.assertIn("uv sync --locked", log)
 
     def test_non_ascii_git_output_survives_a_locale_codepage(self) -> None:
-        result = self.run_script("--all", "feature", locale_codepage=True)
+        result = self.run_script("--all", "feature", locale_codepage=True, extra_env={"REBASE_STATUS": "0"})
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("git branch -D stale", self.log.read_text())
@@ -166,13 +169,32 @@ esac
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("untracked files", result.stderr)
+        self.assertIn("--clean-path", result.stderr)
         self.assertNotIn("git fetch --prune", self.log.read_text())
 
     def test_clean_removes_reviewed_untracked_files(self) -> None:
-        result = self.run_script("--clean", extra_env={"STATUS_OUTPUT": "?? disposable.txt"})
+        result = self.run_script(
+            "--clean",
+            "--clean-path",
+            "disposable.txt",
+            extra_env={"STATUS_OUTPUT": "?? disposable.txt"},
+        )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("git clean -df .", self.log.read_text())
+        self.assertIn("git clean -df -- disposable.txt", self.log.read_text())
+
+    def test_clean_still_blocks_tracked_changes(self) -> None:
+        result = self.run_script(
+            "--clean",
+            "--clean-path",
+            "tracked.txt",
+            extra_env={"STATUS_OUTPUT": " M tracked.txt"},
+        )
+
+        self.assertEqual(result.returncode, 2)
+        log = self.log.read_text()
+        self.assertNotIn("git clean -df", log)
+        self.assertNotIn("git fetch --prune", log)
 
     def test_force_discards_all_changes_and_stashes(self) -> None:
         result = self.run_script(
