@@ -9,9 +9,9 @@ export const WorktreeResetPlugin = async () => ({
     config.skills.paths ??= [];
     if (!config.skills.paths.includes(skillsDir)) config.skills.paths.push(skillsDir);
     config.command ??= {};
-    config.command.m ??= {
+    config.command.reset ??= {
       description: "Reset the current worktree to origin/main",
-      template: "Load the `m` skill and follow it exactly. Arguments: $ARGUMENTS",
+      template: "Load the `reset` skill and follow it exactly. Arguments: $ARGUMENTS",
     };
   },
 });

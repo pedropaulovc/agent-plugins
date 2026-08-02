@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Behavior tests for the Python worktree-reset helper."""
 
 from __future__ import annotations
@@ -12,12 +12,18 @@ import tempfile
 import unittest
 
 
-SCRIPT = Path(__file__).parents[1] / "skills" / "m" / "m.py"
+SCRIPT = Path(__file__).parents[1] / "skills" / "reset" / "reset.py"
 
 # Pins the interpreter to its locale codepage — cp1252 on a stock Windows box, ASCII
 # under LC_ALL=C elsewhere — which is what made git's UTF-8 output undecodable in
 # issue #67. Without PYTHONUTF8=0, a UTF-8-mode default would hide the bug.
-LOCALE_CODEPAGE = {"PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0", "PYTHONIOENCODING": "", "LC_ALL": "C", "LANG": "C"}
+LOCALE_CODEPAGE = {
+    "PYTHONUTF8": "0",
+    "PYTHONCOERCECLOCALE": "0",
+    "PYTHONIOENCODING": "",
+    "LC_ALL": "C",
+    "LANG": "C",
+}
 
 # Commit subjects reach the script through `git branch -vv`, so any emoji in someone's
 # history lands in captured output; the ZWJ here encodes the byte cp1252 has no mapping for.
@@ -57,6 +63,12 @@ class WorktreeResetTests(unittest.TestCase):
         return f'''#!/bin/sh
 printf 'git %s [cwd=%s]\\n' "$*" "$PWD" >> "$COMMAND_LOG"
 case "$*" in
+  'status --porcelain=v1 --untracked-files=all')
+    if [ -n "${{STATUS_OUTPUT:-}}" ]; then printf '%s\\n' "$STATUS_OUTPUT"; fi
+    ;;
+  'stash list')
+    if [ -n "${{STASH_OUTPUT:-}}" ]; then printf '%s\\n' "$STASH_OUTPUT"; fi
+    ;;
   'branch -vv')
     printf '%s\\n' '  stale abc123 [origin/stale: gone] {COMMIT_SUBJECT}' '  C:/src/codjiflo abc [origin/keep: gone]'
     ;;
@@ -69,13 +81,22 @@ case "$*" in
 esac
 '''
 
-    def run_script(self, *args: str, cwd: Path | None = None, pwd: Path | None = None, locale_codepage: bool = False) -> subprocess.CompletedProcess[str]:
+    def run_script(
+        self,
+        *args: str,
+        cwd: Path | None = None,
+        pwd: Path | None = None,
+        locale_codepage: bool = False,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment.update({"PATH": f"{self.bin}:{os.environ['PATH']}", "COMMAND_LOG": str(self.log)})
-        working_directory = cwd or self.repo
-        environment["PWD"] = str(pwd or working_directory)
+        environment["PWD"] = str(pwd or cwd or self.repo)
         if locale_codepage:
             environment.update(LOCALE_CODEPAGE)
+        if extra_env:
+            environment.update(extra_env)
+        working_directory = cwd or self.repo
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             cwd=working_directory,
@@ -94,6 +115,7 @@ esac
         self.assertIn("=== Current worktree updated ===", result.stdout)
         log = self.log.read_text()
         self.assertIn("git fetch --prune", log)
+        self.assertIn("git worktree prune", log)
         self.assertIn("git branch -D stale", log)
         self.assertIn("git checkout main", log)
         self.assertIn("git reset --hard origin/main", log)
@@ -125,15 +147,44 @@ esac
         self.assertIn("go mod download", log)
         self.assertIn("uv sync --locked", log)
 
-
     def test_non_ascii_git_output_survives_a_locale_codepage(self) -> None:
-        # git speaks UTF-8; before issue #67 the capture decoded it with the console
-        # codepage, so an emoji in a commit subject aborted the reset before it began.
         result = self.run_script("--all", "feature", locale_codepage=True)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("git branch -D stale", self.log.read_text())
         self.assertIn(f"Rebasing {CURRENT_BRANCH} onto origin/main", result.stdout)
+
+    def test_blocks_tracked_changes_without_force(self) -> None:
+        result = self.run_script(extra_env={"STATUS_OUTPUT": " M tracked.txt"})
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("uncommitted changes", result.stderr)
+        self.assertNotIn("git fetch --prune", self.log.read_text())
+
+    def test_requires_clean_for_untracked_files(self) -> None:
+        result = self.run_script(extra_env={"STATUS_OUTPUT": "?? disposable.txt"})
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("untracked files", result.stderr)
+        self.assertNotIn("git fetch --prune", self.log.read_text())
+
+    def test_clean_removes_reviewed_untracked_files(self) -> None:
+        result = self.run_script("--clean", extra_env={"STATUS_OUTPUT": "?? disposable.txt"})
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("git clean -df .", self.log.read_text())
+
+    def test_force_discards_all_changes_and_stashes(self) -> None:
+        result = self.run_script(
+            "--force",
+            extra_env={"STATUS_OUTPUT": " M tracked.txt\n?? disposable.txt", "STASH_OUTPUT": "stash@{0}: WIP"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn("git clean -fdx .", log)
+        self.assertIn("git stash clear", log)
+        self.assertIn("git checkout -f main", log)
 
 
 if __name__ == "__main__":

@@ -63,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Test the worktree-reset helper
-        run: python3 plugins/worktree-reset/tests/test_m.py -v
+        run: python plugins/worktree-reset/tests/test_reset.py -v
 
   test-opencode:
     runs-on: ubuntu-latest
