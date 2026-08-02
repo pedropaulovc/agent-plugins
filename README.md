@@ -53,6 +53,11 @@ Rust `Stop` hook that detects when the agent dismisses findings as unrelated or 
 
 The only skill in this collection targeting the SolidWorks .NET COM API. Anti-hallucination guardrails tuned for the low-level surface: many SolidWorks methods take 10–30 positional `bool`/`int`/`double` parameters where a flipped bool silently changes behaviour, so the skill forces named arguments and grounded references to the offline API docs over guesswork. Also: documentation-first workflow, COM-interop code-quality patterns, real-bug learnings (`FeatureCut4` returning null, extrusion failures, faulty-geometry detection), and a `/download-solidworks-docs` command that pulls the offline API doc bundle into the skill folder.
 
+
+### [developing-solidworks-mcp](plugins/developing-solidworks-mcp)
+
+Standalone MCP server for grounded SolidWorks XMLDoc search, catalog browsing, and complete type, enum, example, and guide retrieval. Use it instead of `developing-solidworks` when structured documentation lookup is needed; do not install both.
+
 ### [alt-text](plugins/alt-text)
 
 Skill for writing social-media alt text that a screen reader user would actually want to hear. Pushes back on the default AI failure mode — exhaustive, forensic descriptions that read like a deposition — and instead frames every image around "what would the post lose if the image disappeared?". Bakes in platform-specific length budgets (Bluesky 2k, Mastodon 1.5k, X 1k, LinkedIn 120), forces transcription of any visible text (memes, tweet screenshots, chart labels), leads with the takeaway for charts, and avoids the common pitfalls of assigning identity from appearance and editorializing ("beautiful", "stunning").
@@ -82,6 +87,7 @@ Tuned to my own setup, tooling, workflow preferences, or niche — unlikely to a
 | [watch-pr](plugins/watch-pr) | Skill + Tool | `/watch-pr` — watches a PR's full lifecycle (CI, rebase, reviews, merge) and surfaces incoming feedback inline through Claude's Monitor or OpenCode's event-driven `promptAsync` bridge |
 | [command-chain-separator](plugins/command-chain-separator) | Hook | Injects a visible separator between Bash commands joined by `&&` or `;` so per-command output is easy to read |
 | [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks .NET COM API workflow with anti-hallucination guardrails |
+| [developing-solidworks-mcp](plugins/developing-solidworks-mcp) | MCP Server + Skill | Grounded SolidWorks XMLDoc search, catalog browsing, and complete record retrieval |
 | [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Entrepreneurship subset of gstack: idea validation, market research, strategy (no code) |
 | [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects to my Firecrawl + Browserbase MCPs |
 | [worktree-reset](plugins/worktree-reset) | Skill | `/m` — tears down agent state (tasks/timers/teammates/subagents/monitors/loops), resets the current worktree to `origin/main`, and syncs Node, Go, and Python dependencies |

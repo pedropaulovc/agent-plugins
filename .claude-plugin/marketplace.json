@@ -47,6 +47,10 @@
       "source": "./plugins/developing-solidworks"
     },
     {
+      "name": "developing-solidworks-mcp",
+      "source": "./plugins/developing-solidworks-mcp"
+    },
+    {
       "name": "no-fetch",
       "source": "./plugins/no-fetch"
     },
