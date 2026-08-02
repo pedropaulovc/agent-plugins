@@ -718,7 +718,7 @@ test("keeps the coding skill and XMLDoc MCP server in separate plugins", () => {
   const codingManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", codingRoot), "utf8"));
   const mcpManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", mcpRoot), "utf8"));
   assert.equal(codingManifest.name, "developing-solidworks");
-  assert.equal(codingManifest.version, "0.9.0");
+  assert.equal(codingManifest.version, "0.9.8");
   assert.equal(mcpManifest.name, "developing-solidworks-mcp");
   assert.equal(mcpManifest.version, "0.9.8");
   assert.equal(existsSync(new URL(".mcp.json", codingRoot)), false);
