@@ -16,6 +16,7 @@ import {
 } from "../plugins/developing-solidworks-mcp/mcp/solidworks-docs.mjs";
 import { reclaimStaleInstallLock } from "../plugins/developing-solidworks-mcp/mcp/solidworks-docs-launcher.mjs";
 import { SERVER_INSTRUCTIONS } from "../plugins/developing-solidworks-mcp/mcp/solidworks-docs-mcp.mjs";
+import { DevelopingSolidworksMcpPlugin } from "../plugins/developing-solidworks-mcp/.opencode/plugins/developing-solidworks-mcp.js";
 
 const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 const CRC32_TABLE = new Uint32Array(256);
@@ -191,6 +192,7 @@ test("indexes XMLDoc members, signatures, enum values, examples, guides, and glo
     assert.equal(enumResult.found, true);
     assert.equal((await docs.get({ kind: "enum", name: "Widget" })).found, false);
     assert.equal(enumResult.type.members[0].enumValue, 3);
+    assert.equal((await docs.get({ kind: "type", name: "Options_e" })).found, false);
 
     const example = await docs.get({ kind: "example", name: "examples/Examples/DoThing.htm" });
     assert.equal(example.found, true);
@@ -301,6 +303,8 @@ test("normalizes Windows and leading-slash catalog source paths", async () => {
     const guide = await docs.get({ kind: "guide", name: "guides/docs/Guide.md" });
     assert.equal(guide.found, true);
     assert.equal(guide.guide.id, "catalog/Guide.md");
+    const assemblyScopedGuides = await docs.search({ query: "Guide", kind: "guide", assembly: "SourcePaths" });
+    assert.equal(assemblyScopedGuides.count, 0);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -727,4 +731,15 @@ test("keeps the coding skill and XMLDoc MCP server in separate plugins", () => {
   assert.equal(mcpManifest.version, "0.9.8");
   assert.equal(existsSync(new URL(".mcp.json", codingRoot)), false);
   assert.equal(existsSync(new URL(".mcp.json", mcpRoot)), true);
+});
+
+test("registers MCP adapter for selective OpenCode installs", async () => {
+  const config = {};
+  const hooks = await DevelopingSolidworksMcpPlugin({ directory: process.cwd() });
+  await hooks.config(config);
+  assert.deepEqual(config.mcp["solidworks-docs"], {
+    type: "local",
+    command: ["node", path.resolve(process.cwd(), "plugins/developing-solidworks-mcp/mcp/solidworks-docs-launcher.mjs")],
+    enabled: true,
+  });
 });

@@ -10,7 +10,7 @@ const directory = process.cwd();
 const idleEvent = (sessionID) => ({ event: { type: "session.idle", properties: { sessionID } } });
 
 test("all plugins load and register expected config", async () => {
-  assert.equal(Object.keys(plugins).length, 16);
+  assert.equal(Object.keys(plugins).length, 15);
   const config = {};
   const client = {
     session: {
@@ -22,13 +22,7 @@ test("all plugins load and register expected config", async () => {
     const hooks = await plugin({ client, directory, worktree: directory });
     if (hooks.config) await hooks.config(config);
   }
-  assert.equal(config.skills.paths.length, 10);
-  assert.ok(config.skills.paths.some((skillPath) => skillPath.endsWith(path.join("developing-solidworks-mcp", "skills"))));
-  assert.deepEqual(config.mcp["solidworks-docs"], {
-    type: "local",
-    command: ["node", path.resolve(directory, "plugins/developing-solidworks-mcp/mcp/solidworks-docs-launcher.mjs")],
-    enabled: true,
-  });
+  assert.equal(config.skills.paths.length, 9);
   assert.equal(Object.keys(config.command).length, 12);
   assert.ok(config.command["alt-text"]);
   assert.ok(config.command.issue);

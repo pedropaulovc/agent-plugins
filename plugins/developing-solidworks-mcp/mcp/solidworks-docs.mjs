@@ -526,6 +526,7 @@ function searchState(state, options = {}) {
     });
   }
   if (include("guide")) for (const guide of state.guides) {
+    if (options.assembly) continue;
     add("guide", guide.title, () => guideSearchText(guide), `guides/${guide.id}`, { id: guide.id, root: guide.root, ...searchResultDetails(state, guide, guide.title) });
   }
   const results = matches.slice(offset, offset + limit);
@@ -794,7 +795,7 @@ export class SolidWorksDocs {
     if (kind === "type" || kind === "enum") {
       const matches = resolveType(state, options.name, options.assembly);
       if (matches.length !== 1) return { found: false, matchCount: matches.length, matches: matches.slice(0, MAX_LIMIT).map((type) => typeSummary(type, state)) };
-      if (kind === "enum" && matches[0].kind !== "enum") return { found: false, matchCount: 0, matches: [] };
+      if (matches[0].kind !== kind) return { found: false, matchCount: 0, matches: [] };
       const typeOptions = kind === "enum" ? { ...options, includeMembers: true } : options;
       return { found: true, type: expandedType(state, matches[0], typeOptions) };
     }
