@@ -1,6 +1,6 @@
 {
   "name": "developing-solidworks-mcp",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "description": "MCP server for grounded SolidWorks XMLDoc API search, catalog browsing, and complete type, enum, example, and guide retrieval.",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
