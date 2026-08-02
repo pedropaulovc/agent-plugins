@@ -40,6 +40,7 @@ class WorktreeResetTests(unittest.TestCase):
         self.repo.mkdir()
         self.linked.mkdir()
         self.bin.mkdir()
+        (self.repo / ".git").mkdir()
         (self.linked / ".git").touch()
         (self.repo / "package.json").write_text("{}")
         (self.linked / "go.mod").write_text("module example.com/feature\n")
@@ -64,7 +65,10 @@ class WorktreeResetTests(unittest.TestCase):
 printf 'git %s [cwd=%s]\\n' "$*" "$PWD" >> "$COMMAND_LOG"
 case "$*" in
   'status --porcelain=v1 --untracked-files=all -z')
-    if [ -n "${{STATUS_OUTPUT:-}}" ]; then printf '%s\\n' "$STATUS_OUTPUT"; fi
+    if [ -n "${{STATUS_OUTPUT_NUL:-}}" ]; then printf '%s\\0' "$STATUS_OUTPUT_NUL"; fi
+    if [ -n "${{STATUS_OUTPUT:-}}" ]; then
+      printf '%s\\n' "$STATUS_OUTPUT" | while IFS= read -r entry; do printf '%s\\0' "$entry"; done
+    fi
     ;;
   'stash list')
     if [ -n "${{STASH_OUTPUT:-}}" ]; then printf '%s\\n' "$STASH_OUTPUT"; fi
@@ -171,15 +175,44 @@ esac
         self.assertIn("untracked files", result.stderr)
         self.assertIn("--confirm", result.stderr)
         self.assertNotIn("git fetch --prune", self.log.read_text())
+        self.assertEqual(
+            (self.repo / ".git" / "worktree-reset-reviewed-paths").read_bytes(),
+            b"disposable.txt\0",
+        )
 
-    def test_confirm_removes_reviewed_untracked_files(self) -> None:
+    def test_confirm_removes_only_reviewed_untracked_files(self) -> None:
+        review = self.run_script(extra_env={"STATUS_OUTPUT": "?? disposable.txt"})
+        self.assertEqual(review.returncode, 2)
+
         result = self.run_script(
             "--confirm",
-            extra_env={"STATUS_OUTPUT": "?? disposable.txt"},
+            extra_env={"STATUS_OUTPUT": "?? created_after_review.txt"},
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("git clean -df -- disposable.txt", self.log.read_text())
+        log = self.log.read_text()
+        self.assertIn("git clean -df -- :(literal)disposable.txt", log)
+        self.assertNotIn("created_after_review.txt", log)
+        self.assertFalse((self.repo / ".git" / "worktree-reset-reviewed-paths").exists())
+
+    def test_confirm_uses_literal_pathspecs(self) -> None:
+        review = self.run_script(extra_env={"STATUS_OUTPUT_NUL": "?? *.tmp"})
+        self.assertEqual(review.returncode, 2)
+
+        result = self.run_script("--confirm")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("git clean -df -- :(literal)*.tmp", self.log.read_text())
+
+    def test_reviewed_snapshot_preserves_newlines(self) -> None:
+        reviewed_name = "line\nbreak.txt"
+        result = self.run_script(extra_env={"STATUS_OUTPUT_NUL": f"?? {reviewed_name}"})
+
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(
+            (self.repo / ".git" / "worktree-reset-reviewed-paths").read_bytes(),
+            reviewed_name.encode() + b"\0",
+        )
 
     def test_confirm_still_blocks_tracked_changes(self) -> None:
         result = self.run_script(

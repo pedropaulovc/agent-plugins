@@ -34,9 +34,10 @@ contain no repository commands; `reset.py` is the only reset implementation.
 - An optional folder name selects the branch associated with the current worktree; resetting
   that folder-named branch additionally requires `--force`.
 
-Forward every argument supplied to `/reset` or `$reset` to the script unchanged. If the
-normal safety phase reports untracked files, preserve all original arguments and append
-`--confirm` after the user approves the reported list.
+In normal mode, the script protects tracked changes and records the exact untracked-file
+snapshot before it reports the paths. Never run `--confirm` without explicit affirmative
+approval of that complete report. `--force` bypasses normal confirmation and discards the
+tracked, untracked, ignored, and stashed changes described above.
 
 ## Run
 

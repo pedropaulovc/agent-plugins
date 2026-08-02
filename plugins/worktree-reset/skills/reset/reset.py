@@ -14,6 +14,7 @@ import time
 
 COMMAND_TIMEOUT_SECONDS = 300
 LOCK_RECENCY_SECONDS = 30
+REVIEWED_PATHS_FILE = "worktree-reset-reviewed-paths"
 
 
 class ResetBlocked(RuntimeError):
@@ -29,11 +30,12 @@ def use_utf8_streams() -> None:
 
 
 def run(
-    *args: str,
+    *args: str | bytes,
     cwd: Path | None = None,
     capture_output: bool = False,
     check: bool = True,
     timeout: float | None = None,
+    text: bool = True,
 ) -> subprocess.CompletedProcess:
     # git speaks UTF-8, but text mode decodes captured output with the locale codepage —
     # cp1252 on a stock Windows box. `git branch -vv` carries commit subjects, so a
@@ -43,20 +45,21 @@ def run(
         args,
         cwd=cwd,
         check=check,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        text=text,
+        encoding="utf-8" if text else None,
+        errors="replace" if text else None,
         capture_output=capture_output,
         timeout=timeout,
     )
 
 
 def git(
-    *args: str,
+    *args: str | bytes,
     cwd: Path,
     capture_output: bool = False,
     check: bool = True,
     timeout: float | None = None,
+    text: bool = True,
 ) -> subprocess.CompletedProcess:
     return run(
         "git",
@@ -65,6 +68,7 @@ def git(
         capture_output=capture_output,
         check=check,
         timeout=timeout,
+        text=text,
     )
 
 
@@ -211,7 +215,7 @@ def abort_git_operations(worktree: Path) -> None:
         git(*operation, cwd=worktree, capture_output=True, check=False)
 
 
-def status_entries(worktree: Path) -> list[str]:
+def status_entries(worktree: Path) -> list[bytes]:
     result = git(
         "status",
         "--porcelain=v1",
@@ -219,8 +223,9 @@ def status_entries(worktree: Path) -> list[str]:
         "-z",
         cwd=worktree,
         capture_output=True,
+        text=False,
     )
-    return [entry for entry in result.stdout.replace("\0", "\n").splitlines() if entry]
+    return [entry for entry in result.stdout.split(b"\0") if entry]
 
 
 def stash_entries(worktree: Path) -> list[str]:
@@ -228,40 +233,76 @@ def stash_entries(worktree: Path) -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
-def untracked_path(entry: str) -> str:
+def untracked_path(entry: bytes) -> bytes:
     return entry[3:]
+
+
+def reviewed_paths_file(worktree: Path) -> Path:
+    return git_directory(worktree) / REVIEWED_PATHS_FILE
+
+
+def save_reviewed_paths(worktree: Path, paths: list[bytes]) -> None:
+    reviewed_paths_file(worktree).write_bytes(b"\0".join(paths) + b"\0")
+
+
+def load_reviewed_paths(worktree: Path) -> list[bytes]:
+    try:
+        snapshot = reviewed_paths_file(worktree).read_bytes()
+    except FileNotFoundError:
+        return []
+    return [path for path in snapshot.split(b"\0") if path]
+
+
+def clear_reviewed_paths(worktree: Path) -> None:
+    reviewed_paths_file(worktree).unlink(missing_ok=True)
+
+
+def literal_path(path: bytes) -> bytes:
+    return b":(literal)" + path
+
+
+def display_entries(entries: list[bytes]) -> str:
+    return "\n".join(os.fsdecode(entry) for entry in entries)
 
 
 def prepare_worktree(worktree: Path, args: argparse.Namespace) -> None:
     entries = status_entries(worktree)
-    tracked = [entry for entry in entries if not entry.startswith("??")]
-    untracked = [entry for entry in entries if entry.startswith("??")]
+    tracked = [entry for entry in entries if not entry.startswith(b"??")]
+    untracked = [entry for entry in entries if entry.startswith(b"??")]
 
     if args.force:
         git("clean", "-fdx", ".", cwd=worktree)
         # --force intentionally drops the repository-wide stash stack. This is the
         # explicit destructive mode; normal mode always preserves and reports stashes.
         git("stash", "clear", cwd=worktree, check=False)
+        clear_reviewed_paths(worktree)
         return
 
     if tracked:
         print("Reset stopped: the worktree has uncommitted changes:", file=sys.stderr)
-        print("\n".join(tracked), file=sys.stderr)
+        print(display_entries(tracked), file=sys.stderr)
         raise ResetBlocked("preserve tracked changes outside this worktree, or use --force")
 
-    if untracked and not args.confirm:
-        print("Reset stopped: the worktree has untracked files:", file=sys.stderr)
-        print("\n".join(untracked), file=sys.stderr)
-        raise ResetBlocked("review them, then rerun with --confirm or --force")
-
-    if untracked:
+    if args.confirm:
+        reviewed = load_reviewed_paths(worktree)
+        if not reviewed:
+            raise ResetBlocked("no reviewed untracked-file snapshot; rerun without --confirm")
         git(
             "clean",
             "-df",
             "--",
-            *(untracked_path(entry) for entry in untracked),
+            *(literal_path(path) for path in reviewed),
             cwd=worktree,
         )
+        clear_reviewed_paths(worktree)
+    elif untracked:
+        reviewed = [untracked_path(entry) for entry in untracked]
+        save_reviewed_paths(worktree, reviewed)
+        print("Reset stopped: the worktree has untracked files:", file=sys.stderr)
+        print(display_entries(untracked), file=sys.stderr)
+        raise ResetBlocked("review them, then rerun with --confirm or --force")
+    else:
+        clear_reviewed_paths(worktree)
 
     stashes = stash_entries(worktree)
     if stashes:

@@ -14,12 +14,6 @@ reset script:
 - Do not invent Claude-only timers, monitor, loop, or pull-request subscription operations;
   skip them unless the current harness explicitly exposes an equivalent.
 
-In normal mode, the reset script stops before removing untracked files. Inspect the paths
-and ask the user whether uncertain files may be removed. After approval, rerun the script
-with the original arguments plus `--confirm`. In `--force` mode, skip worktree and stash
-confirmation: the script discards tracked, untracked, ignored, and repository-wide
-stashed changes.
-
-Do not run cleanup commands by hand. Invoke the sibling `reset.py`, forwarding the
-arguments supplied to `/reset`, and report its output and final status, including the
-validated task, job, process, and peer-agent state.
+Use the Oh My Pi question mechanism to show the complete untracked-file report and obtain
+an explicit affirmative response before a confirmation rerun. Do not infer approval from
+path classification.
