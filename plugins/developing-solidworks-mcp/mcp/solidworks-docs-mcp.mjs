@@ -13,14 +13,14 @@ import {
 } from "./solidworks-docs.mjs";
 
 const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const skillPath = join(pluginRoot, "skills", "developing-solidworks", "SKILL.md");
+const skillPath = join(pluginRoot, "skills", "developing-solidworks-mcp", "SKILL.md");
 const SKILL_FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n/;
 export const SERVER_INSTRUCTIONS = [
-  "The bundled developing-solidworks skill below is authoritative. Apply it when answering or executing SolidWorks API work, and use the MCP tools described there instead of guessing API details.",
+  "The bundled developing-solidworks-mcp skill below is authoritative. Apply it when querying SolidWorks documentation, and use the MCP tools described there instead of guessing API details.",
   readFileSync(skillPath, "utf8").replace(SKILL_FRONTMATTER, "").trim(),
 ].join("\n\n");
 
-const SERVER_NAME = "developing-solidworks-docs";
+const SERVER_NAME = "developing-solidworks-mcp";
 
 function propertySchemaToZod(property) {
   let schema;

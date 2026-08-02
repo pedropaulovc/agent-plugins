@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,9 +13,9 @@ import {
   selectReleaseAsset,
   unpackZip,
   textFromXml,
-} from "../plugins/developing-solidworks/mcp/solidworks-docs.mjs";
-import { reclaimStaleInstallLock } from "../plugins/developing-solidworks/mcp/solidworks-docs-launcher.mjs";
-import { SERVER_INSTRUCTIONS } from "../plugins/developing-solidworks/mcp/solidworks-docs-mcp.mjs";
+} from "../plugins/developing-solidworks-mcp/mcp/solidworks-docs.mjs";
+import { reclaimStaleInstallLock } from "../plugins/developing-solidworks-mcp/mcp/solidworks-docs-launcher.mjs";
+import { SERVER_INSTRUCTIONS } from "../plugins/developing-solidworks-mcp/mcp/solidworks-docs-mcp.mjs";
 
 const XML_NAMESPACE = "urn:solidworks:offline-xmldoc:1";
 const CRC32_TABLE = new Uint32Array(256);
@@ -684,10 +684,10 @@ test("reports forced refresh acquisition failures instead of stale success", asy
 
 test("passes the bundled skill through MCP server instructions", () => {
   const skill = readFileSync(
-    new URL("../plugins/developing-solidworks/skills/developing-solidworks/SKILL.md", import.meta.url),
+    new URL("../plugins/developing-solidworks-mcp/skills/developing-solidworks-mcp/SKILL.md", import.meta.url),
     "utf8",
   ).replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
-  assert.ok(SERVER_INSTRUCTIONS.startsWith("The bundled developing-solidworks skill below is authoritative."));
+  assert.ok(SERVER_INSTRUCTIONS.startsWith("The bundled developing-solidworks-mcp skill below is authoritative."));
   assert.ok(SERVER_INSTRUCTIONS.endsWith(skill));
 });
 
@@ -710,4 +710,17 @@ test("publishes the consolidated documented MCP tool set", () => {
   assert.equal(search.inputSchema.properties.language, undefined);
   assert.deepEqual(search.inputSchema.properties.kind.enum, list.inputSchema.properties.kind.enum);
   assert.equal(search.inputSchema.properties.limit.default, 10);
+});
+
+test("keeps the coding skill and XMLDoc MCP server in separate plugins", () => {
+  const codingRoot = new URL("../plugins/developing-solidworks/", import.meta.url);
+  const mcpRoot = new URL("../plugins/developing-solidworks-mcp/", import.meta.url);
+  const codingManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", codingRoot), "utf8"));
+  const mcpManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", mcpRoot), "utf8"));
+  assert.equal(codingManifest.name, "developing-solidworks");
+  assert.equal(codingManifest.version, "0.9.0");
+  assert.equal(mcpManifest.name, "developing-solidworks-mcp");
+  assert.equal(mcpManifest.version, "0.9.8");
+  assert.equal(existsSync(new URL(".mcp.json", codingRoot)), false);
+  assert.equal(existsSync(new URL(".mcp.json", mcpRoot)), true);
 });
