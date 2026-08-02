@@ -24,6 +24,11 @@ test("all plugins load and register expected config", async () => {
   }
   assert.equal(config.skills.paths.length, 10);
   assert.ok(config.skills.paths.some((skillPath) => skillPath.endsWith(path.join("developing-solidworks-mcp", "skills"))));
+  assert.deepEqual(config.mcp["solidworks-docs"], {
+    type: "local",
+    command: ["node", path.resolve(directory, "plugins/developing-solidworks-mcp/mcp/solidworks-docs-launcher.mjs")],
+    enabled: true,
+  });
   assert.equal(Object.keys(config.command).length, 12);
   assert.ok(config.command["alt-text"]);
   assert.ok(config.command.issue);

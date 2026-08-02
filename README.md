@@ -56,7 +56,7 @@ The only skill in this collection targeting the SolidWorks .NET COM API. Anti-ha
 
 ### [developing-solidworks-mcp](plugins/developing-solidworks-mcp)
 
-Standalone MCP server for grounded SolidWorks XMLDoc search, catalog browsing, and complete type, enum, example, and guide retrieval. Install it alongside `developing-solidworks` when structured documentation lookup is needed.
+Standalone MCP server for grounded SolidWorks XMLDoc search, catalog browsing, and complete type, enum, example, and guide retrieval. Use it instead of `developing-solidworks` when structured documentation lookup is needed; do not install both.
 
 ### [alt-text](plugins/alt-text)
 

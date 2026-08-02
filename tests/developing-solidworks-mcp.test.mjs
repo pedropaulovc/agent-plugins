@@ -325,6 +325,10 @@ test("preserves qualified lookup paths and filters example searches by assembly"
     assert.equal(member.examples[0].id, "Examples/A.htm");
     const examples = await docs.search({ query: "Shared", kind: "example", assembly: "Assembly.A" });
     assert.deepEqual(examples.results.map((result) => result.id), ["Examples/A.htm"]);
+    const members = await docs.search({ query: "shared", kind: "member", assembly: "Assembly.A" });
+    assert.ok(members.results.length > 0);
+    assert.ok(members.results.every((result) => result.assembly === "Assembly.A"));
+    assert.equal(members.results.some((result) => result.assembly === "Assembly.B"), false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

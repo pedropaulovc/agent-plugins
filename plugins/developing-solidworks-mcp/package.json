@@ -3,6 +3,7 @@
   "version": "0.9.8",
   "description": "SolidWorks XMLDoc MCP server",
   "type": "module",
+  "main": ".opencode/plugins/developing-solidworks-mcp.js",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.4.3"

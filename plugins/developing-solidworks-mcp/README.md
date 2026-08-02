@@ -15,14 +15,14 @@ The server is release-aware and keeps a validated local cache. Set `SOLIDWORKS_D
 
 ## Relationship to developing-solidworks
 
-Install [developing-solidworks](../developing-solidworks) separately when you also need the C#/COM coding skill, bundled filesystem API reference, learnings, and `/download-solidworks-docs` command. This plugin only provides the structured MCP documentation service.
+Use this plugin instead of [developing-solidworks](../developing-solidworks) for structured documentation lookup; do not install both. This plugin provides the MCP documentation service.
 
 ## MCP tools
 
 - `status` — inspect the cached bundle and latest release metadata
 - `refresh` — replace the cached bundle with the latest release
 - `search` — search indexed documentation with list-compatible `kind` and assembly filters
-- `list` — browse a paginated catalog of assemblies, types, members, examples, and guides
+- `list` — browse a paginated catalog of assemblies, types, enums, members, examples, and guides
 - `get` — retrieve a complete record by `kind` (`type`, `enum`, `example`, or `guide`)
 - `glob` — match virtual documentation paths
 

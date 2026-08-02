@@ -514,6 +514,7 @@ function searchState(state, options = {}) {
   }
   if (includeMembers) for (const member of state.members) {
     if (isTypeRecord(member)) continue;
+    if (!matchesAssembly(member.assembly, options.assembly, caseSensitive)) continue;
     if (memberKinds.has(kind) && member.kind !== kind) continue;
     add(member.kind, member.fullName, { text: member.searchText, lower: member.searchTextLower }, memberPath(member), { id: member.id, assembly: member.assembly, type: member.typeFullName, ...searchResultDetails(state, member) });
   }

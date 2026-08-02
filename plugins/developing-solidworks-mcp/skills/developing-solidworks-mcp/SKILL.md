@@ -26,4 +26,4 @@ Set `SOLIDWORKS_DOCS_BUNDLE` to an absolute local ZIP path for offline or fixtur
 4. Use `get` with `kind: "guide"` for conceptual workflows.
 5. Preserve XMLDoc IDs, overload parameter syntax, by-reference markers, enum values, and example links in the resulting code.
 
-This plugin provides the documentation service. Install `developing-solidworks` separately when you also need the C#/COM coding skill, bundled API reference tree, and download command.
+Use this plugin instead of `developing-solidworks` for structured documentation lookup; do not install both.
