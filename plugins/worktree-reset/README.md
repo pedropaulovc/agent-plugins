@@ -1,9 +1,24 @@
 # worktree-reset plugin
 
-Provides the `/m` skill: tears down in-flight agent state (task list, scheduled timers, teammates, subagents, monitors, loops, background jobs, PR activity subscriptions) and positively validates each list is empty, aborts any in-progress git operation (rebase/merge/cherry-pick/am) and stale lock, resets the current worktree branch to origin/main, cleans stale branches, prunes stale worktrees, removes untracked files (with confirmation), reports any stashes, and runs `npm install`, `go mod download`, and `uv sync --locked` on all worktrees with their corresponding project and lock files.
+Provides the explicit `/reset` skill (`$reset` in Codex). This is a breaking rename from
+the former `/m` and `$m` entry points; no compatibility alias remains. Harness-specific
+agent-state teardown lives in sibling instruction files, and the shared `reset.py`
+implementation owns the complete repository flow and dependency installation.
 
-## Codex and OpenCode support
+Arguments:
 
-Works in both. Explicit-only (`/m` or `$m`). Under Codex the agent-state teardown primitives (task list, monitors, timers, subagents, PR subscriptions) don't exist, so that section is skipped — the git reset + dependency reinstall is the portable core.
+- `--clean` removes exactly the reviewed paths supplied with repeated `--clean-path` options.
+- `--force` discards tracked, untracked, ignored, and repository-wide stashed changes
+  without confirmation.
+- `--all` also updates every linked worktree.
 
-OpenCode exposes `/m` and follows the same portable fallback as Codex.
+The script handles stale locks, unfinished operations, safety checks, remote
+synchronization, worktree pruning, stale branches, branch resets, linked-worktree
+updates, stash reporting, and `npm install`, `go mod download`, and `uv sync --locked`
+when the corresponding files exist.
+
+## Harness support
+
+Claude Code reads `claude.md` for agent-state teardown and confirmation rules. Codex and
+OpenCode read their respective files and skip Claude-only state tools while handling
+background terminals through their own harness mechanisms.

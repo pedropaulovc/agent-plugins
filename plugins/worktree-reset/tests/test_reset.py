@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Behavior tests for the Python worktree-reset helper."""
 
 from __future__ import annotations
@@ -12,12 +12,18 @@ import tempfile
 import unittest
 
 
-SCRIPT = Path(__file__).parents[1] / "skills" / "m" / "m.py"
+SCRIPT = Path(__file__).parents[1] / "skills" / "reset" / "reset.py"
 
 # Pins the interpreter to its locale codepage — cp1252 on a stock Windows box, ASCII
 # under LC_ALL=C elsewhere — which is what made git's UTF-8 output undecodable in
 # issue #67. Without PYTHONUTF8=0, a UTF-8-mode default would hide the bug.
-LOCALE_CODEPAGE = {"PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0", "PYTHONIOENCODING": "", "LC_ALL": "C", "LANG": "C"}
+LOCALE_CODEPAGE = {
+    "PYTHONUTF8": "0",
+    "PYTHONCOERCECLOCALE": "0",
+    "PYTHONIOENCODING": "",
+    "LC_ALL": "C",
+    "LANG": "C",
+}
 
 # Commit subjects reach the script through `git branch -vv`, so any emoji in someone's
 # history lands in captured output; the ZWJ here encodes the byte cp1252 has no mapping for.
@@ -57,25 +63,42 @@ class WorktreeResetTests(unittest.TestCase):
         return f'''#!/bin/sh
 printf 'git %s [cwd=%s]\\n' "$*" "$PWD" >> "$COMMAND_LOG"
 case "$*" in
-  'branch -vv')
-    printf '%s\\n' '  stale abc123 [origin/stale: gone] {COMMIT_SUBJECT}' '  C:/src/codjiflo abc [origin/keep: gone]'
+  'status --porcelain=v1 --untracked-files=all -z')
+    if [ -n "${{STATUS_OUTPUT:-}}" ]; then printf '%s\\n' "$STATUS_OUTPUT"; fi
     ;;
-  'show-ref --verify --quiet refs/heads/feature') exit 0 ;;
+  'stash list')
+    if [ -n "${{STASH_OUTPUT:-}}" ]; then printf '%s\\n' "$STASH_OUTPUT"; fi
+    ;;
+  'branch -vv')
+    printf '%s\\n' '  stale abc123 [origin/stale: gone] {COMMIT_SUBJECT}' '  +linked abc [origin/linked: gone]'
+    ;;
+  'show-ref --verify --quiet refs/heads/feature'|'show-ref --verify --quiet refs/heads/feature-link') exit 0 ;;
   'worktree list --porcelain')
     printf 'worktree {self.repo}\\nHEAD one\\nbranch refs/heads/main\\n\\nworktree {self.linked}\\nHEAD two\\nbranch refs/heads/feature\\n'
     ;;
   'branch --show-current') printf '{CURRENT_BRANCH}\\n' ;;
-  'rebase origin/main') exit 1 ;;
+  'rebase origin/main')
+    if [ "${{REBASE_STATUS:-1}}" -ne 0 ]; then exit 1; fi
+    ;;
 esac
 '''
 
-    def run_script(self, *args: str, cwd: Path | None = None, pwd: Path | None = None, locale_codepage: bool = False) -> subprocess.CompletedProcess[str]:
+    def run_script(
+        self,
+        *args: str,
+        cwd: Path | None = None,
+        pwd: Path | None = None,
+        locale_codepage: bool = False,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment.update({"PATH": f"{self.bin}:{os.environ['PATH']}", "COMMAND_LOG": str(self.log)})
-        working_directory = cwd or self.repo
-        environment["PWD"] = str(pwd or working_directory)
+        environment["PWD"] = str(pwd or cwd or self.repo)
         if locale_codepage:
             environment.update(LOCALE_CODEPAGE)
+        if extra_env:
+            environment.update(extra_env)
+        working_directory = cwd or self.repo
         return subprocess.run(
             [sys.executable, str(SCRIPT), *args],
             cwd=working_directory,
@@ -94,7 +117,9 @@ esac
         self.assertIn("=== Current worktree updated ===", result.stdout)
         log = self.log.read_text()
         self.assertIn("git fetch --prune", log)
+        self.assertIn("git worktree prune", log)
         self.assertIn("git branch -D stale", log)
+        self.assertIn("git branch -D linked", log)
         self.assertIn("git checkout main", log)
         self.assertIn("git reset --hard origin/main", log)
         self.assertIn("npm install", log)
@@ -103,10 +128,10 @@ esac
         alias = self.root / "feature-link"
         alias.symlink_to(self.repo, target_is_directory=True)
 
-        result = self.run_script(cwd=alias)
+        result = self.run_script("--force", cwd=alias)
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"git checkout feature-link [cwd={alias}]", self.log.read_text())
+        self.assertIn(f"git checkout -f feature-link [cwd={alias}]", self.log.read_text())
 
     def test_ignores_a_stale_inherited_pwd(self) -> None:
         result = self.run_script(cwd=self.repo, pwd=self.root)
@@ -114,26 +139,74 @@ esac
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn(f"git checkout {self.root.name}", self.log.read_text())
 
-    def test_all_updates_linked_worktrees_and_aborts_failed_rebases(self) -> None:
-        result = self.run_script("--all", "feature")
+    def test_all_updates_linked_worktrees_and_reports_failed_rebases(self) -> None:
+        result = self.run_script("--all", "feature", extra_env={"REBASE_STATUS": "1"})
 
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("=== All worktrees updated ===", result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("=== Worktrees failed ===", result.stderr)
         log = self.log.read_text()
         self.assertIn(f"git rebase origin/main [cwd={self.linked}]", log)
         self.assertIn(f"git rebase --abort [cwd={self.linked}]", log)
         self.assertIn("go mod download", log)
         self.assertIn("uv sync --locked", log)
 
-
     def test_non_ascii_git_output_survives_a_locale_codepage(self) -> None:
-        # git speaks UTF-8; before issue #67 the capture decoded it with the console
-        # codepage, so an emoji in a commit subject aborted the reset before it began.
-        result = self.run_script("--all", "feature", locale_codepage=True)
+        result = self.run_script("--all", "feature", locale_codepage=True, extra_env={"REBASE_STATUS": "0"})
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("git branch -D stale", self.log.read_text())
         self.assertIn(f"Rebasing {CURRENT_BRANCH} onto origin/main", result.stdout)
+
+    def test_blocks_tracked_changes_without_force(self) -> None:
+        result = self.run_script(extra_env={"STATUS_OUTPUT": " M tracked.txt"})
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("uncommitted changes", result.stderr)
+        self.assertNotIn("git fetch --prune", self.log.read_text())
+
+    def test_requires_clean_for_untracked_files(self) -> None:
+        result = self.run_script(extra_env={"STATUS_OUTPUT": "?? disposable.txt"})
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("untracked files", result.stderr)
+        self.assertIn("--clean-path", result.stderr)
+        self.assertNotIn("git fetch --prune", self.log.read_text())
+
+    def test_clean_removes_reviewed_untracked_files(self) -> None:
+        result = self.run_script(
+            "--clean",
+            "--clean-path",
+            "disposable.txt",
+            extra_env={"STATUS_OUTPUT": "?? disposable.txt"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("git clean -df -- disposable.txt", self.log.read_text())
+
+    def test_clean_still_blocks_tracked_changes(self) -> None:
+        result = self.run_script(
+            "--clean",
+            "--clean-path",
+            "tracked.txt",
+            extra_env={"STATUS_OUTPUT": " M tracked.txt"},
+        )
+
+        self.assertEqual(result.returncode, 2)
+        log = self.log.read_text()
+        self.assertNotIn("git clean -df", log)
+        self.assertNotIn("git fetch --prune", log)
+
+    def test_force_discards_all_changes_and_stashes(self) -> None:
+        result = self.run_script(
+            "--force",
+            extra_env={"STATUS_OUTPUT": " M tracked.txt\n?? disposable.txt", "STASH_OUTPUT": "stash@{0}: WIP"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn("git clean -fdx .", log)
+        self.assertIn("git stash clear", log)
+        self.assertIn("git checkout -f main", log)
 
 
 if __name__ == "__main__":

@@ -29,7 +29,7 @@ test("all plugins load and register expected config", async () => {
   assert.ok(config.command.comments);
   assert.ok(config.command["watch-pr"]);
   assert.ok(config.command["download-solidworks-docs"]);
-  assert.ok(config.command.m);
+  assert.ok(config.command.reset);
 });
 
 test("command-chain-separator rewrites OpenCode bash arguments", async () => {
