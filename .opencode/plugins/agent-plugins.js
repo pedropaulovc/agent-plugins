@@ -1,7 +1,6 @@
 export { AltTextPlugin } from "../../plugins/alt-text/.opencode/plugins/alt-text.js";
 export { CommandChainSeparatorPlugin } from "../../plugins/command-chain-separator/.opencode/plugins/command-chain-separator.js";
 export { DevelopingSolidworksPlugin } from "../../plugins/developing-solidworks/.opencode/plugins/developing-solidworks.js";
-export { DevelopingSolidworksMcpPlugin } from "../../plugins/developing-solidworks-mcp/.opencode/plugins/developing-solidworks-mcp.js";
 export { GhIssuePlugin } from "../../plugins/gh-issue/.opencode/plugins/gh-issue.js";
 export { GstackEntrepreneurPlugin } from "../../plugins/gstack-entrepreneur/.opencode/plugins/gstack-entrepreneur.js";
 export { MediocrityDetectorPlugin } from "../../plugins/mediocrity-detector/.opencode/plugins/mediocrity-detector.js";
