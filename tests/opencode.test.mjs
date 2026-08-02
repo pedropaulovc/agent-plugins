@@ -96,20 +96,20 @@ test("mediocrity detector continues one OpenCode turn", async () => {
       messages: async () => ({
         data: prompts.length === 0
           ? [
-              { info: { role: "user" }, parts: [{ type: "text", text: "Finish the task" }] },
-              {
-                info: { role: "assistant", id: "assistant-1" },
-                parts: [{
-                  type: "tool",
-                  tool: "apply_patch",
-                  state: { input: { patchText: "*** Begin Patch\n+const value = 'placeholder';\n-oldValue();\n*** End Patch" } },
-                }],
-              },
-            ]
+            { info: { role: "user" }, parts: [{ type: "text", text: "Finish the task" }] },
+            {
+              info: { role: "assistant", id: "assistant-1" },
+              parts: [{
+                type: "tool",
+                tool: "apply_patch",
+                state: { input: { patchText: "*** Begin Patch\n+const value = 'placeholder';\n-oldValue();\n*** End Patch" } },
+              }],
+            },
+          ]
           : [
-              { info: { role: "user" }, parts: [{ type: "text", text: "Report the assumption" }] },
-              { info: { role: "assistant", id: "assistant-correction" }, parts: [{ type: "text", text: "I used a placeholder in src/example.js." }] },
-            ],
+            { info: { role: "user" }, parts: [{ type: "text", text: "Report the assumption" }] },
+            { info: { role: "assistant", id: "assistant-correction" }, parts: [{ type: "text", text: "I used a placeholder in src/example.js." }] },
+          ],
       }),
       promptAsync: async (request) => prompts.push(request),
     },
@@ -155,7 +155,7 @@ test("watch-pr wakes its OpenCode session with batched monitor events", async ()
   ].join("\n"));
   const prompts = [];
   const client = {
-    app: { log: async () => {} },
+    app: { log: async () => { } },
     session: { promptAsync: async (request) => prompts.push(request) },
   };
   const hooks = await plugins.WatchPrPlugin(
