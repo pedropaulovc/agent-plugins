@@ -13,8 +13,10 @@ start. The deterministic repository and dependency work is implemented by the si
 
 ## Harness instructions
 
-Read exactly one sibling instruction file before running the script:
+Read exactly one sibling instruction file before running the script. Detect the harness from
+the current system context; if `omp://` is mentioned, the harness is Oh My Pi:
 
+- Oh My Pi when `omp://` is present: `omp.md`
 - Claude Code: `claude.md`
 - Codex: `codex.md`
 - OpenCode: `opencode.md`

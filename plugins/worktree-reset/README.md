@@ -20,6 +20,7 @@ when the corresponding files exist.
 
 ## Harness support
 
-Claude Code reads `claude.md` for agent-state teardown and confirmation rules. Codex and
-OpenCode read their respective files and skip Claude-only state tools while handling
-background terminals through their own harness mechanisms.
+Claude Code reads `claude.md` for agent-state teardown and confirmation rules. If the
+current system context mentions `omp://`, Oh My Pi is running and reads `omp.md` instead.
+Codex and OpenCode read their respective files and skip Claude-only state tools while
+handling background terminals through their own harness mechanisms.
