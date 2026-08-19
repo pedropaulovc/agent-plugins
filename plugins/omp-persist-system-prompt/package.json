@@ -1,7 +1,7 @@
 {
   "name": "@pedropaulovc/omp-persist-system-prompt",
-  "version": "0.1.0",
-  "description": "Persist effective OMP system prompts in session transcripts",
+  "version": "0.1.1",
+  "description": "Persist effective OMP system prompts and provider tool context in session transcripts",
   "type": "module",
   "keywords": [
     "omp",
