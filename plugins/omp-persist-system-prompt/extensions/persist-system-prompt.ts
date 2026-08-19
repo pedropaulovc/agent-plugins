@@ -103,8 +103,9 @@ function snapshotProviderContext(payload: unknown): ProviderContextSnapshot | un
 	const source = payload as Record<string, unknown>;
 	const snapshot: ProviderContextSnapshot = {};
 	for (const key of PROVIDER_CONTEXT_KEYS) {
-		if (!(key in source) || source[key] === undefined) continue;
-		snapshot[key] = cloneJson(source[key]);
+		const value = source[key];
+		if (!(key in source) || value === undefined || typeof value === "function" || typeof value === "symbol") continue;
+		snapshot[key] = cloneJson(value);
 	}
 
 	return Object.keys(snapshot).length > 0 ? snapshot : undefined;
@@ -112,7 +113,11 @@ function snapshotProviderContext(payload: unknown): ProviderContextSnapshot | un
 
 function cloneJson(value: unknown): unknown {
 	if (value === null || typeof value !== "object") return value;
-	if (Array.isArray(value)) return value.map(cloneJson);
+	if (Array.isArray(value)) {
+		return value.map(entry =>
+			entry === undefined || typeof entry === "function" || typeof entry === "symbol" ? null : cloneJson(entry),
+		);
+	}
 
 	const source = value as Record<string, unknown>;
 	const clone: Record<string, unknown> = {};

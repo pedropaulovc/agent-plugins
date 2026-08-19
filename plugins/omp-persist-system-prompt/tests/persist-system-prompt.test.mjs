@@ -121,6 +121,15 @@ test("captures defensive snapshots of prompt and provider tool context", async (
 		},
 	]);
 });
+test("normalizes unsupported provider array values", async () => {
+	const { handlers, appends } = await loadExtension();
+	const payload = providerPayload();
+	payload.tools.push(undefined, () => { }, Symbol("unsupported"));
+
+	await capturePrompt(handlers, ["base"], [], payload);
+
+	assert.deepEqual(appends[0].data.providerContext.tools.slice(1), [null, null, null]);
+});
 
 test("does not persist provider input messages", async () => {
 	const { handlers, appends } = await loadExtension();
