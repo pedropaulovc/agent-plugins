@@ -2,9 +2,9 @@
 
 Provides the `/watch-pr` skill: babysit a GitHub PR to green + merged.
 
-A single script (`watch-pr.py`) runs through Claude Code's **Monitor** tool, OpenCode's event-driven plugin bridge, or a background terminal fallback. It diffs PR state every 30s, emitting one line per change — CI `check`, `rebase` state (BEHIND/DIRTY), `review`, `comments`, `reaction` (Codex 👀→👍), and terminal `finished`. The `SKILL.md` maps each event to an action: investigate red CI, `git pull --rebase` when behind, and — when new feedback lands — drive the reply-drafting flow.
+A single script (`watch-pr.py`) runs through Claude Code's **Monitor** tool, OpenCode's event-driven plugin bridge, or a background terminal fallback. It diffs PR state every 30s, emitting one line per change — CI `check`, `rebase` state (BEHIND/DIRTY), `review`, `comments`, `reaction` (Codex 👀→👍), unresolved-comment deltas, and terminal `finished`. The `SKILL.md` maps each event to an action: investigate red CI, `git pull --rebase` when behind, and — when feedback changes — open the generated file for reply drafting.
 
-On new feedback the script fetches + formats the active comments itself and emits **one compact `feedback …` line per active thread** (id / location / author / title) plus a pointer to the full markdown file — line-oriented so Monitor never truncates it. It fetches once on startup, stays silent when there are no active comments, and re-fetches only when unresolved threads *increase* (a decrease just means threads got resolved). Self-terminates on MERGED/CLOSED.
+On new or reopened inline threads the script emits **one compact `feedback …` line per thread** plus a pointer to the full markdown file. Top-level comment and body-review summaries are deliberately not emitted inline. The pointer and thread lines are deduplicated against unchanged formatter output, so a later feedback trigger does not repeat old content. It fetches once on startup and re-fetches when review/comment state changes or unresolved threads are added. Self-terminates on MERGED/CLOSED.
 
 Self-contained: it ships a vendored copy of the comment formatter (`comments.sh`, alongside `watch-pr.py`), so it works without any other plugin installed. That copy is kept in sync with the `pr-comments` plugin's original.
 
