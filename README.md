@@ -85,7 +85,7 @@ Tuned to my own setup, tooling, workflow preferences, or niche — unlikely to a
 | [gh-issue](plugins/gh-issue) | Skill | Turns terse bug reports into well-structured GitHub issues via `gh` |
 | [pr-comments](plugins/pr-comments) | Skill | Fetches unresolved PR comments formatted for LLM review and reply |
 | [watch-pr](plugins/watch-pr) | Skill + Tool | `/watch-pr` — watches a PR's full lifecycle (CI, rebase, reviews, merge) and surfaces incoming feedback inline through Claude's Monitor or OpenCode's event-driven `promptAsync` bridge |
-| [omp-persist-system-prompt](plugins/omp-persist-system-prompt) | OMP Extension | Stores each distinct effective system prompt as hidden custom session metadata for transcript indexing |
+| [omp-persist-system-prompt](plugins/omp-persist-system-prompt) | OMP Extension | Stores each distinct effective system prompt plus provider tool context as hidden custom session metadata for transcript indexing |
 | [command-chain-separator](plugins/command-chain-separator) | Hook | Injects a visible separator between Bash commands joined by `&&` or `;` so per-command output is easy to read |
 | [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks .NET COM API workflow with anti-hallucination guardrails |
 | [developing-solidworks-mcp](plugins/developing-solidworks-mcp) | MCP Server + Skill | Grounded SolidWorks XMLDoc search, catalog browsing, and complete record retrieval |

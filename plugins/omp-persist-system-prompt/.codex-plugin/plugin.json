@@ -1,7 +1,7 @@
 {
   "name": "omp-persist-system-prompt",
-  "version": "0.1.0",
-  "description": "OMP extension that stores each distinct effective system prompt as hidden session metadata for transcript indexing.",
+  "version": "0.1.1",
+  "description": "OMP extension that stores each distinct effective system prompt and provider tool context as hidden session metadata for transcript indexing.",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
