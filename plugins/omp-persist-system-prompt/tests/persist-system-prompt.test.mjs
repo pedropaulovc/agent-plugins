@@ -156,6 +156,16 @@ test("records changed provider tool definitions for the same prompt", async () =
 	assert.equal(appends.length, 2);
 	assert.deepEqual(appends.map((entry) => entry.data.providerContext.tools[0].description), ["first", "second"]);
 });
+test("records removal of provider context for the same prompt", async () => {
+	const { handlers, appends } = await loadExtension();
+	const prompt = ["base"];
+
+	await capturePrompt(handlers, prompt, [], providerPayload());
+	await capturePrompt(handlers, prompt, [], { input: ["no provider context"] });
+
+	assert.equal(appends.length, 2);
+	assert.equal("providerContext" in appends[1].data, false);
+});
 
 test("reuses a persisted prompt after extension reload", async () => {
 	const { handlers, appends } = await loadExtension();

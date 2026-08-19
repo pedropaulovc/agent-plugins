@@ -91,7 +91,7 @@ function hasPersistedPrompt(
 		if (!samePrompt(data.systemPrompt, current)) continue;
 
 		const persistedProviderContext = "providerContext" in data ? data.providerContext : undefined;
-		if (providerContext === undefined || sameProviderContext(persistedProviderContext, providerContext)) return true;
+		if (sameProviderContext(persistedProviderContext, providerContext)) return true;
 	}
 
 	return false;
@@ -124,8 +124,7 @@ function cloneJson(value: unknown): unknown {
 }
 
 function sameProviderContext(previous: unknown, current: ProviderContextSnapshot | undefined): boolean {
-	const previousIsObject = typeof previous === "object" && previous !== null && !Array.isArray(previous);
-	if (current === undefined) return previous === undefined || previousIsObject;
+	if (current === undefined) return previous === undefined;
 	return sameJson(previous, current);
 }
 
