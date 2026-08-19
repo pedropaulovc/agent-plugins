@@ -36,6 +36,14 @@ def command(*args: str, capture: bool = False, check: bool = False) -> subproces
     return subprocess.run(args, text=True, encoding="utf-8", errors="replace", capture_output=capture, check=check)
 
 
+XML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def strip_xml_comments(value: str) -> str:
+    """Remove hidden XML comments from text emitted to the monitor."""
+    return XML_COMMENT_PATTERN.sub("", value)
+
+
 def output(*args: str) -> str:
     result = command(*args, capture=True)
     # A failed capture yields None; callers all parse text, so degrade to an empty poll.
@@ -275,6 +283,7 @@ def formatter_lines(document: str) -> List[str]:
     attrs: Dict[str, str] = {}
     thread: Dict[str, str] = {}
     snippet = ""
+
     def emit() -> None:
         if kind == "thread" and thread.get("id"):
             lines.append(f"feedback [{thread.get('id')}] {thread.get('file', '')}:{thread.get('lines', '')} @{thread.get('author', '')} {snippet}")
@@ -282,7 +291,8 @@ def formatter_lines(document: str) -> List[str]:
             lines.append(f"feedback comment [{attrs.get('id', '')}] @{attrs.get('author', '')} {snippet}")
         if kind == "summary":
             lines.append(f"feedback review [{attrs.get('id', '')}] @{attrs.get('author', '')} {snippet}")
-    for line in document.splitlines():
+
+    for line in strip_xml_comments(document).splitlines():
         match = re.match(r"<(review-thread|pr-comment|review-summary) (.*)>", line)
         if match:
             emit(); kind = {"review-thread": "thread", "pr-comment": "comment", "review-summary": "summary"}[match.group(1)]
@@ -294,7 +304,9 @@ def formatter_lines(document: str) -> List[str]:
             if field:
                 thread[field.group(1).lower()] = field.group(2)
         if kind and not snippet and line.startswith("> "):
-            snippet = line[2:].strip()[:100]
+            candidate = line[2:].strip()
+            if candidate:
+                snippet = candidate[:100]
     emit()
     return lines
 
@@ -313,6 +325,9 @@ def main() -> int:
     pending_fetch, failures, fetches = False, 0, 0
     def emit(line: str) -> None:
         nonlocal last_event
+        line = strip_xml_comments(line).strip()
+        if not line:
+            return
         print(line, flush=True); last_event = time.monotonic()
     while True:
         meta, unresolved = pr_snapshot(slug, number)

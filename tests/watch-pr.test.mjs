@@ -213,6 +213,40 @@ test("a persistently failing formatter neither loops nor re-emits state", { skip
   }
 });
 
+test("formatter event lines strip XML comments", async () => {
+  const document = [
+    '<review-thread id="thread-1" created="2026-08-19T00:00:00Z">',
+    "### Thread 1",
+    "| Field | Value |",
+    "|-------|-------|",
+    "| **ID** | `101` |",
+    "| **File** | `src/example.py` |",
+    "| **Lines** | 12 |",
+    "| **Author** | reviewer |",
+    "> <!-- hidden thread title -->",
+    "> Keep <!-- hidden inline --> this change",
+    "</review-thread>",
+    '<pr-comment id="202" author="reviewer" created="2026-08-19T00:00:01Z">',
+    "> <!-- hidden",
+    "> multiline -->",
+    "> Top-level <!-- internal --> note",
+    "</pr-comment>",
+    '<review-summary id="review-303" author="reviewer" created="2026-08-19T00:00:02Z">',
+    "> <!-- hidden summary -->",
+    "> Summary <!-- internal --> title",
+    "</review-summary>",
+  ].join("\n");
+
+  const lines = await probe("module.formatter_lines(sys.argv[2])", { argv: [document] });
+
+  assert.deepEqual(lines, [
+    "feedback [101] src/example.py:12 @reviewer Keep  this change",
+    "feedback comment [202] @reviewer Top-level  note",
+    "feedback review [review-303] @reviewer Summary  title",
+  ]);
+  assert.ok(lines.every((line) => !line.includes("<!--") && !line.includes("-->")));
+});
+
 // ---------------------------------------------------------------------------
 // Coverage for the platform-specific pieces of issue #63. These drive the real
 // helpers directly, so unlike the fixtures above they run natively on Windows —
