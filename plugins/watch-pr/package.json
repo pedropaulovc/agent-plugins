@@ -1,6 +1,6 @@
 {
   "name": "@pedropaulovc/watch-pr",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "description": "Pull request lifecycle monitoring skill for OpenCode",
   "type": "module",
   "main": ".opencode/plugins/watch-pr.js",

@@ -9,10 +9,11 @@ allowed-tools: Bash, Read, Edit, AskUserQuestion, Monitor
 
 Babysit a pull request end to end with a single script: `watch-pr.py` watches the
 lifecycle AND, whenever fresh feedback lands, fetches + formats the active comments
-itself (via the vendored sibling `comments.sh`) and emits **one compact `feedback …`
-line per active thread** (id / location / author / title) followed by a `→ full
-bodies …: <path>` pointer. You react to its event lines; when `feedback …` lines
-appear, you open `<path>` for the threads you will act on and drive the reply flow.
+itself (via the vendored sibling `comments.sh`). It emits **one compact `feedback …`
+line per newly active or reopened inline thread** and a `→ full bodies …: <path>`
+pointer only when the formatted document changes. Top-level comment and body-review
+summaries stay in the file instead of being emitted inline, and unchanged feedback
+is not re-emitted.
 
 ## Arguments
 
@@ -92,7 +93,7 @@ it is produced and react to every new watcher event exactly as in the table
 below. Keep the watcher attached to that persistent terminal until it reports
 `MERGED` or `CLOSED`; do not detach it with `Start-Process`, redirect stdout to a
 file, or run it in the foreground. Everything else — the event lines, the
-`feedback …` lines, and the reply flow — is harness-agnostic.
+feedback path, and the reply flow — is harness-agnostic.
 
 **On Windows:** run the watcher and its Git commands in Git Bash from Git for
 Windows, or in Bash paired with another Windows-local Git installation. Do **not**
@@ -108,18 +109,19 @@ bash path if Git lives somewhere unusual.
 
 | Event line | What it means | Action |
 |---|---|---|
-| `check <name>: pending` | a CI check started/re-ran | note it; wait for the terminal bucket |
-| `check <name>: fail [@<ts>]` (or `failure`) | CI went red | investigate the failure (`gh run view`/logs), propose a fix, and — with the user's ok — push it; the next `check … pending → pass/fail` line confirms the re-run (the `@<completedAt>` stamp makes a same-bucket rerun show as a change) |
+| `check <name>: pending` | a CI check started/re-ran | note it; wait for the terminal bucket; the GitHub zero-date sentinel is omitted |
+| `check <name>: fail [@<ts>]` (or `failure`) | CI went red | investigate the failure (`gh run view`/logs), propose a fix, and — with the user's ok — push it; the next `check … pending → pass/fail` line confirms the re-run |
 | `check <name>: pass [@<ts>]` (or `success`) | CI went green | nothing to do |
 | `rebase: BEHIND — git pull --rebase origin <base> …` | branch fell behind the PR's **base** branch | run the emitted command (fast-forwards cleanly), then push |
 | `rebase: DIRTY — git pull --rebase origin <base> …` | merge conflicts with the base branch | run the emitted command, resolve conflicts during the rebase, then force-push with `--force-with-lease` |
-| `review <login>: <state> @<ts>` | a reviewer just submitted | `feedback …` lines follow with the active comments → **step 4** |
-| `comments: <n>` | top-level (issue) comment count changed | same — `feedback …` lines follow → **step 4** |
-| `review-comments: <n>` | inline review-thread comment count changed (e.g. a reply to an existing thread) | same — `feedback …` lines follow → **step 4** |
-| `unresolved-threads: <n>` | count of unresolved review threads changed | informational only; a fetch (→ `feedback …` lines) fires **only when a thread newly joins the unresolved set** (a reopen or new thread) — a pure resolve (often your own `--resolve`) never re-fetches, even when a reopen and a resolve land together and keep the count flat |
-| `feedback [<id>] <file>:<lines> @<author> <title>` (or `feedback comment […]` / `feedback review […]`) … `→ full bodies + code context: <path>` | one compact line per active thread/comment/review summary, plus the file path | **go to step 4**: for a bare `feedback [<id>]` (inline thread) `<id>` is the `reply.sh --comment` id; `feedback comment [<id>]` is a top-level comment (reply with `--issue`, **not** `--comment <id>`) and `feedback review […]` is a body review (no reply target). Open `<path>` for full bodies + diff context and the exact `reply.sh` command per thread, and to write drafts into |
+| `review <login>: <state> @<ts>` | a reviewer just submitted | if a feedback path follows, open it; review summaries are not emitted inline |
+| `comments: <n>` | top-level (issue) comment count changed | if a feedback path follows, open it; top-level comments are not emitted inline |
+| `review-comments: <n>` | inline review-comment count changed | if a feedback path follows, open it; unchanged feedback is not re-emitted |
+| `unresolved-comments: <delta> (unresolved: <n>)` | unresolved review-thread IDs changed; `<delta>` contains additions/removals such as `+2`, `-1`, or `+1 -1` | a positive delta triggers a formatter fetch; a negative-only delta is informational |
+| `feedback [<id>] <file>:<lines> @<author> <title>` | one newly active or reopened inline thread | open the next `→ full bodies …: <path>` pointer for its full context and reply command |
+| `→ full bodies + code context: <path>` | the formatted feedback document changed | open `<path>`; the pointer is suppressed when the document is unchanged |
 | `reaction EYES: 1` (👀) | Codex acked a **push**-triggered review on the PR body, reviewing | informational — wait for its verdict |
-| `reaction THUMBS_UP: 1` (👍) | Codex finished a push-triggered review, found **nothing** | informational — its all-clear (when it *does* find something it posts a review → `review …` + `feedback …` lines → step 4) |
+| `reaction THUMBS_UP: 1` (👍) | Codex finished a push-triggered review, found **nothing** | informational — its all-clear (when it *does* find something it posts a review → `review …` + a feedback path → step 4) |
 | `comment-reaction EYES: 1` (👀) | Codex acked an **`@codex review`** mention on a comment, reviewing | informational — wait for its verdict |
 | `comment-reaction THUMBS_UP: 1` (👍) | Codex finished an at-mention review, found **nothing** | informational — its all-clear for the mention (no review object is posted in this case) |
 | `stall: no new events for <duration> — watcher still running` | the watcher is healthy, but the PR emitted no new event lines for the configured timeout (`1h` by default) | informational — continue waiting; another line appears after each additional quiet interval |
@@ -128,10 +130,12 @@ bash path if Git lives somewhere unusual.
 
 ### 4. Handle incoming review comments
 
-When `feedback …` lines land, each is one active thread/comment (id / location /
-author / title) — enough to triage at a glance. `Read` `<path>` (the markdown file
-the script wrote) for the full bodies + diff context of the threads you will act on;
-edit that same file to stash drafts. Then follow the `comments` skill's flow:
+When a `feedback …` line or feedback-path event lands, open the pointed-to
+markdown file for the full bodies + diff context of the threads you will act on;
+edit that same file to stash drafts. Bare `feedback [<id>]` lines identify newly
+active or reopened inline threads. Top-level comments and body-review summaries
+are intentionally not echoed into the monitor event stream, so their full content
+is available only in the pointed-to file. Then follow the `comments` skill's flow:
 for each open comment, reflect on whether it's pertinent,
 draft a reply (confirm with the user on any real design/coding decision), write
 draft replies + needed code changes into the markdown file, and present them. Once
@@ -143,15 +147,15 @@ debate or a design call awaiting a decision). Optionally add `--thumbs-up`/`--th
 to a `--comment` reply to react 👍/👎 to that comment — a quick acknowledgement when it
 helps, never required.
 
-Then return to watching — the Monitor loop is still running and will keep emitting
-new events until the PR reaches MERGED/CLOSED.
+Then return to watching — the loop remains active and emits new events until the PR
+reaches MERGED/CLOSED.
 
 ## Notes
 
 - One script does both jobs: the watch loop drives `comments.sh` internally, so you
-  only ever launch `watch-pr.py` — the feedback arrives as compact `feedback …` lines
-  in stdout, and you `Read` the pointed-to file only for threads you act on.
+  only ever launch `watch-pr.py` — the watcher emits compact lines only for inline
+  unresolved-thread changes and points to the full document when its content changes.
 - The 👀→👍 sequence is the clean-review path for Codex (auto-reviews every push).
 - Force-pushes on this feature branch use `--force-with-lease`; no confirmation needed.
-- Set the PR to auto-merge when appropriate per your workflow, then let the loop
-  run silently until it reports `finished: MERGED`.
+- Do not merge or enable auto-merge until the user explicitly confirms; otherwise let
+  the loop run silently until it reports `finished: MERGED`.

@@ -37,6 +37,7 @@ def command(*args: str, capture: bool = False, check: bool = False) -> subproces
 
 
 XML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", re.DOTALL)
+PENDING_CHECK_TIMESTAMP = "0001-01-01T00:00:00Z"
 
 
 def strip_xml_comments(value: str) -> str:
@@ -194,11 +195,21 @@ def comment_reactions(slug: str, number: int, me: str) -> List[str]:
     return [f"comment-reaction {names.get(content, content)}: {count}" for content, count in sorted(counts.items())]
 
 
-def state_lines(meta: Dict[str, object], checks: List[Dict[str, object]], slug: str, origin_matches: bool, me: str, review_comments: int, unresolved: int, reactions: List[str]) -> List[str]:
+def unresolved_delta_line(previous: Set[str], current: Set[str]) -> Optional[str]:
+    added = len(current - previous)
+    removed = len(previous - current)
+    changes = [change for change in (f"+{added}" if added else "", f"-{removed}" if removed else "") if change]
+    return f"unresolved-comments: {' '.join(changes)} (unresolved: {len(current)})" if changes else None
+
+
+def state_lines(meta: Dict[str, object], checks: List[Dict[str, object]], slug: str, origin_matches: bool, me: str, review_comments: int, reactions: List[str]) -> List[str]:
     lines: List[str] = []
     for check in checks:
-        finished = check.get("completedAt") or ""
-        lines.append(f"check {check.get('name')}: {check.get('bucket')}" + (f" @{finished}" if finished else ""))
+        bucket = str(check.get("bucket") or "")
+        finished = str(check.get("completedAt") or "")
+        if bucket == "pending" and finished == PENDING_CHECK_TIMESTAMP:
+            finished = ""
+        lines.append(f"check {check.get('name')}: {bucket}" + (f" @{finished}" if finished else ""))
     status = meta.get("mergeStateStatus")
     if status in ("BEHIND", "DIRTY"):
         base = meta.get("baseRefName")
@@ -211,7 +222,6 @@ def state_lines(meta: Dict[str, object], checks: List[Dict[str, object]], slug: 
     comments = [comment for comment in meta.get("comments") or [] if (comment.get("author") or {}).get("login") != me]
     lines.append(f"comments: {len(comments)}")
     lines.append(f"review-comments: {review_comments}")
-    lines.append(f"unresolved-threads: {unresolved}")
     for reaction in meta.get("reactionGroups") or []:
         users = reaction.get("users") or {}
         if users.get("totalCount", 0) > 0:
@@ -280,35 +290,33 @@ def run_formatter(bash: str, script: Path, url: str, number: int, attempt: int) 
 def formatter_lines(document: str) -> List[str]:
     lines: List[str] = []
     kind = ""
-    attrs: Dict[str, str] = {}
     thread: Dict[str, str] = {}
     snippet = ""
 
     def emit() -> None:
         if kind == "thread" and thread.get("id"):
             lines.append(f"feedback [{thread.get('id')}] {thread.get('file', '')}:{thread.get('lines', '')} @{thread.get('author', '')} {snippet}")
-        if kind == "comment":
-            lines.append(f"feedback comment [{attrs.get('id', '')}] @{attrs.get('author', '')} {snippet}")
-        if kind == "summary":
-            lines.append(f"feedback review [{attrs.get('id', '')}] @{attrs.get('author', '')} {snippet}")
 
     for line in strip_xml_comments(document).splitlines():
         match = re.match(r"<(review-thread|pr-comment|review-summary) (.*)>", line)
         if match:
             emit(); kind = {"review-thread": "thread", "pr-comment": "comment", "review-summary": "summary"}[match.group(1)]
-            attrs = dict(re.findall(r'(\w+)="([^"]*)"', match.group(2))); thread = {}; snippet = ""; continue
+            thread = {}; snippet = ""; continue
         if line.startswith("## SUMMARY FOR LLM"):
             emit(); kind = ""; continue
         if kind == "thread":
             field = re.match(r"\| \*\*(ID|File|Lines|Author)\*\* \| `?(.*?)`? \|", line)
             if field:
                 thread[field.group(1).lower()] = field.group(2)
-        if kind and not snippet and line.startswith("> "):
+        if kind == "thread" and not snippet and line.startswith("> "):
             candidate = line[2:].strip()
             if candidate:
                 snippet = candidate[:100]
-    emit()
     return lines
+
+
+def feedback_document_key(document: str) -> str:
+    return re.sub(r"^fetched_at:.*$", "", document, flags=re.MULTILINE)
 
 
 def main() -> int:
@@ -321,7 +329,11 @@ def main() -> int:
         return 1
     origin_matches, me = origin_is_base(slug), login()
     comments_script, bash = Path(__file__).with_name("comments.sh"), bash_executable()
-    previous: Set[str] = set(); previous_unresolved: Set[str] = set(); last_event = time.monotonic()
+    previous: Set[str] = set()
+    previous_unresolved: Set[str] = set()
+    previous_feedback: Set[str] = set()
+    previous_document = ""
+    last_event = time.monotonic()
     pending_fetch, failures, fetches = False, 0, 0
     def emit(line: str) -> None:
         nonlocal last_event
@@ -333,12 +345,16 @@ def main() -> int:
         meta, unresolved = pr_snapshot(slug, number)
         checks = json_array("gh", "pr", "checks", str(number), "-R", slug, "--json", "name,bucket,completedAt")
         review_comments = [item for item in json_array("gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/comments") if (item.get("user") or {}).get("login") != me]
-        current = set(state_lines(meta, checks, slug, origin_matches, me, len(review_comments), len(unresolved), comment_reactions(slug, number, me)))
-        added, unresolved_added = current - previous, unresolved - previous_unresolved
+        current = set(state_lines(meta, checks, slug, origin_matches, me, len(review_comments), comment_reactions(slug, number, me)))
+        added = current - previous
+        unresolved_delta = unresolved_delta_line(previous_unresolved, unresolved)
+        unresolved_added = unresolved - previous_unresolved
         if unresolved_added or any(line.startswith(("review ", "comments: ", "review-comments: ")) for line in added):
             # Fresh feedback: owe a fetch, and hand the formatter a clean retry budget.
             pending_fetch, failures = True, 0
         for line in sorted(added): emit(line)
+        if unresolved_delta:
+            emit(unresolved_delta)
         # Advance unconditionally. Holding the baseline back on a failed fetch used to
         # re-emit the whole state block every poll forever, since the only path that
         # could advance it was the broken one — enough output for Monitor to auto-stop
@@ -358,9 +374,15 @@ def main() -> int:
                 pending_fetch, failures = False, 0
                 document = path.read_text(encoding="utf-8")
                 active = re.search(r"^active_comments:\s*(\d+)", document, re.M)
-                if (active and int(active.group(1)) > 0) or "<review-summary" in document:
-                    for line in formatter_lines(document): emit(line)
-                    emit(f"→ full bodies + code context: {path}")
+                current_feedback = set(formatter_lines(document))
+                document_key = feedback_document_key(document)
+                has_feedback = (active and int(active.group(1)) > 0) or "<review-summary" in document
+                if has_feedback:
+                    new_feedback = sorted(current_feedback - previous_feedback)
+                    if new_feedback or document_key != previous_document:
+                        for line in new_feedback: emit(line)
+                        emit(f"→ full bodies + code context: {path}")
+                previous_feedback, previous_document = current_feedback, document_key
         state = str(meta.get("state", ""))
         if state in ("MERGED", "CLOSED"):
             if state == "MERGED":

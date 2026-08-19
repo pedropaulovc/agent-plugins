@@ -63,14 +63,20 @@ async function probe(expression, env = {}) {
 // Builds a throwaway skill directory plus stub `gh`/`git` on PATH, so watch-pr.py
 // runs its real loop against scripted GitHub state.
 //   closeAfter — the poll on which the PR flips to CLOSED (ends the loop)
-//   comments   — top-level comment authors reported by the snapshot query
+//   comments   — top-level comment authors reported by every snapshot poll
+//   commentsByPoll — optional top-level comment authors per poll
+//   unresolvedByPoll — optional unresolved review-thread IDs per poll
 //   formatter  — "ok" writes a fixture document, "fail" exits non-zero writing nothing
-function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
+function fixture(prefix, { closeAfter, comments = [], commentsByPoll = null, unresolvedByPoll = null, formatter = "ok" }) {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), prefix));
   const binDir = path.join(tempDir, "bin");
   const scriptDir = path.join(tempDir, "skill");
   const counterPath = path.join(tempDir, "poll-count");
   const documentPath = path.join(tempDir, "comments.md");
+  const commentsPath = path.join(tempDir, "comments.jsonl");
+  const unresolvedPath = path.join(tempDir, "unresolved.jsonl");
+  const commentPolls = commentsByPoll ?? [comments];
+  const unresolvedPolls = unresolvedByPoll ?? [[]];
 
   mkdirSync(binDir);
   mkdirSync(scriptDir);
@@ -79,6 +85,14 @@ function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
     path.join(scriptDir, "watch-pr.py"),
   );
   writeFileSync(documentPath, "active_comments: 0\n");
+  writeFileSync(commentsPath, Array.from({ length: closeAfter }, (_, index) => {
+    const logins = commentPolls[Math.min(index, commentPolls.length - 1)] ?? [];
+    return JSON.stringify(logins.map((login) => ({ author: { login } })));
+  }).join("\n"));
+  writeFileSync(unresolvedPath, Array.from({ length: closeAfter }, (_, index) => {
+    const ids = unresolvedPolls[Math.min(index, unresolvedPolls.length - 1)] ?? [];
+    return JSON.stringify(ids.map((id) => ({ id, isResolved: false })));
+  }).join("\n"));
 
   // The real comments.sh takes the output file as its SECOND argument and writes the
   // formatted document there; watch-pr.py picks that path itself rather than reading
@@ -94,7 +108,6 @@ function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
     "fi",
   ].join("\n"));
 
-  const commentNodes = comments.map((login) => `{\\"author\\":{\\"login\\":\\"${login}\\"}}`).join(",");
   writeFileSync(path.join(binDir, "gh"), [
     "#!/usr/bin/env bash",
     'if [[ "$1 $2" == "api user" ]]; then',
@@ -110,9 +123,11 @@ function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
     '  [[ -f "$WATCH_PR_TEST_COUNTER" ]] && read -r count < "$WATCH_PR_TEST_COUNTER"',
     "  count=$((count + 1))",
     '  printf \'%s\\n\' "$count" > "$WATCH_PR_TEST_COUNTER"',
+    '  comments_json=$(sed -n "${count}p" "$WATCH_PR_TEST_COMMENTS")',
+    '  unresolved_json=$(sed -n "${count}p" "$WATCH_PR_TEST_UNRESOLVED")',
     "  state=OPEN",
     `  [[ $count -ge ${closeAfter} ]] && state=CLOSED`,
-    `  printf '{"data":{"repository":{"pullRequest":{"state":"%s","mergeStateStatus":"CLEAN","baseRefName":"main","reviews":{"nodes":[]},"reactionGroups":[],"comments":{"nodes":[${commentNodes}]},"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]}}}}}\\n' "$state"`,
+    `  printf '{"data":{"repository":{"pullRequest":{"state":"%s","mergeStateStatus":"CLEAN","baseRefName":"main","reviews":{"nodes":[]},"reactionGroups":[],"comments":{"nodes":%s},"reviewThreads":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":%s}}}}}\\n' "$state" "$comments_json" "$unresolved_json"`,
     "  exit 0",
     "fi",
     'if [[ "$1" == "api" ]]; then',
@@ -146,7 +161,9 @@ function fixture(prefix, { closeAfter, comments = [], formatter = "ok" }) {
       PATH: `${binDir}${path.delimiter}${process.env.PATH}`,
       WATCH_PR_POLL_SECONDS: "1",
       WATCH_PR_TEST_DOCUMENT: documentPath,
+      WATCH_PR_TEST_COMMENTS: commentsPath,
       WATCH_PR_TEST_COUNTER: counterPath,
+      WATCH_PR_TEST_UNRESOLVED: unresolvedPath,
     },
     timeout: 30_000,
   });
@@ -166,6 +183,64 @@ test("watch-pr emits a stall event after a quiet interval", { skip: stubsUnsuppo
       1,
       "a new stall event should be emitted once per quiet interval",
     );
+  } finally {
+    cleanup();
+  }
+});
+
+test("state events use unresolved deltas and omit the pending sentinel timestamp", async () => {
+  const lines = await probe(
+    "module.state_lines({'reviews': [], 'comments': [], 'reactionGroups': [], 'mergeStateStatus': 'CLEAN'}, [{'name': 'CI', 'bucket': 'pending', 'completedAt': '0001-01-01T00:00:00Z'}], 'example/repo', True, 'watcher-test', 0, [])",
+  );
+
+  assert.deepEqual(lines, [
+    "check CI: pending",
+    "comments: 0",
+    "review-comments: 0",
+  ]);
+  assert.equal(await probe("module.unresolved_delta_line(set(), {'new-a', 'new-b'})"), "unresolved-comments: +2 (unresolved: 2)");
+  assert.equal(await probe("module.unresolved_delta_line({'old'}, set())"), "unresolved-comments: -1 (unresolved: 0)");
+  assert.equal(await probe("module.unresolved_delta_line({'old'}, {'new'})"), "unresolved-comments: +1 -1 (unresolved: 1)");
+});
+
+test("watch-pr does not re-emit active feedback on later triggers", { skip: stubsUnsupported }, async () => {
+  const document = [
+    "---",
+    "fetched_at: 2026-08-19T00:00:00Z",
+    "active_comments: 1",
+    "---",
+    '<review-thread id="thread-1">',
+    "### Thread 1",
+    "| **ID** | `101` |",
+    "| **File** | `src/example.py` |",
+    "| **Lines** | 12 |",
+    "| **Author** | reviewer |",
+    "> Keep this change",
+    "</review-thread>",
+    '<pr-comment id="202" author="reviewer">',
+    "> Top-level note",
+    "</pr-comment>",
+    '<review-summary id="review-303" author="reviewer">',
+    "> Summary title",
+    "</review-summary>",
+  ].join("\n");
+  const { tempDir, run, cleanup } = fixture("watch-pr-dedupe-", {
+    closeAfter: 4,
+    commentsByPoll: [["reviewer"], ["reviewer", "reviewer-2"]],
+    unresolvedByPoll: [["thread-0"], ["thread-0", "thread-1"]],
+  });
+  try {
+    writeFileSync(path.join(tempDir, "comments.md"), document);
+    const { stdout } = await run(["--stall-timeout", "1h"]);
+
+    assert.equal(stdout.match(/^feedback \[101\].*$/gm)?.length, 1, "the active thread should be emitted once");
+    assert.equal(stdout.match(/^feedback comment /gm)?.length ?? 0, 0, "top-level feedback stays in the file");
+    assert.equal(stdout.match(/^feedback review /gm)?.length ?? 0, 0, "review summaries stay in the file");
+    assert.equal(stdout.match(/→ full bodies \+ code context:/g)?.length, 1, "unchanged feedback must not get a new pointer");
+    assert.equal(stdout.match(/^unresolved-comments: \+1 \(unresolved: 1\)$/gm)?.length, 1);
+    assert.equal(stdout.match(/^unresolved-comments: \+1 \(unresolved: 2\)$/gm)?.length, 1);
+    assert.match(stdout, /comments: 2/);
+    assert.match(stdout, /PR 123 finished: CLOSED/);
   } finally {
     cleanup();
   }
@@ -200,7 +275,7 @@ test("a persistently failing formatter neither loops nor re-emits state", { skip
     // The baseline advances even though the fetch failed, so the state block that
     // triggered the fetch goes out exactly once instead of on every poll (issue #64).
     assert.equal(stdout.match(/^comments: 1$/gm)?.length, 1, "state lines must not repeat");
-    assert.equal(stdout.match(/^unresolved-threads: 0$/gm)?.length, 1, "state lines must not repeat");
+    assert.doesNotMatch(stdout, /^unresolved-threads:/m, "the old total-count event must stay removed");
 
     // Retries are capped per feedback event: one "will retry" line, then one line
     // announcing the pause. Six polls must not mean six failure notifications.
@@ -213,7 +288,7 @@ test("a persistently failing formatter neither loops nor re-emits state", { skip
   }
 });
 
-test("formatter event lines strip XML comments", async () => {
+test("formatter event lines strip XML comments and omit broad feedback summaries", async () => {
   const document = [
     '<review-thread id="thread-1" created="2026-08-19T00:00:00Z">',
     "### Thread 1",
@@ -241,11 +316,10 @@ test("formatter event lines strip XML comments", async () => {
 
   assert.deepEqual(lines, [
     "feedback [101] src/example.py:12 @reviewer Keep  this change",
-    "feedback comment [202] @reviewer Top-level  note",
-    "feedback review [review-303] @reviewer Summary  title",
   ]);
   assert.ok(lines.every((line) => !line.includes("<!--") && !line.includes("-->")));
 });
+
 
 // ---------------------------------------------------------------------------
 // Coverage for the platform-specific pieces of issue #63. These drive the real
