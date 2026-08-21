@@ -67,8 +67,9 @@ async function probe(expression, env = {}) {
 //   commentsByPoll — optional top-level comment authors per poll
 //   unresolvedByPoll — optional unresolved review-thread IDs per poll
 //   checksByPoll — optional check rows returned per poll
+//   checkFailuresByPoll — optional polls where the check query fails
 //   formatter  — "ok" writes a fixture document, "fail" exits non-zero writing nothing
-function fixture(prefix, { closeAfter, comments = [], commentsByPoll = null, unresolvedByPoll = null, checksByPoll = null, formatter = "ok" }) {
+function fixture(prefix, { closeAfter, comments = [], commentsByPoll = null, unresolvedByPoll = null, checksByPoll = null, checkFailuresByPoll = null, formatter = "ok" }) {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), prefix));
   const binDir = path.join(tempDir, "bin");
   const scriptDir = path.join(tempDir, "skill");
@@ -78,8 +79,10 @@ function fixture(prefix, { closeAfter, comments = [], commentsByPoll = null, unr
   const commentsPath = path.join(tempDir, "comments.jsonl");
   const unresolvedPath = path.join(tempDir, "unresolved.jsonl");
   const checksPath = path.join(tempDir, "checks.jsonl");
+  const checkFailuresPath = path.join(tempDir, "check-failures.jsonl");
   const commentPolls = commentsByPoll ?? [comments];
   const unresolvedPolls = unresolvedByPoll ?? [[]];
+  const checkFailurePolls = checkFailuresByPoll ?? [];
   const checkPolls = checksByPoll ?? [[]];
   mkdirSync(binDir);
   mkdirSync(scriptDir);
@@ -99,6 +102,10 @@ function fixture(prefix, { closeAfter, comments = [], commentsByPoll = null, unr
   writeFileSync(checksPath, Array.from({ length: closeAfter }, (_, index) => {
     const checks = checkPolls[Math.min(index, checkPolls.length - 1)] ?? [];
     return JSON.stringify(checks);
+  }).join("\n"));
+  writeFileSync(checkFailuresPath, Array.from({ length: closeAfter }, (_, index) => {
+    const failed = checkFailurePolls[Math.min(index, checkFailurePolls.length - 1)] ?? false;
+    return failed ? "1" : "0";
   }).join("\n"));
 
   // The real comments.sh takes the output file as its SECOND argument and writes the
@@ -126,6 +133,8 @@ function fixture(prefix, { closeAfter, comments = [], commentsByPoll = null, unr
     '  [[ -f "$WATCH_PR_TEST_CHECK_COUNTER" ]] && read -r count < "$WATCH_PR_TEST_CHECK_COUNTER"',
     "  count=$((count + 1))",
     '  printf \'%s\\n\' "$count" > "$WATCH_PR_TEST_CHECK_COUNTER"',
+    '  check_failed=$(sed -n "${count}p" "$WATCH_PR_TEST_CHECK_FAILURES")',
+    '  [[ "$check_failed" == "1" ]] && exit 1',
     '  checks_json=$(sed -n "${count}p" "$WATCH_PR_TEST_CHECKS")',
     '  printf \'%s\\n\' "${checks_json:-[]}"',
     "  exit 0",
@@ -174,6 +183,7 @@ function fixture(prefix, { closeAfter, comments = [], commentsByPoll = null, unr
       WATCH_PR_POLL_SECONDS: "1",
       WATCH_PR_TEST_DOCUMENT: documentPath,
       WATCH_PR_TEST_CHECKS: checksPath,
+      WATCH_PR_TEST_CHECK_FAILURES: checkFailuresPath,
       WATCH_PR_TEST_CHECK_COUNTER: checkCounterPath,
       WATCH_PR_TEST_COMMENTS: commentsPath,
       WATCH_PR_TEST_COUNTER: counterPath,
@@ -283,6 +293,80 @@ test("watch-pr aggregates checks already pending at startup", { skip: stubsUnsup
     assert.equal(stdout.match(/^checks: rerun started \(pending: build, lint\)$/gm)?.length, 1);
     assert.equal(stdout.match(/^checks: all terminal \(pass: 1, fail: 0, skipping: 0, cancel: 1\)$/gm)?.length, 1);
     assert.doesNotMatch(stdout, /^check /m);
+    assert.match(stdout, /PR 123 finished: CLOSED/);
+  } finally {
+    cleanup();
+  }
+});
+test("watch-pr ignores removed pending checks", { skip: stubsUnsupported }, async () => {
+  const { run, cleanup } = fixture("watch-pr-removed-checks-", {
+    closeAfter: 4,
+    checksByPoll: [
+      [{ name: "build", bucket: "pass", completedAt: "2026-08-20T00:00:00Z" }],
+      [
+        { name: "build", bucket: "pending", completedAt: "0001-01-01T00:00:00Z" },
+        { name: "obsolete", bucket: "pending", completedAt: "0001-01-01T00:00:00Z" },
+      ],
+      [{ name: "build", bucket: "pass", completedAt: "2026-08-20T00:00:10Z" }],
+    ],
+  });
+  try {
+    const { stdout } = await run(["--stall-timeout", "1h"]);
+
+    assert.equal(stdout.match(/^checks: rerun started /gm)?.length, 1);
+    assert.doesNotMatch(stdout, /^checks: all terminal /m);
+    assert.match(stdout, /PR 123 finished: CLOSED/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("watch-pr keeps a pending wave across a failed checks query", { skip: stubsUnsupported }, async () => {
+  const { run, cleanup } = fixture("watch-pr-check-failure-", {
+    closeAfter: 5,
+    checksByPoll: [
+      [{ name: "build", bucket: "pass", completedAt: "2026-08-20T00:00:00Z" }],
+      [{ name: "build", bucket: "pending", completedAt: "0001-01-01T00:00:00Z" }],
+      [{ name: "build", bucket: "pass", completedAt: "2026-08-20T00:00:10Z" }],
+    ],
+    checkFailuresByPoll: [false, false, true, false],
+  });
+  try {
+    const { stdout } = await run(["--stall-timeout", "1h"]);
+
+    assert.equal(stdout.match(/^checks: rerun started /gm)?.length, 1);
+    assert.equal(stdout.match(/^checks: all terminal \(pass: 1, fail: 0, skipping: 0, cancel: 0\)$/gm)?.length, 1);
+    assert.doesNotMatch(stdout, /^check build: pass/m);
+    assert.match(stdout, /PR 123 finished: CLOSED/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("watch-pr preserves duplicate check names in aggregate state", { skip: stubsUnsupported }, async () => {
+  const { run, cleanup } = fixture("watch-pr-duplicate-checks-", {
+    closeAfter: 4,
+    checksByPoll: [
+      [
+        { name: "build", bucket: "pass", completedAt: "2026-08-20T00:00:00Z" },
+        { name: "build", bucket: "pass", completedAt: "2026-08-20T00:00:01Z" },
+      ],
+      [
+        { name: "build", bucket: "pending", completedAt: "0001-01-01T00:00:00Z" },
+        { name: "build", bucket: "fail", completedAt: "2026-08-20T00:00:02Z" },
+      ],
+      [
+        { name: "build", bucket: "pass", completedAt: "2026-08-20T00:00:03Z" },
+        { name: "build", bucket: "fail", completedAt: "2026-08-20T00:00:02Z" },
+      ],
+    ],
+  });
+  try {
+    const { stdout } = await run(["--stall-timeout", "1h"]);
+
+    assert.equal(stdout.match(/^checks: rerun started \(pending: build\)$/gm)?.length, 1);
+    assert.equal(stdout.match(/^check build: fail @2026-08-20T00:00:02Z$/gm)?.length, 1);
+    assert.equal(stdout.match(/^checks: all terminal \(pass: 1, fail: 1, skipping: 0, cancel: 0\)$/gm)?.length, 1);
     assert.match(stdout, /PR 123 finished: CLOSED/);
   } finally {
     cleanup();
