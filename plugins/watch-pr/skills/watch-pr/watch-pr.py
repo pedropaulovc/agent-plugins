@@ -88,14 +88,14 @@ def json_array(*args: str) -> List[Dict[str, object]]:
 
 
 def check_rows(number: int, slug: str) -> Optional[List[Dict[str, object]]]:
+    """Return a valid check array, preserving None for a failed query."""
     result = command("gh", "pr", "checks", str(number), "-R", slug, "--json", "name,bucket,completedAt", capture=True)
-    values = json_values(result.stdout or "")
-    if not values:
+    arrays = [value for value in json_values(result.stdout or "") if isinstance(value, list)]
+    if not arrays:
         return None
     items: List[Dict[str, object]] = []
-    for value in values:
-        if isinstance(value, list):
-            items.extend(item for item in value if isinstance(item, dict))
+    for value in arrays:
+        items.extend(item for item in value if isinstance(item, dict))
     return items
 
 
@@ -221,6 +221,7 @@ def unresolved_delta_line(previous: Set[str], current: Set[str]) -> Optional[str
 
 
 def check_state(check: Dict[str, object]) -> CheckState:
+    """Normalize one CLI check row for comparison and output."""
     name = str(check.get("name"))
     bucket = str(check.get("bucket") or "")
     finished = str(check.get("completedAt") or "")
@@ -230,11 +231,13 @@ def check_state(check: Dict[str, object]) -> CheckState:
 
 
 def check_state_line(state: CheckState) -> str:
+    """Format a normalized check state for the monitor stream."""
     name, bucket, finished = state
     return f"check {name}: {bucket}" + (f" @{finished}" if finished else "")
 
 
 def check_states(checks: List[Dict[str, object]]) -> CheckStates:
+    """Index check rows by display-name occurrence for stable comparisons."""
     occurrences: Dict[str, int] = {}
     states: CheckStates = {}
     for check in checks:
@@ -247,6 +250,7 @@ def check_states(checks: List[Dict[str, object]]) -> CheckStates:
 
 
 def check_terminal_summary(current: CheckStates) -> str:
+    """Summarize the terminal buckets in the current check snapshot."""
     counts = {bucket: 0 for bucket in CHECK_TERMINAL_BUCKETS}
     other = 0
     for _, bucket, _ in current.values():
@@ -267,6 +271,7 @@ def check_event_lines(
     current: CheckStates,
     rerun_active: bool,
 ) -> Tuple[List[str], bool]:
+    """Emit actionable check changes and update the active rerun flag."""
     failures = [
         check_state_line(state)
         for key, state in current.items()
@@ -291,6 +296,7 @@ def check_event_lines(
 
 
 def state_lines(meta: Dict[str, object], checks: List[Dict[str, object]], slug: str, origin_matches: bool, me: str, review_comments: int, reactions: List[str]) -> List[str]:
+    """Build the complete lifecycle snapshot used for non-check diffs."""
     lines: List[str] = []
     for check in checks:
         lines.append(check_state_line(check_state(check)))
@@ -404,6 +410,7 @@ def feedback_document_key(document: str) -> str:
 
 
 def main() -> int:
+    """Watch a pull request until it reaches a terminal lifecycle state."""
     use_utf8_streams()
     args = arguments()
     try:
