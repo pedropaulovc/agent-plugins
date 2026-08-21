@@ -1,6 +1,6 @@
 {
   "name": "watch-pr",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Skill that watches a GitHub PR's full lifecycle (CI, rebase, reviews, reactions, merge) and, on feedback changes, emits deduplicated unresolved-thread summaries plus a path to the full comments document. Self-contained (vendors its own comment formatter).",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

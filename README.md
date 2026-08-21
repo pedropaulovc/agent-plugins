@@ -84,7 +84,7 @@ Tuned to my own setup, tooling, workflow preferences, or niche — unlikely to a
 | [unrelated-issue-detector](plugins/unrelated-issue-detector) | Hook | Demands evidence for each "unrelated/pre-existing" dismissal |
 | [gh-issue](plugins/gh-issue) | Skill | Turns terse bug reports into well-structured GitHub issues via `gh` |
 | [pr-comments](plugins/pr-comments) | Skill | Fetches unresolved PR comments formatted for LLM review and reply |
-| [watch-pr](plugins/watch-pr) | Skill + Tool | `/watch-pr` — watches a PR's full lifecycle (CI, rebase, reviews, merge) and surfaces deduplicated feedback changes through Claude's Monitor or OpenCode's event-driven `promptAsync` bridge |
+| [watch-pr](plugins/watch-pr) | Skill + Tool | `/watch-pr` — watches a PR's full lifecycle (CI, rebase, reviews, merge), coalesces routine CI check churn, and surfaces deduplicated feedback changes through Claude's Monitor or OpenCode's event-driven `promptAsync` bridge |
 | [omp-persist-system-prompt](plugins/omp-persist-system-prompt) | OMP Extension | Stores each distinct effective system prompt plus provider tool context as hidden custom session metadata for transcript indexing |
 | [command-chain-separator](plugins/command-chain-separator) | Hook | Injects a visible separator between Bash commands joined by `&&` or `;` so per-command output is easy to read |
 | [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks .NET COM API workflow with anti-hallucination guardrails |

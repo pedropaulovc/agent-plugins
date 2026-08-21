@@ -38,6 +38,12 @@ def command(*args: str, capture: bool = False, check: bool = False) -> subproces
 
 XML_COMMENT_PATTERN = re.compile(r"<!--.*?-->", re.DOTALL)
 PENDING_CHECK_TIMESTAMP = "0001-01-01T00:00:00Z"
+CHECK_FAILURE_BUCKETS = {"fail", "failure"}
+CHECK_TERMINAL_BUCKETS = ("pass", "fail", "skipping", "cancel")
+
+CheckKey = Tuple[str, int]
+CheckState = Tuple[str, str, str]
+CheckStates = Dict[CheckKey, CheckState]
 
 
 def strip_xml_comments(value: str) -> str:
@@ -78,6 +84,18 @@ def json_array(*args: str) -> List[Dict[str, object]]:
     for value in json_values(output(*args)):
         if isinstance(value, list):
             items.extend(item for item in value if isinstance(item, dict))
+    return items
+
+
+def check_rows(number: int, slug: str) -> Optional[List[Dict[str, object]]]:
+    """Return a valid check array, preserving None for a failed query."""
+    result = command("gh", "pr", "checks", str(number), "-R", slug, "--json", "name,bucket,completedAt", capture=True)
+    arrays = [value for value in json_values(result.stdout or "") if isinstance(value, list)]
+    if not arrays:
+        return None
+    items: List[Dict[str, object]] = []
+    for value in arrays:
+        items.extend(item for item in value if isinstance(item, dict))
     return items
 
 
@@ -202,14 +220,86 @@ def unresolved_delta_line(previous: Set[str], current: Set[str]) -> Optional[str
     return f"unresolved-comments: {' '.join(changes)} (unresolved: {len(current)})" if changes else None
 
 
+def check_state(check: Dict[str, object]) -> CheckState:
+    """Normalize one CLI check row for comparison and output."""
+    name = str(check.get("name"))
+    bucket = str(check.get("bucket") or "")
+    finished = str(check.get("completedAt") or "")
+    if bucket == "pending" and finished == PENDING_CHECK_TIMESTAMP:
+        finished = ""
+    return name, bucket, finished
+
+
+def check_state_line(state: CheckState) -> str:
+    """Format a normalized check state for the monitor stream."""
+    name, bucket, finished = state
+    return f"check {name}: {bucket}" + (f" @{finished}" if finished else "")
+
+
+def check_states(checks: List[Dict[str, object]]) -> CheckStates:
+    """Index check rows by display-name occurrence for stable comparisons."""
+    occurrences: Dict[str, int] = {}
+    states: CheckStates = {}
+    for check in checks:
+        state = check_state(check)
+        name = state[0]
+        occurrence = occurrences.get(name, 0)
+        states[(name, occurrence)] = state
+        occurrences[name] = occurrence + 1
+    return states
+
+
+def check_terminal_summary(current: CheckStates) -> str:
+    """Summarize the terminal buckets in the current check snapshot."""
+    counts = {bucket: 0 for bucket in CHECK_TERMINAL_BUCKETS}
+    other = 0
+    for _, bucket, _ in current.values():
+        if bucket in CHECK_FAILURE_BUCKETS:
+            counts["fail"] += 1
+        elif bucket in counts:
+            counts[bucket] += 1
+        else:
+            other += 1
+    details = ", ".join(f"{bucket}: {counts[bucket]}" for bucket in CHECK_TERMINAL_BUCKETS)
+    if other:
+        details += f", other: {other}"
+    return f"checks: all terminal ({details})"
+
+
+def check_event_lines(
+    previous: Optional[CheckStates],
+    current: CheckStates,
+    rerun_active: bool,
+) -> Tuple[List[str], bool]:
+    """Emit actionable check changes and update the active rerun flag."""
+    failures = [
+        check_state_line(state)
+        for key, state in current.items()
+        if state[1] in CHECK_FAILURE_BUCKETS and (previous is None or previous.get(key) != state)
+    ]
+    pending = {key for key, state in current.items() if state[1] == "pending"}
+    started = sorted({
+        state[0]
+        for key, state in current.items()
+        if state[1] == "pending" and (previous is None or previous.get(key, ("", "", ""))[1] != "pending")
+    })
+    events = sorted(set(failures))
+    if started and not rerun_active:
+        events.append(f"checks: rerun started (pending: {', '.join(started)})")
+        rerun_active = True
+    if rerun_active and not pending:
+        previous_pending = {key for key, state in (previous or {}).items() if state[1] == "pending"}
+        if previous_pending and not (previous_pending - current.keys()):
+            events.append(check_terminal_summary(current))
+        rerun_active = False
+    return events, rerun_active
+
+
 def state_lines(meta: Dict[str, object], checks: List[Dict[str, object]], slug: str, origin_matches: bool, me: str, review_comments: int, reactions: List[str]) -> List[str]:
+    """Build the complete lifecycle snapshot used for non-check diffs."""
     lines: List[str] = []
     for check in checks:
-        bucket = str(check.get("bucket") or "")
-        finished = str(check.get("completedAt") or "")
-        if bucket == "pending" and finished == PENDING_CHECK_TIMESTAMP:
-            finished = ""
-        lines.append(f"check {check.get('name')}: {bucket}" + (f" @{finished}" if finished else ""))
+        lines.append(check_state_line(check_state(check)))
     status = meta.get("mergeStateStatus")
     if status in ("BEHIND", "DIRTY"):
         base = meta.get("baseRefName")
@@ -320,6 +410,7 @@ def feedback_document_key(document: str) -> str:
 
 
 def main() -> int:
+    """Watch a pull request until it reaches a terminal lifecycle state."""
     use_utf8_streams()
     args = arguments()
     try:
@@ -330,6 +421,8 @@ def main() -> int:
     origin_matches, me = origin_is_base(slug), login()
     comments_script, bash = Path(__file__).with_name("comments.sh"), bash_executable()
     previous: Set[str] = set()
+    previous_check_states: Optional[CheckStates] = None
+    check_rerun_active = False
     previous_unresolved: Set[str] = set()
     previous_feedback: Set[str] = set()
     previous_document = ""
@@ -343,8 +436,10 @@ def main() -> int:
         print(line, flush=True); last_event = time.monotonic()
     while True:
         meta, unresolved = pr_snapshot(slug, number)
-        checks = json_array("gh", "pr", "checks", str(number), "-R", slug, "--json", "name,bucket,completedAt")
+        check_snapshot = check_rows(number, slug)
+        checks = check_snapshot or []
         review_comments = [item for item in json_array("gh", "api", "--paginate", f"repos/{slug}/pulls/{number}/comments") if (item.get("user") or {}).get("login") != me]
+        current_check_states = previous_check_states if check_snapshot is None else check_states(check_snapshot)
         current = set(state_lines(meta, checks, slug, origin_matches, me, len(review_comments), comment_reactions(slug, number, me)))
         added = current - previous
         unresolved_delta = unresolved_delta_line(previous_unresolved, unresolved)
@@ -352,7 +447,14 @@ def main() -> int:
         if unresolved_added or any(line.startswith(("review ", "comments: ", "review-comments: ")) for line in added):
             # Fresh feedback: owe a fetch, and hand the formatter a clean retry budget.
             pending_fetch, failures = True, 0
-        for line in sorted(added): emit(line)
+        check_lines = {line for line in added if line.startswith("check ")}
+        for line in sorted(added - check_lines):
+            emit(line)
+        check_events = []
+        if check_snapshot is not None:
+            check_events, check_rerun_active = check_event_lines(previous_check_states, current_check_states or {}, check_rerun_active)
+        for line in check_events:
+            emit(line)
         if unresolved_delta:
             emit(unresolved_delta)
         # Advance unconditionally. Holding the baseline back on a failed fetch used to
@@ -360,7 +462,7 @@ def main() -> int:
         # could advance it was the broken one — enough output for Monitor to auto-stop
         # the watcher (issue #64). The outstanding fetch rides on pending_fetch instead,
         # so it still retries without duplicating events that already went out.
-        previous, previous_unresolved = current, unresolved
+        previous, previous_check_states, previous_unresolved = current, current_check_states, unresolved
         if pending_fetch and failures < FORMATTER_FAILURE_LIMIT:
             fetches += 1
             path = run_formatter(bash, comments_script, url, number, fetches)

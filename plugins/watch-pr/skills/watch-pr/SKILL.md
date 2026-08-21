@@ -15,6 +15,11 @@ pointer only when the formatted document changes. Top-level comment and body-rev
 summaries stay in the file instead of being emitted inline, and unchanged feedback
 is not re-emitted.
 
+CI check churn is coalesced: a pending wave produces one `checks: rerun started …`
+event, newly observed failures stay immediate and named, and the wave ends with one
+`checks: all terminal …` summary. Routine pending, pass, skipping, and cancel
+transitions are not emitted one per check.
+
 ## Arguments
 
 - PR ref (optional): a PR number, full URL, or branch name — the forms
@@ -47,7 +52,8 @@ which can miss or mis-target a PR when the branch's PR lives in another repo (e.
 fork checkout), whereas the URL is unambiguous.
 
 The watch loop fetches once on startup, so any threads already open when you start
-arrive as `feedback …` lines in the first poll (silent if none are active).
+arrive as `feedback …` lines in the first poll (silent if none are active). Existing
+pending checks arrive as one aggregate rerun-start event rather than one line each.
 
 ### 2. Launch the watch
 
@@ -80,10 +86,9 @@ Monitor (Windows):
   description: "PR <PR> lifecycle"
   command: py "<this skill's directory>/watch-pr.py" <PR> [--stall-timeout <duration>]
 ```
-
-The loop diffs state each poll and emits **one line per change**, staying silent
-while the PR just waits for auto-merge. It self-terminates on MERGED/CLOSED — you
-never stop it manually.
+The loop diffs state each poll and emits **one line per actionable change**, plus
+aggregate events for CI check waves, staying silent while the PR just waits for
+auto-merge. It self-terminates on MERGED/CLOSED — you never stop it manually.
 
 **Under Codex (no `Monitor` tool):** start `python3 watch-pr.py <PR> [--stall-timeout <duration>]`
 (or `py watch-pr.py <PR> [--stall-timeout <duration>]` on Windows) as a
@@ -109,9 +114,9 @@ bash path if Git lives somewhere unusual.
 
 | Event line | What it means | Action |
 |---|---|---|
-| `check <name>: pending` | a CI check started/re-ran | note it; wait for the terminal bucket; the GitHub zero-date sentinel is omitted |
-| `check <name>: fail [@<ts>]` (or `failure`) | CI went red | investigate the failure (`gh run view`/logs), propose a fix, and — with the user's ok — push it; the next `check … pending → pass/fail` line confirms the re-run |
-| `check <name>: pass [@<ts>]` (or `success`) | CI went green | nothing to do |
+| `checks: rerun started (pending: <names>)` | one or more checks are pending at startup or a new rerun wave has begun; the GitHub zero-date sentinel is omitted | informational — wait for the all-terminal summary; individual pending/pass/skipping/cancel transitions stay silent |
+| `check <name>: fail [@<ts>]` (or `failure`) | a named check is newly failing, or a failing run changed | investigate the failure (`gh run view`/logs), propose a fix, and — with the user's ok — push it; the next aggregate terminal event confirms the wave |
+| `checks: all terminal (pass: <n>, fail: <n>, skipping: <n>, cancel: <n>)` | the observed pending wave has no pending checks left; `skipping` means GitHub intentionally did not run a check, and `cancel` means it was canceled | informational — use the counts to assess the wave; no per-check action is needed |
 | `rebase: BEHIND — git pull --rebase origin <base> …` | branch fell behind the PR's **base** branch | run the emitted command (fast-forwards cleanly), then push |
 | `rebase: DIRTY — git pull --rebase origin <base> …` | merge conflicts with the base branch | run the emitted command, resolve conflicts during the rebase, then force-push with `--force-with-lease` |
 | `review <login>: <state> @<ts>` | a reviewer just submitted | if a feedback path follows, open it; review summaries are not emitted inline |
@@ -155,6 +160,8 @@ reaches MERGED/CLOSED.
 - One script does both jobs: the watch loop drives `comments.sh` internally, so you
   only ever launch `watch-pr.py` — the watcher emits compact lines only for inline
   unresolved-thread changes and points to the full document when its content changes.
+- CI check waves use one rerun-start event, immediate named failures, and one
+  all-terminal count; `skipping` means intentionally not run and `cancel` means canceled.
 - The 👀→👍 sequence is the clean-review path for Codex (auto-reviews every push).
 - Force-pushes on this feature branch use `--force-with-lease`; no confirmation needed.
 - Do not merge or enable auto-merge until the user explicitly confirms; otherwise let
