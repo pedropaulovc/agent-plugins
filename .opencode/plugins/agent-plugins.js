@@ -1,4 +1,5 @@
 export { AltTextPlugin } from "../../plugins/alt-text/.opencode/plugins/alt-text.js";
+export { CloudflareTempAccountsPlugin } from "../../plugins/cloudflare-temp-accounts/.opencode/plugins/cloudflare-temp-accounts.js";
 export { CommandChainSeparatorPlugin } from "../../plugins/command-chain-separator/.opencode/plugins/command-chain-separator.js";
 export { DevelopingSolidworksPlugin } from "../../plugins/developing-solidworks/.opencode/plugins/developing-solidworks.js";
 export { GhIssuePlugin } from "../../plugins/gh-issue/.opencode/plugins/gh-issue.js";

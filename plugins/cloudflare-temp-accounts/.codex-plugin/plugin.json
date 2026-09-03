@@ -1,0 +1,23 @@
+{
+  "name": "cloudflare-temp-accounts",
+  "version": "0.1.1",
+  "description": "Skill for provisioning Cloudflare accounts through Wrangler's temporary-account flow, claiming them in a headed browser, and isolating named Wrangler auth profiles.",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agent-plugins",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
+  "license": "MIT",
+  "keywords": [
+    "skill",
+    "cloudflare",
+    "wrangler",
+    "accounts",
+    "authentication"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Cloudflare Temp Accounts"
+  }
+}
