@@ -94,6 +94,7 @@ Tuned to my own setup, tooling, workflow preferences, or niche — unlikely to a
 | [worktree-reset](plugins/worktree-reset) | Skill | `/reset` — harness-aware teardown, then resets the current worktree to `origin/main` and syncs Node, Go, and Python dependencies |
 | [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Auto-injects `--headed` into `playwright-cli open` invocations and recommends a standard viewport |
 | [alt-text](plugins/alt-text) | Skill | Writes accessibility-focused alt text for images about to be posted on social media |
+| [cloudflare-temp-accounts](plugins/cloudflare-temp-accounts) | Skill | Provisions and claims Cloudflare temporary accounts, then isolates Wrangler auth profiles |
 | [onepassword](plugins/onepassword) | Skill | Establishes a 1Password CLI (`op`) session interactively via tmux when service-account auth fails |
 
 ## License

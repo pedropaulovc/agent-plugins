@@ -10,7 +10,7 @@ const directory = process.cwd();
 const idleEvent = (sessionID) => ({ event: { type: "session.idle", properties: { sessionID } } });
 
 test("all plugins load and register expected config", async () => {
-  assert.equal(Object.keys(plugins).length, 15);
+  assert.equal(Object.keys(plugins).length, 16);
   const config = {};
   const client = {
     session: {
@@ -22,13 +22,14 @@ test("all plugins load and register expected config", async () => {
     const hooks = await plugin({ client, directory, worktree: directory });
     if (hooks.config) await hooks.config(config);
   }
-  assert.equal(config.skills.paths.length, 9);
-  assert.equal(Object.keys(config.command).length, 12);
+  assert.equal(config.skills.paths.length, 10);
+  assert.equal(Object.keys(config.command).length, 13);
   assert.ok(config.command["alt-text"]);
   assert.ok(config.command.issue);
   assert.ok(config.command.comments);
   assert.ok(config.command["watch-pr"]);
   assert.ok(config.command["download-solidworks-docs"]);
+  assert.ok(config.command["cloudflare-temp-accounts"]);
   assert.ok(config.command.reset);
 });
 

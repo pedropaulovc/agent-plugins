@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/cloudflare-temp-accounts",
+  "version": "0.1.0",
+  "description": "Cloudflare temporary account provisioning skill for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/cloudflare-temp-accounts.js"
+}

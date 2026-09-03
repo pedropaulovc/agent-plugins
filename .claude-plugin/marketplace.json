@@ -67,6 +67,10 @@
       "source": "./plugins/alt-text"
     },
     {
+      "name": "cloudflare-temp-accounts",
+      "source": "./plugins/cloudflare-temp-accounts"
+    },
+    {
       "name": "memory-to-repo",
       "source": "./plugins/memory-to-repo"
     },
