@@ -1,6 +1,6 @@
 {
   "name": "cloudflare-temp-accounts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Skill for provisioning Cloudflare accounts through Wrangler's temporary-account flow, claiming them in a headed browser, and isolating named Wrangler auth profiles.",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
