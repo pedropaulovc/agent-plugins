@@ -248,6 +248,7 @@ async function crawlTwitterSearch({ handle, token, profile, capturedAt, options,
   const end = new Date();
   const warnings = [];
   let pages = 0;
+  let complete = true;
   let previousRequest = 0;
   const request = async url => {
     const elapsed = Date.now() - previousRequest;
@@ -256,7 +257,11 @@ async function crawlTwitterSearch({ handle, token, profile, capturedAt, options,
     return requestJson(url, { headers: { "X-API-Key": token } });
   };
 
-  for (let start = new Date(created); start < end && pages < options.maxPages; start = new Date(start.getUTCFullYear() + 1, start.getUTCMonth(), start.getUTCDate())) {
+  for (let start = new Date(created); start < end; start = new Date(start.getUTCFullYear() + 1, start.getUTCMonth(), start.getUTCDate())) {
+    if (pages >= options.maxPages) {
+      complete = false;
+      break;
+    }
     const windowEnd = new Date(Math.min(new Date(start.getUTCFullYear() + 1, start.getUTCMonth(), start.getUTCDate()).valueOf(), end.valueOf()));
     let cursor = "";
     const seenCursors = new Set();
@@ -277,18 +282,25 @@ async function crawlTwitterSearch({ handle, token, profile, capturedAt, options,
       const next = nextCursor(payload);
       if (!next || seenCursors.has(next)) {
         if (next && seenCursors.has(next)) warnings.push(`TwitterAPI.io repeated a cursor in ${start.toISOString()}..${windowEnd.toISOString()}.`);
+        if (next && seenCursors.has(next)) complete = false;
         break;
       }
       seenCursors.add(next);
       cursor = next;
     }
+    if (!complete) break;
+    if (pages >= options.maxPages && windowEnd < end) {
+      complete = false;
+      break;
+    }
   }
-  return { pages, warnings };
+  return { pages, warnings, complete };
 }
 
 async function crawlTwitterTimeline({ userId, token, capturedAt, options, posts }) {
   let cursor = "";
   let pages = 0;
+  let complete = false;
   let previousRequest = 0;
   const seenCursors = new Set();
   while (pages < options.maxPages) {
@@ -301,11 +313,15 @@ async function crawlTwitterTimeline({ userId, token, capturedAt, options, posts 
     pages += 1;
     for (const raw of tweetArray(payload)) addPost(posts, normalizePost("twitter", raw, capturedAt, { provenance: { source: "last_tweets", page: pages } }));
     const next = nextCursor(payload);
-    if (!next || seenCursors.has(next)) break;
+    if (!next) {
+      complete = true;
+      break;
+    }
+    if (seenCursors.has(next)) break;
     seenCursors.add(next);
     cursor = next;
   }
-  return pages;
+  return { pages, complete };
 }
 
 async function downloadTwitter(options, capturedAt) {
@@ -317,18 +333,20 @@ async function downloadTwitter(options, capturedAt) {
   if (!userId || userId === "null") throw new Error("Twitter profile response did not contain a user ID");
   const posts = new Map();
   const search = await crawlTwitterSearch({ handle: "pedrovc", token, profile, capturedAt, options, posts });
-  const timelinePages = await crawlTwitterTimeline({ userId, token, capturedAt, options, posts });
+  const timeline = await crawlTwitterTimeline({ userId, token, capturedAt, options, posts });
+  const complete = search.complete && timeline.complete;
   return {
     profile,
     posts: sortPosts(posts.values()),
     expectedCount: Number.isFinite(Number(profile.statusesCount)) ? Number(profile.statusesCount) : null,
-    complete: true,
+    complete,
     coverage: "best_effort_public_index",
-    stopReason: "source_cursors_exhausted",
+    stopReason: complete ? "source_cursors_exhausted" : "max_pages_or_repeated_cursor",
     warnings: search.warnings,
-    pages: search.pages + timelinePages,
+    pages: search.pages + timeline.pages,
   };
 }
+
 
 function nextLink(linkHeader) {
   for (const link of String(linkHeader ?? "").split(",")) {
