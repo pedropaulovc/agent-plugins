@@ -81,6 +81,10 @@
     {
       "name": "omp-persist-system-prompt",
       "source": "./plugins/omp-persist-system-prompt"
+    },
+    {
+      "name": "pedro-microblog",
+      "source": "./plugins/pedro-microblog"
     }
   ]
 }

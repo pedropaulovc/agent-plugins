@@ -1,0 +1,24 @@
+{
+  "name": "pedro-microblog",
+  "version": "0.1.0",
+  "description": "A grounded writing-style skill for Pedro's X, Threads, Mastodon, and Bluesky posts",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agent-plugins",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
+  "license": "MIT",
+  "keywords": [
+    "microblog",
+    "twitter",
+    "threads",
+    "mastodon",
+    "bluesky",
+    "writing-style"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Pedro Microblog"
+  }
+}
