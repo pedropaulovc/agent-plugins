@@ -7,8 +7,8 @@ async page => {
   const handle = handleMatch?.[1]?.slice(1).toLowerCase() ?? "";
   const pageText = ((await page.locator("body").innerText().catch(() => "")) || "").toLowerCase();
   const currentUrl = profileUrl.toLowerCase();
-  if (/(?:instagram|threads)\.com\/(?:[^/?#]+\/)*login/i.test(currentUrl) ||
-    /log in|login|sign up|create account/.test(pageText) && !/profile/.test(pageText)) {
+  const loginFormVisible = await page.locator('input[type="password"]').isVisible().catch(() => false);
+  if (/(?:instagram|threads)\.com\/(?:[^/?#]+\/)*login/i.test(currentUrl) || loginFormVisible) {
     return { status: "login_required", profile: { handle, url: profileUrl }, posts: [], scrolls: 0, complete: false, stopReason: "login_required" };
   }
   if (/this profile is private|account is private|profile is private/.test(pageText)) {
@@ -81,6 +81,8 @@ async page => {
       break;
     }
   }
+  await collect();
+
 
   return {
     status: "ok",

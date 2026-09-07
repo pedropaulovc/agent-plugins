@@ -176,31 +176,32 @@ function first(value, keys) {
 
 function decodeHtml(value) {
   return String(value ?? "")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&#x27;/gi, "'")
-    .replace(/&#x2F;/gi, "/")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#([0-9]+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&amp;/g, "&");
 }
 
 function htmlToText(value) {
-  return decodeHtml(value)
+  const stripped = String(value ?? "")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/p\s*>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+    .replace(/<[^>]+>/g, "");
+  return decodeHtml(stripped)
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function mediaList(value) {
-  return asArray(value).map(item => ({
+  const entries = Array.isArray(value) ? value : asArray(value?.images ?? value?.media ?? value?.items);
+  return entries.map(item => ({
     type: first(item, ["type", "media_type"]),
-    url: first(item, ["url", "media_url_https", "media_url", "src"]),
-    previewUrl: first(item, ["preview_image_url", "thumbnail_url"]),
+    url: first(item, ["url", "media_url_https", "media_url", "fullsize", "src"]),
+    previewUrl: first(item, ["preview_image_url", "thumbnail_url", "thumb"]),
     alt: first(item, ["alt_text", "alt"]),
   })).filter(item => item.url || item.previewUrl);
 }
@@ -216,7 +217,7 @@ function normalizePost(platform, raw, capturedAt, extra = {}) {
     url: first(raw, ["url", "permalink", "webUrl"]) ?? extra.url ?? null,
     createdAt: createdAt ? new Date(createdAt).toISOString() : null,
     text,
-    media: mediaList(first(raw, ["media", "attachments", "embed?.media"]) ?? []),
+    media: mediaList(first(raw, ["media", "attachments", "embed?.media", "embed?.images"]) ?? []),
     isReply: Boolean(first(raw, ["isReply", "in_reply_to_status_id", "reply"]) || extra.isReply),
     isRepost: Boolean(first(raw, ["isRepost", "retweeted", "reblog", "reason"]) || extra.isRepost),
     capturedAt,
@@ -249,6 +250,7 @@ async function crawlTwitterSearch({ handle, token, profile, capturedAt, options,
   const warnings = [];
   let pages = 0;
   let complete = true;
+  let stopReason = "source_cursors_exhausted";
   let previousRequest = 0;
   const request = async url => {
     const elapsed = Date.now() - previousRequest;
@@ -260,6 +262,7 @@ async function crawlTwitterSearch({ handle, token, profile, capturedAt, options,
   for (let start = new Date(created); start < end; start = new Date(start.getUTCFullYear() + 1, start.getUTCMonth(), start.getUTCDate())) {
     if (pages >= options.maxPages) {
       complete = false;
+      stopReason = "max_pages";
       break;
     }
     const windowEnd = new Date(Math.min(new Date(start.getUTCFullYear() + 1, start.getUTCMonth(), start.getUTCDate()).valueOf(), end.valueOf()));
@@ -280,9 +283,11 @@ async function crawlTwitterSearch({ handle, token, profile, capturedAt, options,
         if (author && String(author).toLowerCase() !== handle.toLowerCase()) posts.delete(String(first(raw, ["id", "id_str"])));
       }
       const next = nextCursor(payload);
-      if (!next || seenCursors.has(next)) {
-        if (next && seenCursors.has(next)) warnings.push(`TwitterAPI.io repeated a cursor in ${start.toISOString()}..${windowEnd.toISOString()}.`);
-        if (next && seenCursors.has(next)) complete = false;
+      if (!next) break;
+      if (seenCursors.has(next)) {
+        warnings.push(`TwitterAPI.io repeated a cursor in ${start.toISOString()}..${windowEnd.toISOString()}.`);
+        complete = false;
+        stopReason = "repeated_cursor";
         break;
       }
       seenCursors.add(next);
@@ -291,16 +296,18 @@ async function crawlTwitterSearch({ handle, token, profile, capturedAt, options,
     if (!complete) break;
     if (pages >= options.maxPages && windowEnd < end) {
       complete = false;
+      stopReason = "max_pages";
       break;
     }
   }
-  return { pages, warnings, complete };
+  return { pages, warnings, complete, stopReason };
 }
 
 async function crawlTwitterTimeline({ userId, token, capturedAt, options, posts }) {
   let cursor = "";
   let pages = 0;
   let complete = false;
+  let stopReason = "max_pages";
   let previousRequest = 0;
   const seenCursors = new Set();
   while (pages < options.maxPages) {
@@ -315,13 +322,17 @@ async function crawlTwitterTimeline({ userId, token, capturedAt, options, posts 
     const next = nextCursor(payload);
     if (!next) {
       complete = true;
+      stopReason = "source_cursors_exhausted";
       break;
     }
-    if (seenCursors.has(next)) break;
+    if (seenCursors.has(next)) {
+      stopReason = "repeated_cursor";
+      break;
+    }
     seenCursors.add(next);
     cursor = next;
   }
-  return { pages, complete };
+  return { pages, complete, stopReason };
 }
 
 async function downloadTwitter(options, capturedAt) {
@@ -335,13 +346,14 @@ async function downloadTwitter(options, capturedAt) {
   const search = await crawlTwitterSearch({ handle: "pedrovc", token, profile, capturedAt, options, posts });
   const timeline = await crawlTwitterTimeline({ userId, token, capturedAt, options, posts });
   const complete = search.complete && timeline.complete;
+  const stopReasons = [...new Set([search, timeline].filter(crawl => !crawl.complete).map(crawl => crawl.stopReason))];
   return {
     profile,
     posts: sortPosts(posts.values()),
     expectedCount: Number.isFinite(Number(profile.statusesCount)) ? Number(profile.statusesCount) : null,
     complete,
     coverage: "best_effort_public_index",
-    stopReason: complete ? "source_cursors_exhausted" : "max_pages_or_repeated_cursor",
+    stopReason: complete ? "source_cursors_exhausted" : stopReasons.join("+"),
     warnings: search.warnings,
     pages: search.pages + timeline.pages,
   };
@@ -508,9 +520,10 @@ async function writePlatform(output, platform, result, options) {
   await mkdir(directory, { recursive: true });
   const posts = filterPosts(result.posts, options);
   const authored = posts.filter(post => !post.isRepost).length;
+  const fetchedAuthored = result.posts.filter(post => !post.isRepost).length;
   const warnings = [...(result.warnings ?? [])];
-  if (Number.isFinite(result.expectedCount) && authored !== result.expectedCount) {
-    warnings.push(`Source profile count is ${result.expectedCount}; ${authored} authored records were returned. Treat the difference as a coverage warning, not a count to fill by inference.`);
+  if (Number.isFinite(result.expectedCount) && fetchedAuthored !== result.expectedCount) {
+    warnings.push(`Source profile count is ${result.expectedCount}; ${fetchedAuthored} authored records were fetched (${authored} written after filters). Treat the difference as a coverage warning, not a count to fill by inference.`);
   }
   await writeFile(path.join(directory, "profile.json"), `${JSON.stringify(result.profile, null, 2)}\n`);
   await writeFile(path.join(directory, "posts.ndjson"), posts.length ? `${posts.map(post => JSON.stringify(post)).join("\n")}\n` : "");
