@@ -50,6 +50,10 @@ GitHub poller.
 
 | Line | Action |
 |---|---|
+| `PR <n>: <state> [DRAFT]` | Record the current lifecycle state and whether review is still blocked by draft status. |
+| `head: <ref>@<sha>` | If the SHA changed, inspect the new commit and restarted checks before acting on earlier results. |
+| `mergeable: <yes\|no> (<state>)` | Treat `BEHIND` and `DIRTY` through the rebase actions below; other states are informational. |
+| `reviews: <n>` | Read full output when the count changed; `0` explicitly means no reviews. |
 | `check <name>: pending` | Informational; wait for a later update. |
 | `check <name>: pass`, `skipping`, or `cancel` | Record the terminal result. A canceled required check still needs investigation. |
 | `check <name>: fail` | Open the check URL from `get_pr` full output, inspect its logs, fix the cause, commit, and push. |
