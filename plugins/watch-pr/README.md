@@ -12,5 +12,7 @@ Claude Code and Codex load the remote server from inline plugin manifest
 configuration. The OpenCode adapter registers the same endpoint and `/watch-pr`
 command. Clients that do not turn standard MCP notifications into agent turns use
 their native recurring-task facility to read the durable snapshot once per minute.
+For aggregate OpenCode installs, preconfigure `mcp.watch-pr.enabled` as `false` to
+disable the hosted connection; the adapter preserves an existing MCP entry.
 OAuth uses dynamic client registration and GitHub authorization; no local Python
 watcher, vendored formatter, or GitHub polling subprocess is required.

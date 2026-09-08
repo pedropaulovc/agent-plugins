@@ -39,6 +39,8 @@ GitHub poller.
    host does not wake on updates, create one host-native recurring task that calls
    `get_pr` once per minute and follows this skill. Do not launch a custom watcher
    process or poll GitHub directly. Cancel the recurring task at the terminal state.
+   If monitoring is canceled before a terminal state, cancel the recurring task
+   and call `unwatch_pr` before ending the session.
 
    Use `list_pr_events` only when event history helps explain a transition. Use
    `get_pr` with `mode: "full"` when bodies, thread IDs, URLs, or exact snapshot
