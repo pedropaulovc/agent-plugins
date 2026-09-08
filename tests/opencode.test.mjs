@@ -1,9 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import test from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import * as plugins from "../.opencode/plugins/agent-plugins.js";
 
 const directory = process.cwd();
@@ -28,6 +24,10 @@ test("all plugins load and register expected config", async () => {
   assert.ok(config.command.issue);
   assert.ok(config.command.comments);
   assert.ok(config.command["watch-pr"]);
+  assert.deepEqual(config.mcp["watch-pr"], {
+    type: "remote",
+    url: "https://watch-pr.vza.net/mcp",
+  });
   assert.ok(config.command["download-solidworks-docs"]);
   assert.ok(config.command["cloudflare-temp-accounts"]);
   assert.ok(config.command.reset);
@@ -143,53 +143,4 @@ test("unrelated issue detector continues one OpenCode turn", async () => {
   await hooks.event(idleEvent("unrelated-session"));
   assert.equal(prompts.length, 1);
   assert.match(prompts[0].body.parts[0].text, /Dismissal language detected/);
-});
-
-test("watch-pr wakes its OpenCode session with batched monitor events", async () => {
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), "watch-pr-opencode-"));
-  const watchScript = path.join(tempDir, "watch-pr.py");
-  writeFileSync(watchScript, [
-    "import sys, time",
-    "print('args ' + ' '.join(sys.argv[1:]), flush=True)",
-    "print('check build: pending\\nfeedback T1 src/app.js:4 reviewer title', flush=True)",
-    "time.sleep(10)",
-  ].join("\n"));
-  const prompts = [];
-  const client = {
-    app: { log: async () => { } },
-    session: { promptAsync: async (request) => prompts.push(request) },
-  };
-  const hooks = await plugins.WatchPrPlugin(
-    { client, directory, worktree: directory },
-    { watchScript },
-  );
-  const context = { sessionID: "watch-session", directory, worktree: directory };
-  try {
-    const started = await hooks.tool.watch_pr.execute(
-      { action: "start", ref: "https://github.com/example/repo/pull/123", stallTimeout: "2h" },
-      context,
-    );
-    assert.match(started, /notified automatically/);
-    assert.match(started, /pull\/123/);
-    assert.match(started, /2h stall timeout/);
-    for (let attempt = 0; attempt < 20 && prompts.length === 0; attempt += 1) {
-      await delay(25);
-    }
-    assert.equal(prompts.length, 1);
-    assert.match(prompts[0].body.parts[0].text, /args https:\/\/github.com\/example\/repo\/pull\/123 --stall-timeout 2h/);
-    assert.match(prompts[0].body.parts[0].text, /check build: pending/);
-    assert.match(prompts[0].body.parts[0].text, /feedback T1/);
-    assert.equal(prompts[0].body.parts[0].synthetic, true);
-    assert.match(
-      await hooks.tool.watch_pr.execute({ action: "status" }, context),
-      /monitoring https:\/\/github.com\/example\/repo\/pull\/123 with a 2h stall timeout/,
-    );
-    assert.equal(
-      await hooks.tool.watch_pr.execute({ action: "stop" }, context),
-      "Stopped the watch-pr monitor.",
-    );
-  } finally {
-    await hooks.dispose();
-    rmSync(tempDir, { recursive: true, force: true });
-  }
 });

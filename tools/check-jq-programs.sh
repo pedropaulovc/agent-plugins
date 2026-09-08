@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Guards the jq program embedded in each PR-comment formatter against issue #44.
+# Guards the jq program embedded in the PR-comment formatter against issue #44.
 #
 # Each formatter embeds a large jq program as a SINGLE-QUOTED shell string. A bare
 # apostrophe anywhere inside it closes that quote mid-program: the shell re-parses the
@@ -13,7 +13,6 @@
 set -euo pipefail
 
 FILES=(
-  plugins/watch-pr/skills/watch-pr/comments.sh
   plugins/pr-comments/skills/comments/comments.sh
 )
 

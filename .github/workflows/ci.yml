@@ -47,19 +47,6 @@ jobs:
       - name: Compile-check embedded jq programs in PR-comment formatters
         run: bash tools/check-jq-programs.sh
 
-  # The watcher's encoding and bash-lookup bugs (issues #63, #67) only reproduce on
-  # Windows, so the tests that cover them have to run there too.
-  test-watch-pr-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-      - name: Install OpenCode adapter dependencies
-        run: npm ci --ignore-scripts
-      - name: Test watch-pr monitor natively on Windows
-        run: npm run test:watch-pr
 
   test-python-skills:
     runs-on: ubuntu-latest
@@ -79,9 +66,6 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Test OpenCode plugin adapters
         run: npm run test:opencode
-
-      - name: Test watch-pr shell monitor
-        run: npm run test:watch-pr
 
       - name: Test memory usage scanner and hook ranking contract
         run: npm run test:usage
