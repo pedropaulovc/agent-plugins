@@ -27,12 +27,17 @@ contain no repository commands; `reset.py` is the only reset implementation.
 ## Arguments
 
 - `--force` discards tracked, untracked, ignored, and repository-wide stashed changes
-  without confirmation.
+  without confirmation, deletes stale local branches, removes every linked worktree when
+  run from the primary worktree, and warns before removing linked worktrees with
+  uncommitted changes or detached links whose commits may become unreachable. It resets
+  `main` there to `origin/main`. It refuses linked-worktree invocations because
+  `--force` would delete every linked worktree; do not relocate and rerun it without
+  confirming that destructive scope with the user. It also refuses bare repositories
+  without a primary worktree or removal while a Git operation is active in a linked
+  worktree.
 - `--confirm` removes the reviewed untracked files after the user approves the list
   reported by the normal safety phase.
-- `--all` also updates every other linked worktree.
-- An optional folder name selects the branch associated with the current worktree; resetting
-  that folder-named branch additionally requires `--force`.
+- `--all` updates every linked worktree in normal mode.
 
 In normal mode, the script protects tracked changes and records the exact untracked-file
 snapshot before it reports the paths. Never run `--confirm` without explicit affirmative
@@ -49,8 +54,8 @@ python "<absolute path of the directory containing this SKILL.md>/reset.py" [arg
 
 The script owns the complete repository flow: stale-lock handling, unfinished-operation
 cleanup, safety checks, untracked-file cleanup, stash handling, remote synchronization,
-worktree pruning, stale-branch cleanup, branch reset, linked-worktree updates, and
-dependency installation.
+worktree pruning, linked-worktree removal or synchronization, stale-branch cleanup, branch
+reset, and dependency installation.
 
 Report the script output and final status when it completes. Include the agent-state
 validation required by the selected harness instruction file.
