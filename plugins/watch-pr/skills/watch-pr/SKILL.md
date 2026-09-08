@@ -6,10 +6,10 @@ argument-hint: "[pr-url-or-ref]"
 
 # Watch a PR to green + merged
 
-Use the hosted `watch-pr` MCP server. It keeps durable per-account subscriptions,
-refreshes watched pull requests every minute, consumes GitHub webhooks, and pushes
-resource-update notifications. Never launch `watch-pr.py`, create a polling loop,
-or start a second watcher.
+Use the hosted `watch-pr` MCP server. It keeps durable per-account watches,
+refreshes watched pull requests every minute, consumes GitHub webhooks, and emits
+standard MCP resource updates. Never launch `watch-pr.py` or create another
+GitHub poller.
 
 ## Start watching
 
@@ -31,13 +31,18 @@ or start a second watcher.
    The call registers a durable watch and subscribes the current MCP connection to
    `watch-pr://OWNER/REPOSITORY/pull/NUMBER`. Its default brief result includes the
    current lifecycle state when a snapshot already exists. `snapshot: refresh
-   scheduled` means the initial GitHub refresh is in flight; wait for the resource
-   update instead of polling.
+   scheduled` means the initial GitHub refresh is in flight.
 
-3. On every resource-update or `watch-pr` log notification, call `get_pr` in its
-   default brief mode and act on changed lines. Use `list_pr_events` only when event
-   history helps explain a transition. Use `get_pr` with `mode: "full"` when bodies,
-   thread IDs, URLs, or exact snapshot fields are needed.
+3. Call `get_pr` in its default brief mode after each resource-update or `watch-pr`
+   log notification. Claude Code remote HTTP MCP, Codex CLI, and OpenCode do not
+   reliably turn standard MCP notifications into new agent turns. When the current
+   host does not wake on updates, create one host-native recurring task that calls
+   `get_pr` once per minute and follows this skill. Do not launch a custom watcher
+   process or poll GitHub directly. Cancel the recurring task at the terminal state.
+
+   Use `list_pr_events` only when event history helps explain a transition. Use
+   `get_pr` with `mode: "full"` when bodies, thread IDs, URLs, or exact snapshot
+   fields are needed.
 
 ## Act on lifecycle lines
 
@@ -51,8 +56,7 @@ or start a second watcher.
 | `review <login>: <state>` | Read `get_pr` full output; handle any substantive review body or unresolved thread. |
 | `comments: <n>` or `review-comments: <n>` | Read full output when the count changed; ignore comments authored by the authenticated user. |
 | `feedback [<thread>] <file>:<lines> @<author> <title>` | Read the matching unresolved thread and comment body from full output, inspect the named code, then fix or reply. |
-| `reaction EYES: <n>` or `comment-reaction EYES: <n>` | A review bot acknowledged the request; wait for its verdict. |
-| `reaction THUMBS_UP: <n>` or `comment-reaction THUMBS_UP: <n>` | The corresponding review completed without findings. |
+| `reaction <kind>: <n>` or `comment-reaction <kind>: <n>` | Informational aggregate only. Read full comments/reviews before attributing a reaction to a reviewer or treating it as a verdict. |
 | `PR <n> finished: MERGED` | Call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. |
 | `PR <n> finished: CLOSED` | Call `unwatch_pr` and report that the PR closed without merging. |
 
