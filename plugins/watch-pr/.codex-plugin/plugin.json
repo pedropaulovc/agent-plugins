@@ -18,7 +18,12 @@
     "ci"
   ],
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
+  "mcpServers": {
+    "watch-pr": {
+      "type": "http",
+      "url": "https://watch-pr.vza.net/mcp"
+    }
+  },
   "interface": {
     "displayName": "Watch Pr"
   }
