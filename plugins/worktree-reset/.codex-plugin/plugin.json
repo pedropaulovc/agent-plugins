@@ -1,7 +1,7 @@
 {
   "name": "worktree-reset",
-  "version": "2.1.0",
-  "description": "Skill ($reset) that resets the current worktree to origin/main, handles portable cleanup and dependency installation, and supports --confirm, --force, and --all.",
+  "version": "2.2.0",
+  "description": "Skill ($reset) that resets the current worktree to origin/main, handles portable cleanup and dependency installation, and in --force mode removes linked worktrees before reclaiming main in the primary worktree.",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

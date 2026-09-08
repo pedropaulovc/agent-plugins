@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-"""Reset one worktree, or rebase every linked worktree onto origin/main."""
+"""Reset the main worktree, or rebase every linked worktree onto origin/main."""
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import shutil
@@ -19,6 +20,14 @@ REVIEWED_PATHS_FILE = "worktree-reset-reviewed-paths"
 
 class ResetBlocked(RuntimeError):
     """Raised when the safety checks require an explicit user decision."""
+
+
+@dataclass(frozen=True)
+class WorktreeEntry:
+    path: Path
+    bare: bool
+    locked: bool
+    detached: bool
 
 
 def use_utf8_streams() -> None:
@@ -330,43 +339,163 @@ def delete_stale_branches(worktree: Path) -> None:
         git("branch", "-D", branch, cwd=worktree, check=False)
 
 
-def worktrees(worktree: Path) -> list[Path]:
-    output = git("worktree", "list", "--porcelain", cwd=worktree, capture_output=True).stdout
-    prefix = "worktree "
-    return [Path(line[len(prefix) :]) for line in output.splitlines() if line.startswith(prefix)]
-
-
-def reset_current_worktree(current_worktree: Path, folder_name: str, *, force: bool) -> None:
-    checkout = ["checkout"]
-    if force:
-        checkout.append("-f")
-    checkout.append("main")
-    git(*checkout, cwd=current_worktree)
-    git("reset", "--hard", "origin/main", cwd=current_worktree)
-
-    if folder_name == "main":
-        return
-
-    branch_exists = (
-        git(
-            "show-ref",
-            "--verify",
-            "--quiet",
-            f"refs/heads/{folder_name}",
-            cwd=current_worktree,
-            check=False,
-        ).returncode
-        == 0
+def worktree_root(worktree: Path) -> Path:
+    result = git(
+        "rev-parse",
+        "--show-toplevel",
+        cwd=worktree,
+        capture_output=True,
+        check=False,
     )
-    if not branch_exists or not force:
-        return
+    if result.returncode != 0 or not result.stdout.strip():
+        raise ResetBlocked("reset requires a non-bare worktree")
+    return Path(result.stdout.strip()).resolve()
 
-    # A folder-named branch is an optional destructive reset. Require --force so a
-    # normal reset cannot discard its committed history after a safety rerun.
-    checkout = ["checkout", "-f", folder_name]
-    git(*checkout, cwd=current_worktree)
+
+def worktree_entries(worktree: Path) -> list[WorktreeEntry]:
+    output = git("worktree", "list", "--porcelain", cwd=worktree, capture_output=True).stdout
+    entries: list[WorktreeEntry] = []
+
+    for record in output.split("\n\n"):
+        path: Path | None = None
+        bare = False
+        locked = False
+        detached = False
+        for line in record.splitlines():
+            if line.startswith("worktree "):
+                path = Path(line.removeprefix("worktree "))
+            elif line == "bare":
+                bare = True
+            elif line.startswith("locked"):
+                locked = True
+            elif line == "detached":
+                detached = True
+        if path is not None:
+            entries.append(WorktreeEntry(path=path, bare=bare, locked=locked, detached=detached))
+
+    return entries
+
+
+def worktrees(worktree: Path) -> list[Path]:
+    return [entry.path for entry in worktree_entries(worktree) if not entry.bare]
+
+
+def force_worktree_plan(worktree: Path) -> tuple[Path, list[WorktreeEntry]]:
+    listed = worktree_entries(worktree)
+    if any(entry.bare for entry in listed):
+        raise ResetBlocked("--force does not support bare repositories; use a non-bare primary worktree")
+
+    entries = [entry for entry in listed if not entry.bare]
+    if not entries:
+        raise ResetBlocked("cannot reclaim main: Git reported no non-bare worktree")
+
+    primary_worktree = entries[0].path.resolve()
+    if worktree.resolve() != primary_worktree:
+        raise ResetBlocked(
+            "--force must run from the primary worktree; it would delete every linked "
+            "worktree, so confirm with the user before rerunning from the primary"
+        )
+
+    return primary_worktree, entries[1:]
+
+
+def git_operation_running(worktree: Path) -> bool:
+    gitdir = git_directory(worktree)
+    operation_markers = (
+        "rebase-merge",
+        "rebase-apply",
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "BISECT_LOG",
+        "sequencer",
+        "AUTO_MERGE",
+    )
+    if any((gitdir / marker).exists() for marker in operation_markers):
+        return True
+    lock = gitdir / "index.lock"
+    if lock.exists() and git_process_running(worktree, lock):
+        return True
+    if not worktree.is_dir():
+        return False
+    unmerged = git("ls-files", "--unmerged", cwd=worktree, capture_output=True, check=False)
+    return unmerged.returncode == 0 and bool(unmerged.stdout.strip())
+
+
+def ensure_linked_worktrees_idle(linked_worktrees: list[WorktreeEntry]) -> None:
+    for entry in linked_worktrees:
+        linked_worktree = entry.path.resolve()
+        if git_operation_running(linked_worktree):
+            raise ResetBlocked(
+                f"refusing to remove linked worktree while a Git operation is active: {linked_worktree}"
+            )
+
+
+def remove_linked_worktrees(primary_worktree: Path, linked_worktrees: list[WorktreeEntry]) -> list[Path]:
+    failed_worktrees: list[Path] = []
+    for entry in linked_worktrees:
+        linked_worktree = entry.path.resolve()
+        if linked_worktree.is_dir():
+            status = git(
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "-z",
+                cwd=linked_worktree,
+                capture_output=True,
+                check=False,
+                text=False,
+            )
+            if status.returncode != 0:
+                print(
+                    f"Warning: could not inspect linked worktree before removal: {linked_worktree}",
+                    file=sys.stderr,
+                )
+            elif status.stdout:
+                print(
+                    f"Warning: removing linked worktree with uncommitted changes: {linked_worktree}",
+                    file=sys.stderr,
+                )
+        if entry.detached:
+            print(
+                "Warning: removing detached linked worktree may make commits not reachable "
+                f"from a branch unreachable: {linked_worktree}",
+                file=sys.stderr,
+            )
+        if entry.locked:
+            print(f"Removing locked linked worktree: {linked_worktree}")
+        else:
+            print(f"Removing linked worktree: {linked_worktree}")
+        result = git(
+            "worktree",
+            "remove",
+            "--force",
+            "--force",
+            str(linked_worktree),
+            cwd=primary_worktree,
+            capture_output=True,
+            check=False,
+        )
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.returncode == 0:
+            continue
+        detail = result.stderr.strip()
+        message = f"Failed to remove linked worktree {linked_worktree}"
+        if detail:
+            message += f": {detail}"
+        print(message, file=sys.stderr)
+        failed_worktrees.append(linked_worktree)
+
+    return failed_worktrees
+
+
+def reset_current_worktree(current_worktree: Path, *, force: bool) -> None:
+    if force:
+        git("checkout", "-f", "-B", "main", "origin/main", cwd=current_worktree)
+    else:
+        git("checkout", "main", cwd=current_worktree)
     git("reset", "--hard", "origin/main", cwd=current_worktree)
-    git("branch", "--unset-upstream", cwd=current_worktree, check=False)
 
 
 def update_worktree(worktree: Path) -> bool:
@@ -389,7 +518,7 @@ def update_worktree(worktree: Path) -> bool:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--all", action="store_true", help="update all linked worktrees")
+    parser.add_argument("--all", action="store_true", help="update all linked worktrees in normal mode")
     parser.add_argument(
         "--confirm",
         action="store_true",
@@ -398,9 +527,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="discard tracked, untracked, ignored, and stashed changes without confirmation",
+        help=(
+            "discard changes, remove linked worktrees, and reclaim main in the primary "
+            "worktree; run from primary"
+        ),
     )
-    parser.add_argument("folder_name", nargs="?", help="branch to reset after updating main")
     return parser.parse_args()
 
 
@@ -413,20 +544,52 @@ def command_text(command: object) -> str:
 def main() -> int:
     use_utf8_streams()
     args = parse_args()
-    actual_worktree = Path.cwd()
-    inherited_pwd = Path(os.environ.get("PWD", str(actual_worktree)))
-    logical_worktree = inherited_pwd if inherited_pwd.resolve() == actual_worktree.resolve() else actual_worktree
-    current_worktree = logical_worktree.resolve()
-    folder_name = args.folder_name or logical_worktree.name
+    current_worktree = worktree_root(Path.cwd())
 
-    clear_stale_index_lock(current_worktree)
-    abort_git_operations(current_worktree)
-    prepare_worktree(current_worktree, args)
-    git("fetch", "--prune", cwd=current_worktree, timeout=COMMAND_TIMEOUT_SECONDS)
-    git("worktree", "prune", cwd=current_worktree)
-    delete_stale_branches(current_worktree)
-    reset_current_worktree(current_worktree, folder_name, force=args.force)
+    if args.force:
+        force_worktree_plan(current_worktree)
+        git("fetch", "--prune", cwd=current_worktree, timeout=COMMAND_TIMEOUT_SECONDS)
+        origin_main = git(
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "refs/remotes/origin/main",
+            cwd=current_worktree,
+            capture_output=True,
+            check=False,
+        )
+        if origin_main.returncode != 0:
+            raise ResetBlocked("origin/main is unavailable; --force requires a fetched origin/main ref")
+        git("worktree", "prune", cwd=current_worktree)
+        current_worktree, linked_worktrees = force_worktree_plan(current_worktree)
+        ensure_linked_worktrees_idle(linked_worktrees)
+        clear_stale_index_lock(current_worktree)
+        abort_git_operations(current_worktree)
+        failed_worktrees = remove_linked_worktrees(current_worktree, linked_worktrees)
+        if failed_worktrees:
+            print("\n=== Worktrees failed ===", file=sys.stderr)
+            print("\n".join(str(worktree) for worktree in failed_worktrees), file=sys.stderr)
+            return 1
+        # Delete stale branches after linked worktrees stop protecting them.
+        delete_stale_branches(current_worktree)
+        prepare_worktree(current_worktree, args)
+        reset_current_worktree(current_worktree, force=True)
+        # The primary branch is unprotected after checkout to main.
+        delete_stale_branches(current_worktree)
+    else:
+        clear_stale_index_lock(current_worktree)
+        abort_git_operations(current_worktree)
+        prepare_worktree(current_worktree, args)
+        git("fetch", "--prune", cwd=current_worktree, timeout=COMMAND_TIMEOUT_SECONDS)
+        git("worktree", "prune", cwd=current_worktree)
+        delete_stale_branches(current_worktree)
+        reset_current_worktree(current_worktree, force=False)
+
     install_dependencies(current_worktree)
+
+    if args.force:
+        print("\n=== Main worktree reclaimed; linked worktrees removed ===")
+        return 0
 
     if not args.all:
         print("\n=== Current worktree updated ===")
