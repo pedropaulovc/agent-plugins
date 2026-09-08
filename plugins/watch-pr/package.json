@@ -1,10 +1,7 @@
 {
   "name": "@pedropaulovc/watch-pr",
-  "version": "0.1.26",
-  "description": "Pull request lifecycle monitoring skill for OpenCode",
+  "version": "1.0.0",
+  "description": "Hosted MCP pull request lifecycle monitoring skill for OpenCode",
   "type": "module",
-  "main": ".opencode/plugins/watch-pr.js",
-  "dependencies": {
-    "zod": "^4.4.3"
-  }
+  "main": ".opencode/plugins/watch-pr.js"
 }

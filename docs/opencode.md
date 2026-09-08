@@ -53,7 +53,7 @@ Each plugin directory contains its own `package.json` and
 | Advisory hook context | Appends the notice to tool output in `tool.execute.after` |
 | `SessionStart` context | Adds the existing generated memory context to the system prompt |
 | `Stop` detector | Scans the completed turn on `session.idle` and submits one synthetic corrective prompt |
-| PR monitor | Runs `watch-pr.sh` in the plugin and sends batched stdout events to the originating session with `promptAsync` |
+| Remote MCP | Registers the hosted MCP endpoint through the live `mcp` config |
 
 The Rust-hook plugins ship Linux x86_64 and Windows x86_64 binaries. On other native
 platforms their adapters fail open. Skill-only plugins work anywhere OpenCode runs.

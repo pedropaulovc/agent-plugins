@@ -1,7 +1,7 @@
 {
   "name": "watch-pr",
-  "description": "Skill that watches a GitHub PR's full lifecycle (CI, rebase, reviews, reactions, merge) via the Monitor tool and, on feedback changes, emits deduplicated unresolved-thread summaries plus a path to the full comments document. Self-contained (vendors its own comment formatter).",
-  "version": "0.1.26",
+  "description": "Hosted MCP skill that watches GitHub pull requests across CI, rebases, reviews, reactions, and merge or closure.",
+  "version": "1.0.0",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
@@ -16,5 +16,11 @@
     "code-review",
     "monitor",
     "ci"
-  ]
+  ],
+  "mcpServers": {
+    "watch-pr": {
+      "type": "http",
+      "url": "https://watch-pr.vza.net/mcp"
+    }
+  }
 }
