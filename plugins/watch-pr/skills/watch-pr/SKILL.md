@@ -6,45 +6,108 @@ argument-hint: "[pr-url-or-ref]"
 
 # Watch a PR to green + merged
 
-Use the hosted `watch-pr` MCP server. It keeps durable per-account watches,
-refreshes watched pull requests every minute, consumes GitHub webhooks, and emits
-standard MCP resource updates. Never launch `watch-pr.py` or create another
-GitHub poller.
+Use the hosted `watch-pr` MCP server for durable GitHub webhook ingestion and minute
+reconciliation. Use the bundled `watch-pr-monitor.mjs` only for its read-only SSE feed.
+MCP resource notifications may be useful hints, but they are never the wake-up or
+correctness path.
+
+## Root-session boundary
+
+The root session that authored the pull request owns every action: calls to `get_pr`,
+code edits, rebases, pushes, review replies, and cleanup. The watcher process and any
+subagent hosting it are messengers only. They must never inspect or change the checkout,
+call GitHub, call MCP tools, or act on a pull request event.
+
+Run exactly one long-lived watcher for this PR in this root session. Keep that same
+watcher alive through every intermediate event; never rearm it, start a recurring poll,
+or launch a second watcher. The watcher naturally exits after printing a `merged` or
+`closed` event.
 
 ## Start watching
 
-1. Resolve the pull request with `gh pr view`. If no argument was supplied, resolve
-   the current branch:
+1. Resolve the pull request with `gh pr view`. If no argument was supplied, resolve the
+   current branch:
 
    ```bash
    gh pr view --json number,url -q '"#\(.number) \(.url)"'
    ```
 
-   For an explicit number, URL, or branch, pass it to `gh pr view`. Keep the full
-   URL; its `/OWNER/REPOSITORY/pull/NUMBER` path supplies the MCP arguments without
-   depending on the current checkout's remotes.
+   For an explicit number, URL, or branch, pass it to `gh pr view`. Keep the full URL;
+   its `/OWNER/REPOSITORY/pull/NUMBER` path supplies the MCP arguments without depending
+   on the current checkout's remotes.
 
-2. Call the hosted MCP server's `watch_pr` tool with:
+2. From the root session, call `watch_pr` with:
    - `repository`: `OWNER/REPOSITORY`
    - `number`: the pull-request number
 
-   The call registers a durable watch and subscribes the current MCP connection to
-   `watch-pr://OWNER/REPOSITORY/pull/NUMBER`. Its default brief result includes the
-   current lifecycle state when a snapshot already exists. `snapshot: refresh
-   scheduled` means the initial GitHub refresh is in flight.
+3. From the root session, call `open_pr_monitor` with the same arguments. Parse its JSON
+   result and retain the opaque `monitorUrl`. It is a read-only bearer capability for
+   this OAuth session and PR: never print it, include it in a subagent message visible
+   outside the harness, save it in the repository, or send it anywhere except the
+   bundled watcher command.
 
-3. Call `get_pr` in its default brief mode after each resource-update or `watch-pr`
-   log notification. Claude Code remote HTTP MCP, Codex CLI, and OpenCode do not
-   reliably turn standard MCP notifications into new agent turns. When the current
-   host does not wake on updates, create one host-native recurring task that calls
-   `get_pr` once per minute and follows this skill. Do not launch a custom watcher
-   process or poll GitHub directly. Cancel the recurring task at the terminal state.
-   If monitoring is canceled before a terminal state, cancel the recurring task
-   and call `unwatch_pr` before ending the session.
+   If `terminalState` is already `merged` or `closed`, do not launch a watcher. Call
+   `get_pr`, perform the matching terminal action below, and clean up with `unwatch_pr`.
 
-   Use `list_pr_events` only when event history helps explain a transition. Use
-   `get_pr` with `mode: "full"` when bodies, thread IDs, URLs, or exact snapshot
-   fields are needed.
+4. Resolve `watch-pr-monitor.mjs` from the absolute directory containing this `SKILL.md`;
+   do not search the checkout or assume the current working directory. Start the command
+   below using exactly one harness-native flow from the next section:
+
+   ```text
+   node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"
+   ```
+
+5. Each stdout line is one compact JSON event. On every line, the root session calls
+   `get_pr` in brief mode and handles the resulting lifecycle lines. Use
+   `list_pr_events` only to explain a transition. Use `get_pr` with `mode: "full"` when
+   bodies, thread IDs, URLs, or exact snapshot fields are needed. Do not act from the
+   compact watcher payload alone.
+
+## Start the harness watcher
+
+### Claude Code
+
+Create one persistent `Monitor` running the watcher command. Keep that Monitor active
+after intermediate lines; each line must wake the root session, which calls `get_pr`.
+Do not run the command in an ordinary background shell, create a scheduled task, or
+replace the Monitor after an intermediate event. Record the Monitor identifier for
+explicit cancellation.
+
+### Codex
+
+Call `spawn_agent` once to create one long-lived watcher subagent. Give it the monitor
+URL only inside this private task and instruct it exactly as follows:
+
+```text
+Run `node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"` in the
+foreground. For each stdout JSON line with terminalState `watching`, immediately send
+the exact line to the root session through the parent-message channel, then continue
+reading the same process. For terminalState `merged` or `closed`, send the exact line,
+return that terminal result, and exit. If the process writes stderr or exits nonzero,
+send the error to the root and exit. Do not call MCP or GitHub tools, inspect or modify
+files, rebase, push, reply, poll, restart, or launch another watcher.
+```
+
+Retain the agent identifier. Do not close it or treat an intermediate message as its
+result. The root reacts to each message and leaves the same subagent running until the
+terminal result or explicit cancellation.
+
+### Oh My Pi
+
+Start the watcher command once with the Bash tool as an asynchronous job using
+`async: true` and `progress: "wake"`. Retain the returned job ID. Do not use a service
+process, call `hub wait`, poll job status, or restart the command: each emitted line
+wakes the root session, which calls `get_pr`, and the job completes naturally on the
+terminal event.
+
+### Other or uncertain harnesses
+
+Spawn exactly one long-lived subagent with the same foreground-command and messaging
+contract shown for Codex. Intermediate lines must be sent to the root while the same
+process continues; only a terminal line or error ends the subagent. If the harness
+cannot keep a subagent alive and deliver its messages to the root, report that the
+required watch cannot be established rather than substituting polling, a detached
+shell, MCP notifications, or repeated watcher launches.
 
 ## Act on lifecycle lines
 
@@ -63,22 +126,32 @@ GitHub poller.
 | `comments: <n>` or `review-comments: <n>` | Read full output when the count changed; ignore comments authored by the authenticated user. |
 | `feedback [<thread>] <file>:<lines> @<author> <title>` | Read the matching unresolved thread and comment body from full output, inspect the named code, then fix or reply. |
 | `reaction <kind>: <n>` or `comment-reaction <kind>: <n>` | Informational aggregate only. Read full comments/reviews before attributing a reaction to a reviewer or treating it as a verdict. |
-| `PR <n> finished: MERGED` | Call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. |
-| `PR <n> finished: CLOSED` | Call `unwatch_pr` and report that the PR closed without merging. |
+| Watcher event with `terminalState: "merged"` | Call `get_pr`, call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. The watcher exits on its own. |
+| Watcher event with `terminalState: "closed"` | Call `get_pr`, call `unwatch_pr`, and report that the PR closed without merging. The watcher exits on its own. |
 
 ## Handle review feedback
 
 For each active thread in `get_pr` full output:
 
-1. Read the entire thread and relevant local diff/code. Decide whether the finding
-   is correct; do not blindly accept reviewer claims.
-2. Make and verify pertinent code changes. Keep unresolved design disagreements
-   open; resolve settled threads after replying.
-3. Push the fix. This restarts checks and produces later MCP updates.
+1. Read the entire thread and relevant local diff/code. Decide whether the finding is
+   correct; do not blindly accept reviewer claims.
+2. Make and verify pertinent code changes. Keep unresolved design disagreements open;
+   resolve settled threads after replying.
+3. Push the fix. This restarts checks and produces later feed events.
 4. Reply through `gh` using the comment and thread IDs from full output. Use the
    repository's comments skill when available; otherwise use GitHub's REST reply
    endpoint and GraphQL `resolveReviewThread` mutation directly.
 
-Continue reacting to MCP updates until the pull request is merged or closed. Do not
-remove an active watch merely because all current checks passed; later reviews,
-rebases, reruns, and merge events are part of the lifecycle.
+Continue until the watcher reports merge or closure. Passing checks is intermediate;
+later reviews, rebases, reruns, and merge events remain part of the same lifecycle.
+
+## Cancel or handle watcher failure
+
+If the user cancels before a terminal event, first stop the exact harness watcher:
+stop the Claude Monitor, interrupt and close the Codex/generic subagent, or cancel the
+Oh My Pi async job by its recorded job ID. Confirm that process has ended, then call
+`unwatch_pr`. Never leave a detached process holding the monitor capability.
+
+A permanent watcher error is not an invitation to rearm. Report its stderr to the root,
+stop/close its harness container, call `unwatch_pr` when possible, and do not launch a
+replacement watcher in this session.

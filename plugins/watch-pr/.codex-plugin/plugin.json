@@ -1,7 +1,7 @@
 {
   "name": "watch-pr",
-  "version": "1.0.0",
-  "description": "Hosted MCP skill that watches GitHub pull requests across CI, rebases, reviews, reactions, and merge or closure.",
+  "version": "2.0.0",
+  "description": "Hosted MCP skill with a same-session watcher for GitHub PR CI, reviews, feedback, and terminal state.",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

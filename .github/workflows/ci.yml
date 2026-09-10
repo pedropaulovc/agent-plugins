@@ -66,6 +66,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Test OpenCode plugin adapters
         run: npm run test:opencode
+      - name: Test watch-pr same-session monitor
+        run: npm run test:watch-pr
 
       - name: Test memory usage scanner and hook ranking contract
         run: npm run test:usage
