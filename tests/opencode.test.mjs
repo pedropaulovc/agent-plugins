@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import * as plugins from "../.opencode/plugins/agent-plugins.js";
 
@@ -31,6 +32,21 @@ test("all plugins load and register expected config", async () => {
   assert.ok(config.command["download-solidworks-docs"]);
   assert.ok(config.command["cloudflare-temp-accounts"]);
   assert.ok(config.command.reset);
+});
+
+test("watch-pr package ships its watcher with aligned v2 manifests", () => {
+  const pluginRoot = new URL("../plugins/watch-pr/", import.meta.url);
+  const claudeManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", pluginRoot), "utf8"));
+  const codexManifest = JSON.parse(readFileSync(new URL(".codex-plugin/plugin.json", pluginRoot), "utf8"));
+  const packageManifest = JSON.parse(readFileSync(new URL("package.json", pluginRoot), "utf8"));
+
+  assert.equal(claudeManifest.version, "2.0.0");
+  assert.equal(codexManifest.version, claudeManifest.version);
+  assert.equal(packageManifest.version, claudeManifest.version);
+  assert.equal(
+    existsSync(new URL("skills/watch-pr/watch-pr-monitor.mjs", pluginRoot)),
+    true,
+  );
 });
 
 test("command-chain-separator rewrites OpenCode bash arguments", async () => {

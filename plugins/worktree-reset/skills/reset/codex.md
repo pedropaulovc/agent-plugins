@@ -1,9 +1,11 @@
 # Codex instructions
 
-Codex has no equivalents for Claude Code task lists, scheduled timers, teammates,
-subagents, monitor watchers, recurring loops, or pull-request activity subscriptions.
-Do not attempt those operations. Stop any active background terminal through the Codex
-harness mechanism and confirm the background-job list is empty.
+Codex owns its subagent and terminal teardown. Before running the reset script:
+
+- Use the subagent controls to interrupt each `watch-pr-monitor.mjs` process covered by
+  the shared watch-pr cleanup, wait for it to end, then close that subagent.
+- Stop any other active subagents and background terminals through the Codex harness,
+  then confirm that no background work remains.
 
 Use the Codex user-interaction mechanism to show the complete untracked-file report and
 obtain an explicit affirmative response before a confirmation rerun. Do not infer approval
