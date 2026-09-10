@@ -1,6 +1,6 @@
 {
   "name": "@pedropaulovc/worktree-reset",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Worktree reset skill for OpenCode; --force collapses linked worktrees back to the primary main worktree",
   "type": "module",
   "main": ".opencode/plugins/worktree-reset.js"

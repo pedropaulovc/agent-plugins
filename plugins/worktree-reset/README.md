@@ -16,13 +16,16 @@ Arguments:
   `main` there to `origin/main`. It refuses linked-worktree invocations because rerunning
   from the primary would delete every linked worktree, refuses bare repositories without a
   primary worktree, and refuses removal while a Git operation is active in a linked
-  worktree.
+  worktree. In force mode it recursively synchronizes submodules with forced checkout and
+  reports failure instead of success when the root worktree or any submodule remains dirty
+  or out of sync.
 - `--all` updates every linked worktree in normal mode.
 
 The script handles stale locks, unfinished operations, safety checks, untracked-file cleanup,
 stash handling, linked-worktree removal or synchronization, remote synchronization, stale
-branches, branch resets, and `npm install`, `go mod download`, and `uv sync --locked` when
-the corresponding files exist.
+branches, branch resets, forced recursive submodule synchronization, final cleanliness
+verification, and `npm install`, `go mod download`, and `uv sync --locked` when the
+corresponding files exist.
 
 ## Harness support
 

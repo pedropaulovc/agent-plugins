@@ -42,7 +42,8 @@ verify its Monitor, subagent, or async job; it does not change this ordering or 
   `--force` would delete every linked worktree; do not relocate and rerun it without
   confirming that destructive scope with the user. It also refuses bare repositories
   without a primary worktree or removal while a Git operation is active in a linked
-  worktree.
+  worktree. In force mode it recursively synchronizes submodules with forced checkout and
+  fails if the root worktree or any submodule remains dirty or out of sync.
 - `--confirm` removes the reviewed untracked files after the user approves the list
   reported by the normal safety phase.
 - `--all` updates every linked worktree in normal mode.
@@ -63,7 +64,8 @@ python "<absolute path of the directory containing this SKILL.md>/reset.py" [arg
 The script owns the complete repository flow: stale-lock handling, unfinished-operation
 cleanup, safety checks, untracked-file cleanup, stash handling, remote synchronization,
 worktree pruning, linked-worktree removal or synchronization, stale-branch cleanup, branch
-reset, and dependency installation.
+reset, forced recursive submodule synchronization, final cleanliness verification, and
+dependency installation.
 
 Report the script output and final status when it completes. Include the agent-state
 validation required by the selected harness instruction file.
