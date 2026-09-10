@@ -510,6 +510,8 @@ def synchronize_submodules(worktree: Path) -> None:
         "update",
         "--init",
         "--recursive",
+        "--checkout",
+        "--force",
         cwd=worktree,
         timeout=COMMAND_TIMEOUT_SECONDS,
     )

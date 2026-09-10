@@ -89,7 +89,7 @@ case "$*" in
     if [ -n "${{STASH_OUTPUT:-}}" ]; then printf '%s\\n' "$STASH_OUTPUT"; fi
     ;;
   'submodule sync --recursive') ;;
-  'submodule update --init --recursive')
+  'submodule update --init --recursive --checkout --force')
     if [ -n "${{SUBMODULE_UPDATE_FAIL:-}}" ]; then
       printf 'submodule update failed\\n' >&2
       exit 1
@@ -209,7 +209,7 @@ fi
         log = self.log.read_text()
         reset = log.index("git reset --hard origin/main")
         sync = log.index("git submodule sync --recursive")
-        update = log.index("git submodule update --init --recursive")
+        update = log.index("git submodule update --init --recursive --checkout --force")
         status = log.index("git submodule status --recursive")
         final_root_status = log.index(
             "git status --porcelain=v1 --untracked-files=all -z --ignore-submodules=none"
@@ -226,7 +226,10 @@ fi
         result = self.run_script("--force", extra_env={"SUBMODULE_UPDATE_FAIL": "1"})
 
         self.assertEqual(result.returncode, 1)
-        self.assertIn("Command failed (1): git submodule update --init --recursive", result.stderr)
+        self.assertIn(
+            "Command failed (1): git submodule update --init --recursive --checkout --force",
+            result.stderr,
+        )
         self.assertNotIn("=== Main worktree reclaimed; linked worktrees removed ===", result.stdout)
         self.assertNotIn("npm install", self.log.read_text())
 
