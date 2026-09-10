@@ -224,12 +224,17 @@ def abort_git_operations(worktree: Path) -> None:
         git(*operation, cwd=worktree, capture_output=True, check=False)
 
 
-def status_entries(worktree: Path) -> list[bytes]:
+def status_entries(
+    worktree: Path,
+    *,
+    include_submodule_changes: bool = False,
+) -> list[bytes]:
+    status_args = ["status", "--porcelain=v1", "--untracked-files=all", "-z"]
+    if include_submodule_changes:
+        status_args.append("--ignore-submodules=none")
+
     result = git(
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=all",
-        "-z",
+        *status_args,
         cwd=worktree,
         capture_output=True,
         text=False,
@@ -498,6 +503,50 @@ def reset_current_worktree(current_worktree: Path, *, force: bool) -> None:
     git("reset", "--hard", "origin/main", cwd=current_worktree)
 
 
+def synchronize_submodules(worktree: Path) -> None:
+    git("submodule", "sync", "--recursive", cwd=worktree)
+    git(
+        "submodule",
+        "update",
+        "--init",
+        "--recursive",
+        cwd=worktree,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+    )
+
+
+def submodule_status(worktree: Path) -> list[str]:
+    result = git(
+        "submodule",
+        "status",
+        "--recursive",
+        cwd=worktree,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip()
+        message = "could not inspect submodule state"
+        if detail:
+            message += f": {detail}"
+        raise ResetBlocked(message)
+    return result.stdout.splitlines()
+
+
+def verify_reset_state(worktree: Path) -> None:
+    entries = status_entries(worktree, include_submodule_changes=True)
+    drift = [line for line in submodule_status(worktree) if line and line[0] != " "]
+    if not entries and not drift:
+        return
+
+    problems: list[str] = []
+    if entries:
+        problems.append("worktree changes:\n" + display_entries(entries))
+    if drift:
+        problems.append("submodules are not at recorded commits:\n" + "\n".join(drift))
+    raise ResetBlocked("reset did not leave a clean worktree:\n" + "\n".join(problems))
+
+
 def update_worktree(worktree: Path) -> bool:
     try:
         branch = git("branch", "--show-current", cwd=worktree, capture_output=True).stdout.strip()
@@ -574,6 +623,7 @@ def main() -> int:
         delete_stale_branches(current_worktree)
         prepare_worktree(current_worktree, args)
         reset_current_worktree(current_worktree, force=True)
+        synchronize_submodules(current_worktree)
         # The primary branch is unprotected after checkout to main.
         delete_stale_branches(current_worktree)
     else:
@@ -588,6 +638,7 @@ def main() -> int:
     install_dependencies(current_worktree)
 
     if args.force:
+        verify_reset_state(current_worktree)
         print("\n=== Main worktree reclaimed; linked worktrees removed ===")
         return 0
 

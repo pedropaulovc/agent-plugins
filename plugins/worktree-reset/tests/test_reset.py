@@ -80,8 +80,23 @@ case "$*" in
       printf '%s\\n' "$STATUS_OUTPUT" | while IFS= read -r entry; do printf '%s\\0' "$entry"; done
     fi
     ;;
+  'status --porcelain=v1 --untracked-files=all -z --ignore-submodules=none')
+    if [ -n "${{FINAL_STATUS_OUTPUT:-}}" ]; then
+      printf '%s\\n' "$FINAL_STATUS_OUTPUT" | while IFS= read -r entry; do printf '%s\\0' "$entry"; done
+    fi
+    ;;
   'stash list')
     if [ -n "${{STASH_OUTPUT:-}}" ]; then printf '%s\\n' "$STASH_OUTPUT"; fi
+    ;;
+  'submodule sync --recursive') ;;
+  'submodule update --init --recursive')
+    if [ -n "${{SUBMODULE_UPDATE_FAIL:-}}" ]; then
+      printf 'submodule update failed\\n' >&2
+      exit 1
+    fi
+    ;;
+  'submodule status --recursive')
+    if [ -n "${{SUBMODULE_STATUS_OUTPUT:-}}" ]; then printf '%s\\n' "$SUBMODULE_STATUS_OUTPUT"; fi
     ;;
   'branch -vv')
     printf '%s\\n' '  stale abc123 [origin/stale: gone] {COMMIT_SUBJECT}' '  +linked abc [origin/linked: gone]'
@@ -183,6 +198,56 @@ fi
         self.assertIn(f"git worktree remove --force --force {self.second_linked} [cwd={self.repo}]", log)
         self.assertIn(f"git checkout -f -B main origin/main [cwd={self.repo}]", log)
         self.assertNotIn("git checkout -f feature", log)
+
+    def test_force_syncs_submodules_and_verifies_submodule_state(self) -> None:
+        result = self.run_script(
+            "--force",
+            extra_env={"SUBMODULE_STATUS_OUTPUT": " abc123 sub (heads/main)"},
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        reset = log.index("git reset --hard origin/main")
+        sync = log.index("git submodule sync --recursive")
+        update = log.index("git submodule update --init --recursive")
+        status = log.index("git submodule status --recursive")
+        final_root_status = log.index(
+            "git status --porcelain=v1 --untracked-files=all -z --ignore-submodules=none"
+        )
+        npm = log.index("npm install")
+        self.assertLess(reset, sync)
+        self.assertLess(sync, update)
+        self.assertLess(update, npm)
+        self.assertLess(npm, final_root_status)
+        self.assertLess(final_root_status, status)
+        self.assertIn("=== Main worktree reclaimed; linked worktrees removed ===", result.stdout)
+
+    def test_force_fails_when_submodule_update_fails(self) -> None:
+        result = self.run_script("--force", extra_env={"SUBMODULE_UPDATE_FAIL": "1"})
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Command failed (1): git submodule update --init --recursive", result.stderr)
+        self.assertNotIn("=== Main worktree reclaimed; linked worktrees removed ===", result.stdout)
+        self.assertNotIn("npm install", self.log.read_text())
+
+    def test_force_fails_when_submodule_status_reports_drift(self) -> None:
+        result = self.run_script(
+            "--force",
+            extra_env={"SUBMODULE_STATUS_OUTPUT": "+deadbeef sub (heads/main)"},
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("submodules are not at recorded commits", result.stderr)
+        self.assertIn("+deadbeef sub (heads/main)", result.stderr)
+        self.assertNotIn("=== Main worktree reclaimed; linked worktrees removed ===", result.stdout)
+
+    def test_force_fails_when_final_worktree_status_is_dirty(self) -> None:
+        result = self.run_script("--force", extra_env={"FINAL_STATUS_OUTPUT": " M sub"})
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("worktree changes", result.stderr)
+        self.assertIn(" M sub", result.stderr)
+        self.assertNotIn("=== Main worktree reclaimed; linked worktrees removed ===", result.stdout)
 
     def test_force_refuses_to_delete_the_invoking_linked_worktree(self) -> None:
         result = self.run_script("--force", cwd=self.linked)
