@@ -8,10 +8,8 @@ clear and report anything that cannot be cleared.
 - Cancel and re-list scheduled timers.
 - Dismiss and re-list teammates.
 - Stop and re-list running or background subagents.
-- Stop every active persistent `Monitor` running `watch-pr-monitor.mjs` and confirm no
-  such Monitor remains. For each PR watcher stopped in this session, call the watch-pr
-  MCP tool `unwatch_pr` only after its process has ended. Do not remove unrelated durable
-  watches owned by another session.
+- Use the Monitor list and stop controls for each `watch-pr-monitor.mjs` process
+  covered by the shared watch-pr cleanup, then re-list Monitors to verify it ended.
 - Stop background shell jobs and confirm the job list is empty.
 
 For untracked-file approval, use `AskUserQuestion` to show the complete report and obtain

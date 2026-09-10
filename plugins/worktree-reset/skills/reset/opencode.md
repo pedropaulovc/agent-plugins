@@ -3,10 +3,9 @@
 Before running the reset script, use the harness controls that are available in this
 OpenCode installation:
 
-- Stop any long-lived subagent or background terminal running `watch-pr-monitor.mjs` and
-  confirm its process ended. For each PR watcher stopped in this session, call the
-  watch-pr MCP tool `unwatch_pr` afterward. Do not remove unrelated durable watches owned
-  by another session.
+- Use the available subagent or background-terminal controls to stop each
+  `watch-pr-monitor.mjs` process covered by the shared watch-pr cleanup and verify it
+  ended.
 - Stop other active background terminals and subagents, then confirm no background work
   remains. Skip unsupported task-list, timer, teammate, or monitor operations rather than
   inventing equivalents.

@@ -2,10 +2,8 @@
 
 Codex owns its subagent and terminal teardown. Before running the reset script:
 
-- Find every long-lived subagent running `watch-pr-monitor.mjs`. Send it an interrupt,
-  wait for the watcher process to end, then close the subagent. For each PR watcher
-  stopped in this session, call the watch-pr MCP tool `unwatch_pr` after the process has
-  ended. Do not remove unrelated durable watches owned by another session.
+- Use the subagent controls to interrupt each `watch-pr-monitor.mjs` process covered by
+  the shared watch-pr cleanup, wait for it to end, then close that subagent.
 - Stop any other active subagents and background terminals through the Codex harness,
   then confirm that no background work remains.
 

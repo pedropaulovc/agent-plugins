@@ -82,8 +82,8 @@ URL only inside this private task and instruct it exactly as follows:
 Run `node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"` in the
 foreground. For each stdout JSON line with terminalState `watching`, immediately send
 the exact line to the root session through the parent-message channel, then continue
-reading the same process. For terminalState `merged` or `closed`, send the exact line,
-return that terminal result, and exit. If the process writes stderr or exits nonzero,
+reading the same process. For terminalState `merged` or `closed`, return the exact line
+to the root as the terminal result and exit. If the process writes stderr or exits nonzero,
 send the error to the root and exit. Do not call MCP or GitHub tools, inspect or modify
 files, rebase, push, reply, poll, restart, or launch another watcher.
 ```

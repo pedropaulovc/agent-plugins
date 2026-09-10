@@ -130,6 +130,33 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
   }
 });
 
+test("keeps one watcher alive from an intermediate event through terminal state", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    sendEvent(response, monitorEvent("event-intermediate"));
+    setTimeout(() => {
+      sendEvent(response, monitorEvent("event-terminal", "closed", {
+        action: "closed",
+        changes: ["lifecycle"],
+      }));
+    }, 50);
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    await waitFor(() => watcher.stdout().includes("event-intermediate"), "the intermediate event");
+    assert.equal(watcher.child.exitCode, null);
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    const output = watcher.stdout().trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(output.map(({ id }) => id), ["event-intermediate", "event-terminal"]);
+    assert.equal(output[1].terminalState, "closed");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
 test("prints a merged event and exits without waiting for the feed to close", async () => {
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });

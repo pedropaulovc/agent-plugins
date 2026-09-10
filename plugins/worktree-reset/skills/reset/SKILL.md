@@ -24,6 +24,14 @@ the current system context; if `omp://` is mentioned, the harness is Oh My Pi:
 Follow that file's harness-specific teardown and confirmation rules. The harness files
 contain no repository commands; `reset.py` is the only reset implementation.
 
+## Shared watch-pr cleanup
+
+Before running the reset script, stop every watch-pr watcher started by the current
+session and confirm its process or subagent has ended. Only then call the watch-pr MCP
+tool `unwatch_pr` for each corresponding pull request. Do not cancel durable watches
+owned by another session. The selected harness file defines which controls stop and
+verify its Monitor, subagent, or async job; it does not change this ordering or scope.
+
 ## Arguments
 
 - `--force` discards tracked, untracked, ignored, and repository-wide stashed changes

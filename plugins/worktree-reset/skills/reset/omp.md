@@ -7,10 +7,9 @@ Oh My Pi exposes task, peer, job, and process controls through its harness tools
 running the reset script:
 
 - Clear and re-read the task list with the harness todo controls.
-- Inspect async hub jobs. Cancel every job running `watch-pr-monitor.mjs` by its recorded
-  job ID and confirm it ended. For each PR watcher canceled in this session, call the
-  watch-pr MCP tool `unwatch_pr` after the job has ended. Do not remove unrelated durable
-  watches owned by another session.
+- Use the async hub job controls to cancel each recorded job running
+  `watch-pr-monitor.mjs` that is covered by the shared watch-pr cleanup, then verify the
+  job ended.
 - Inspect all remaining background jobs and active harness processes with the hub
   controls. Stop or cancel each one, then query again and confirm none remain.
 - Inspect the peer-agent roster, stop or dismiss active peer work, and confirm none
