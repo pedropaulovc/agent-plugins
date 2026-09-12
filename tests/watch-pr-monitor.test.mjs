@@ -5,14 +5,18 @@ import {
   chmodSync,
   existsSync,
   mkdtempSync,
+  readFileSync,
+  realpathSync,
+  readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { readMonitorUrlFile } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
 
@@ -82,6 +86,34 @@ function startWatcher(url, { createUrlFile = true, mode = 0o600 } = {}) {
     stderr: () => stderr,
   };
 }
+function startMint(
+  monitorUrl,
+  directory = process.platform === "win32" ? undefined : temporaryDirectory,
+  { sendInput = true } = {},
+) {
+  const args = [watcherPath, "mint"];
+  if (directory !== undefined) args.push(directory);
+  const child = spawn(process.execPath, args, {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
+  if (sendInput) child.stdin.write(`${monitorUrl}\n`);
+  return {
+    child,
+    exited,
+    stdout: () => stdout,
+    stderr: () => stderr,
+  };
+}
+function capabilityNames(directory = tmpdir()) {
+  return new Set(readdirSync(directory).filter(name => name.startsWith("watch-pr-monitor-")));
+}
 
 async function waitFor(predicate, description) {
   const deadline = Date.now() + 3_000;
@@ -91,12 +123,179 @@ async function waitFor(predicate, description) {
   }
 }
 
+async function assertWatcherStoppedByTest(exited) {
+  const expected = process.platform === "win32"
+    ? { code: null, signal: "SIGTERM" }
+    : { code: 0, signal: null };
+  assert.deepEqual(await exited, expected);
+}
+
 async function closeServer(server) {
   server.closeAllConnections();
   await new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });
 }
+
+test("mints an owner-only capability file from stdin and prints only its path", async () => {
+  const monitorUrl = "https://watch-pr.example/monitor/opaque-capability-105";
+  const mint = startMint(monitorUrl);
+
+  try {
+    assert.deepEqual(await mint.exited, { code: 0, signal: null });
+    const urlFile = mint.stdout().trim();
+    assert.equal(mint.stdout(), `${urlFile}\n`);
+    const expectedDirectory = process.platform === "win32" ? realpathSync(tmpdir()) : temporaryDirectory;
+    assert.equal(urlFile.startsWith(join(expectedDirectory, "watch-pr-monitor-")), true);
+    if (process.platform !== "win32") {
+      assert.equal(statSync(urlFile).mode & 0o777, 0o600);
+    }
+    assert.equal(readFileSync(urlFile, "utf8"), monitorUrl);
+    assert.equal(await readMonitorUrlFile(urlFile), monitorUrl);
+    assert.equal(existsSync(urlFile), false);
+    assert.equal(mint.stderr(), "");
+  } finally {
+    if (mint.child.exitCode === null) mint.child.kill("SIGKILL");
+  }
+});
+
+test("removes an unconsumed capability file when publishing the path fails", async () => {
+  const mintDirectory = process.platform === "win32"
+    ? undefined
+    : mkdtempSync(join(tmpdir(), "watch-pr-monitor-mint-"));
+  const before = process.platform === "win32" ? capabilityNames() : undefined;
+  const monitorUrl = "https://watch-pr.example/monitor/opaque-capability-105";
+  const childArgs = [
+    "--input-type=module",
+    "-e",
+    `import { mintFromStdin } from ${JSON.stringify(pathToFileURL(watcherPath).href)};
+process.stdout.write = (_chunk, encoding, callback) => {
+  const done = typeof encoding === "function" ? encoding : callback;
+  const error = new Error("stdout closed");
+  done?.(error);
+  process.stdout.emit("error", error);
+  return false;
+};
+try {
+  await mintFromStdin(process.argv[1]);
+} catch (error) {
+  process.stderr.write(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+}`,
+  ];
+  if (mintDirectory !== undefined) childArgs.push(mintDirectory);
+  const child = spawn(process.execPath, childArgs, {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
+  child.stdin.write(`${monitorUrl}\n`);
+
+  try {
+    assert.deepEqual(await exited, { code: 1, signal: null });
+    assert.equal(stdout, "");
+    assert.match(stderr, /stdout closed/);
+    if (mintDirectory === undefined) {
+      assert.deepEqual(capabilityNames(), before);
+    } else {
+      assert.deepEqual(readdirSync(mintDirectory), []);
+    }
+  } finally {
+    if (child.exitCode === null) child.kill("SIGKILL");
+    if (mintDirectory !== undefined) rmSync(mintDirectory, { recursive: true, force: true });
+  }
+});
+
+test("removes the capability file when cancellation races publication", async () => {
+  const mintDirectory = process.platform === "win32"
+    ? undefined
+    : mkdtempSync(join(tmpdir(), "watch-pr-monitor-cancel-"));
+  const before = process.platform === "win32" ? capabilityNames() : undefined;
+  const monitorUrl = "https://watch-pr.example/monitor/opaque-capability-105";
+  const childArgs = [
+    "--input-type=module",
+    "-e",
+    `import { mintFromStdin } from ${JSON.stringify(pathToFileURL(watcherPath).href)};
+process.stdout.write = (_chunk, encoding, callback) => {
+  const done = typeof encoding === "function" ? encoding : callback;
+  process.emit("SIGTERM");
+  done?.();
+  return false;
+};
+try {
+  await mintFromStdin(process.argv[1]);
+} catch (error) {
+  process.stderr.write(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+}`,
+  ];
+  if (mintDirectory !== undefined) childArgs.push(mintDirectory);
+  const child = spawn(process.execPath, childArgs, {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
+  child.stdin.write(`${monitorUrl}\n`);
+
+  try {
+    assert.deepEqual(await exited, { code: 1, signal: null });
+    assert.equal(stdout, "");
+    assert.match(stderr, /monitor URL minting was cancelled/);
+    if (mintDirectory === undefined) {
+      assert.deepEqual(capabilityNames(), before);
+    } else {
+      assert.deepEqual(readdirSync(mintDirectory), []);
+    }
+  } finally {
+    if (child.exitCode === null) child.kill("SIGKILL");
+    if (mintDirectory !== undefined) rmSync(mintDirectory, { recursive: true, force: true });
+  }
+});
+
+test("rejects empty mint input without printing a capability path", async () => {
+  const mint = startMint("\n");
+
+  assert.deepEqual(await mint.exited, { code: 1, signal: null });
+  assert.equal(mint.stdout(), "");
+  assert.match(mint.stderr(), /monitor URL from stdin was empty/);
+});
+
+test("rejects a relative mint directory", async () => {
+  const mint = startMint("https://watch-pr.example/monitor/capability", ".");
+
+  assert.deepEqual(await mint.exited, { code: 1, signal: null });
+  assert.equal(mint.stdout(), "");
+  assert.match(mint.stderr(), /directory must be an absolute path/);
+});
+
+test("rejects a mint directory inside the repository", async () => {
+  const mint = startMint("https://watch-pr.example/monitor/capability", process.cwd());
+
+  assert.deepEqual(await mint.exited, { code: 1, signal: null });
+  assert.equal(mint.stdout(), "");
+  assert.match(
+    mint.stderr(),
+    process.platform === "win32" ? /custom monitor URL file directories are not supported/ : /outside the repository/,
+  );
+});
+
+test("rejects line breaks in a mint directory", async () => {
+  const mint = startMint("https://watch-pr.example/monitor/capability", `${temporaryDirectory}\nunsafe`);
+
+  assert.deepEqual(await mint.exited, { code: 1, signal: null });
+  assert.equal(mint.stdout(), "");
+  assert.match(mint.stderr(), /must not contain line breaks/);
+});
 
 test("prints readiness for a successful idle SSE response and stays alive", async () => {
   const { server, url } = await startServer((_request, response) => {
@@ -112,7 +311,7 @@ test("prints readiness for a successful idle SSE response and stays alive", asyn
     assert.equal(existsSync(watcher.urlFile), false);
 
     watcher.child.kill("SIGTERM");
-    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    await assertWatcherStoppedByTest(watcher.exited);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -137,7 +336,7 @@ test("prints readiness before the first PR event", async () => {
     ]);
 
     watcher.child.kill("SIGTERM");
-    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    await assertWatcherStoppedByTest(watcher.exited);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -164,7 +363,7 @@ test("falls back to the GitHub event when an update has no changed fields", asyn
     ]);
 
     watcher.child.kill("SIGTERM");
-    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    await assertWatcherStoppedByTest(watcher.exited);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -308,7 +507,9 @@ test("does not print readiness for a permanently invalid SSE response", async ()
   }
 });
 
-test("rejects a monitor URL file with group or other access", async () => {
+test("rejects a monitor URL file with group or other access", {
+  skip: process.platform === "win32",
+}, async () => {
   const watcher = startWatcher("https://watch-pr.example/monitor/capability", {
     mode: 0o644,
   });
