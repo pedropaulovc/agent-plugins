@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 import { readMonitorUrlFile } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
@@ -146,7 +146,8 @@ test("mints an owner-only capability file from stdin and prints only its path", 
     const urlFile = mint.stdout().trim();
     assert.equal(mint.stdout(), `${urlFile}\n`);
     const expectedDirectory = process.platform === "win32" ? realpathSync(tmpdir()) : temporaryDirectory;
-    assert.equal(urlFile.startsWith(join(expectedDirectory, "watch-pr-monitor-")), true);
+    assert.equal(realpathSync(dirname(urlFile)), expectedDirectory);
+    assert.equal(basename(urlFile).startsWith("watch-pr-monitor-"), true);
     if (process.platform !== "win32") {
       assert.equal(statSync(urlFile).mode & 0o777, 0o600);
     }
