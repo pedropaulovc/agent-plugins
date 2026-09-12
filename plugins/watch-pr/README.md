@@ -20,8 +20,9 @@ Windows rejects custom directories and uses only the per-user OS temporary direc
 atomically creates each capability file with a protected DACL granting full control only to
 the invoking user, verifies that DACL, and writes the URL before publishing the path; minting
 fails closed if that setup cannot run. This excludes other unprivileged SIDs, but not same-user
-processes or elevated Administrator, SYSTEM, or backup access. The reader canonicalizes the
-path and rejects paths outside the canonical temporary directory and paths inside a repository.
+processes or elevated Administrator, SYSTEM, or backup access. On POSIX, the reader canonicalizes
+the path and rejects paths inside a repository. On Windows, it additionally rejects paths outside
+the canonical per-user temporary directory.
 The helper writes the URL and prints only the capability-free path. Feed stdin through a
 harness-native process API with no PTY; never interpolate the URL into shell text or a
 heredoc, or put it in arguments, environment variables, output, logs, messages,

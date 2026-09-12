@@ -87,9 +87,10 @@ same watcher emits the readiness record.
    granting full control only to the invoking user, verifies that DACL, and writes the URL
    before publishing the path; minting fails closed if that setup cannot run. This excludes
    other unprivileged SIDs, but not same-user processes or elevated Administrator, SYSTEM,
-   or backup access. The reader canonicalizes the path and rejects paths outside the canonical
-   temporary directory and paths inside a repository. Never interpolate the URL into shell text
-   or a heredoc, or put it in arguments, environment variables, output, logs, messages,
+   or backup access. On POSIX, the reader canonicalizes the path and rejects paths inside a
+   repository. On Windows, it additionally rejects paths outside the canonical per-user
+   temporary directory. Never interpolate the URL into shell text or a heredoc, or put it in
+   arguments, environment variables, output, logs, messages,
    repository files, or process names.
    Do not use a PTY for the mint helper because terminal echo can expose stdin. If the
    harness cannot provide a private stdin channel, fail clearly rather than minting the

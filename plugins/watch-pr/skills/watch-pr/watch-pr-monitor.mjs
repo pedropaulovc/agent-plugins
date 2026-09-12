@@ -123,10 +123,12 @@ function runWindowsCommand(command, args, environment = process.env, input) {
     let pendingError;
     let settled = false;
     let timer;
+    let killTimer;
     const finish = (error, result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      clearTimeout(killTimer);
       if (error) reject(error);
       else resolve(result);
     };
@@ -138,6 +140,14 @@ function runWindowsCommand(command, args, environment = process.env, input) {
       } catch {
         // The process may have exited at the termination boundary.
       }
+      killTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The process may have exited at the termination boundary.
+        }
+        finish(pendingError);
+      }, WINDOWS_COMMAND_TIMEOUT_MS);
     };
     timer = setTimeout(() => {
       terminate(permanent(`Windows command timed out: ${command}`));
