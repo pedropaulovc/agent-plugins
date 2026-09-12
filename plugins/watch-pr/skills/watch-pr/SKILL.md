@@ -38,6 +38,13 @@ watcher alive through every intermediate event; never rearm it, start a recurrin
 or launch a second watcher. The watcher naturally exits after printing a `merged` or
 `closed` PR event.
 
+Do not call `watch_pr`, `open_pr_monitor`, or `unwatch_pr` for this PR from a
+second client that shares the same MCP credential. The backend watch scope is
+shared by that credential, so another client's `unwatch_pr` revokes the root
+watcher's capability. Do not report that a watcher is attached until the
+harness returns its concrete process, Monitor, or agent identifier and that
+same watcher emits the readiness record.
+
 ## Start watching
 
 1. Resolve the pull request with `gh pr view`. If no argument was supplied, resolve the

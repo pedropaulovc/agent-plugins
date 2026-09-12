@@ -34,6 +34,11 @@ edits, rebases, pushes, replies, or calls MCP tools.
 Exactly one watcher is allowed per PR/root session. Harness integration must keep that
 same watcher and distinguish readiness from PR events:
 
+The root must retain the concrete Monitor, process, or agent identifier and observe
+that watcher's readiness record before reporting it as attached. A second client using
+the same MCP credential must not watch or unwatch the same PR: the credential shares
+one backend watch scope, so its `unwatch_pr` revokes the root watcher's capability.
+
 - **Claude Code:** one persistent `Monitor`; readiness marks startup, while each later
   PR-event line wakes the root.
 - **Codex:** one long-lived `spawn_agent` subagent runs the watcher in the foreground,
