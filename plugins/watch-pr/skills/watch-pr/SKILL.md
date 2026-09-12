@@ -131,7 +131,7 @@ hub(
   args: ["<absolute skill directory>/watch-pr-monitor.mjs", "<monitorUrl>"],
   ready: {
     log: "^\\{\"type\":\"ready\",\"terminalState\":\"watching\"\\}$",
-    timeout: 30
+    timeout: 60
   },
   progress: "wake"
 )
