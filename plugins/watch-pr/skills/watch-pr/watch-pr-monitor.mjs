@@ -155,6 +155,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
   let cursor;
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+  let readyEmitted = false;
 
   while (!effectiveSignal.aborted) {
     let response;
@@ -181,6 +182,10 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       if (!validateResponse(response)) {
         await response.body?.cancel();
       } else {
+        if (!readyEmitted) {
+          process.stdout.write('{"type":"ready","terminalState":"watching"}\n');
+          readyEmitted = true;
+        }
         for await (const frame of parseEventStream(response.body)) {
           const parsed = parseMonitorEvent(frame);
           cursor = parsed.id;

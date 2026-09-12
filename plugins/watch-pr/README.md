@@ -5,34 +5,49 @@ Provides the `/watch-pr` skill, an OAuth-authenticated connection to the hosted
 SSE watcher that keeps the pull request attached to the root agent session that authored
 it.
 
+Before starting, the root tool inventory must expose `watch_pr`, `open_pr_monitor`,
+`get_pr`, and `unwatch_pr`. If any is missing, ask the user to authenticate the server
+with `/mcp reauth plugin:watch-pr:watch-pr`, then stop until all four tools are mounted.
+Claude CLI, another MCP client or transport, and polling are not supported workarounds.
+
 The server owns GitHub webhooks, minute reconciliation, durable snapshots, and durable
 event cursors. After `watch_pr`, the root session calls `open_pr_monitor` and passes its
-opaque read-only `monitorUrl` to
-`skills/watch-pr/watch-pr-monitor.mjs`. The watcher prints one compact JSON line per
-feed event, reconnects from its last event ID without duplicate output, stays alive
-through intermediate activity, and exits successfully on merge or closure. It never
-receives GitHub credentials and never edits, rebases, pushes, or replies.
+opaque read-only `monitorUrl` only to
+`skills/watch-pr/watch-pr-monitor.mjs`. The capability must never appear in output,
+repository files, or process names.
 
-Exactly one watcher is allowed per PR/root session. The same watcher remains active for
-checks, reviews, feedback, rebases, and reruns; it is not rearmed after each event. The
-root session calls `get_pr` after every watcher line and owns all action. Standard MCP
-resource notifications are optional hints and are not the correctness path.
+The watcher has two stdout record kinds:
 
-Harness integration is intentionally native:
+1. After validating its first SSE response, it prints exactly
+   `{"type":"ready","terminalState":"watching"}`. This one-time readiness record proves
+   that an otherwise idle connection is healthy. It is not a PR event and must not
+   trigger `get_pr`. Reconnects do not print it again.
+2. It then prints one compact JSON line per PR event. Each PR-event line wakes the root,
+   which calls `get_pr`; the compact payload itself is not an action source.
 
-- **Claude Code:** one persistent `Monitor` runs the Node watcher and wakes the root on
-  each line.
-- **Codex:** one long-lived `spawn_agent` subagent runs it in the foreground, messages
-  each intermediate line to the root without exiting, and returns only at merge,
-  closure, or error.
-- **Oh My Pi:** one Bash async job uses `async: true` with `progress: "wake"`; its job ID
-  is retained for cancellation.
+The readiness record always precedes any PR event. PR-event delivery resumes from the
+last event ID without duplicate output. The watcher stays alive through checks, reviews,
+feedback, rebases, reruns, and other intermediate activity, then exits successfully
+after a `merged` or `closed` PR event. It never receives GitHub credentials and never
+edits, rebases, pushes, replies, or calls MCP tools.
+
+Exactly one watcher is allowed per PR/root session. Harness integration must keep that
+same watcher and distinguish readiness from PR events:
+
+- **Claude Code:** one persistent `Monitor`; readiness marks startup, while each later
+  PR-event line wakes the root.
+- **Codex:** one long-lived `spawn_agent` subagent runs the watcher in the foreground,
+  reports readiness without requesting `get_pr`, relays each intermediate PR event
+  without exiting, and returns only at merge, closure, or error.
+- **Oh My Pi:** one hub-managed persistent process started with `hub(op: "start")`,
+  `progress: "wake"`, and readiness regex
+  `^\{"type":"ready","terminalState":"watching"\}$`; asynchronous Bash is not used.
 - **Other harnesses:** one long-lived subagent follows the same foreground-process and
   root-message contract. A harness that cannot deliver intermediate messages must fail
-  clearly rather than fall back to polling or detached processes.
+  clearly rather than fall back to polling, detached processes, or repeated launches.
 
 Canceling a nonterminal watch always stops the harness watcher first and then calls
-`unwatch_pr`. A terminal event makes the watcher exit naturally; the root calls
+`unwatch_pr`. A terminal PR event makes the watcher exit naturally; the root calls
 `get_pr`, performs terminal cleanup, and calls `unwatch_pr`.
 
 Claude Code and Codex load the remote server from inline plugin manifest configuration.

@@ -73,7 +73,28 @@ async function closeServer(server) {
   });
 }
 
-test("prints an intermediate event and keeps the same watcher alive", async () => {
+test("prints readiness for a successful idle SSE response and stays alive", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.flushHeaders();
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    await waitFor(() => watcher.stdout().includes("\n"), "the readiness record");
+    assert.equal(watcher.child.exitCode, null);
+    assert.equal(watcher.stdout(), '{"type":"ready","terminalState":"watching"}\n');
+
+    watcher.child.kill("SIGTERM");
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("prints readiness before the first PR event", async () => {
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     sendEvent(response, monitorEvent("event-1"));
@@ -81,9 +102,13 @@ test("prints an intermediate event and keeps the same watcher alive", async () =
   const watcher = startWatcher(url);
 
   try {
-    await waitFor(() => watcher.stdout().includes("\n"), "the intermediate event");
+    await waitFor(() => watcher.stdout().includes("event-1"), "the intermediate event");
     assert.equal(watcher.child.exitCode, null);
-    assert.deepEqual(JSON.parse(watcher.stdout().trim()), monitorEvent("event-1"));
+    const output = watcher.stdout().trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(output, [
+      { type: "ready", terminalState: "watching" },
+      monitorEvent("event-1"),
+    ]);
 
     watcher.child.kill("SIGTERM");
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
@@ -121,8 +146,14 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
     assert.equal(requestHeaders[0]["last-event-id"], undefined);
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
     const output = watcher.stdout().trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(output.map(({ id }) => id), ["event-1", "event-2"]);
-    assert.equal(output[1].terminalState, "closed");
+    assert.deepEqual(output, [
+      { type: "ready", terminalState: "watching" },
+      monitorEvent("event-1"),
+      monitorEvent("event-2", "closed", {
+        action: "closed",
+        changes: ["state"],
+      }),
+    ]);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -148,8 +179,14 @@ test("keeps one watcher alive from an intermediate event through terminal state"
     assert.equal(watcher.child.exitCode, null);
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
     const output = watcher.stdout().trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(output.map(({ id }) => id), ["event-intermediate", "event-terminal"]);
-    assert.equal(output[1].terminalState, "closed");
+    assert.deepEqual(output, [
+      { type: "ready", terminalState: "watching" },
+      monitorEvent("event-intermediate"),
+      monitorEvent("event-terminal", "closed", {
+        action: "closed",
+        changes: ["lifecycle"],
+      }),
+    ]);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -169,7 +206,14 @@ test("prints a merged event and exits without waiting for the feed to close", as
 
   try {
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
-    assert.equal(JSON.parse(watcher.stdout().trim()).terminalState, "merged");
+    const output = watcher.stdout().trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(output, [
+      { type: "ready", terminalState: "watching" },
+      monitorEvent("event-terminal", "merged", {
+        action: "closed",
+        changes: ["merged", "state"],
+      }),
+    ]);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -200,6 +244,25 @@ for (const status of [401, 403, 404]) {
     }
   });
 }
+
+test("does not print readiness for a permanently invalid SSE response", async () => {
+  let requests = 0;
+  const { server, url } = await startServer((_request, response) => {
+    requests += 1;
+    response.writeHead(200, { "Content-Type": "application/json" }).end("{}");
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+    assert.equal(requests, 1);
+    assert.equal(watcher.stdout(), "");
+    assert.match(watcher.stderr(), /expected text\/event-stream/);
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
 
 test("rejects non-HTTP URLs even when their hostname is loopback", async () => {
   const watcher = startWatcher("file://localhost/monitor/test-capability");
