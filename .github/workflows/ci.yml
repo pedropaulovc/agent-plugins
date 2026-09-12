@@ -96,6 +96,20 @@ jobs:
           done
           exit $fail
 
+  test-watch-pr-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Install watch-pr test dependencies
+        run: npm ci --ignore-scripts
+      - name: Test watch-pr capability security on Windows
+        run: npm run test:watch-pr
+
   test-rust-hooks:
     runs-on: ubuntu-latest
     steps:

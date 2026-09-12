@@ -66,20 +66,37 @@ same watcher emits the readiness record.
    result and retain the opaque `monitorUrl`. It is a read-only bearer capability for
    this OAuth session and PR.
 
-   If `terminalState` is already `merged` or `closed`, do not create a capability file
+   If `terminalState` is already `merged` or `closed`, do not mint a capability file
    or launch a watcher. Call `get_pr`, perform the matching terminal action below, and
    clean up with `unwatch_pr`.
 
-   Otherwise, atomically create a temporary file outside the repository with owner-only
-   `0600` permissions, write only the monitor URL into it without printing the value,
-   and retain the capability-free file path. Never put the monitor URL in process
-   arguments, environment variables, logs, messages, repository files, or process
-   names. The watcher reads and unlinks this file immediately, retaining the URL only
-   in its own memory.
+   Otherwise, resolve `watch-pr-monitor.mjs` from the absolute directory containing this
+   `SKILL.md`; do not search the checkout or assume the current working directory. Start
+   its one-shot `mint` helper through a process API with a private stdin channel:
 
-4. Resolve `watch-pr-monitor.mjs` from the absolute directory containing this `SKILL.md`;
-   do not search the checkout or assume the current working directory. Start the command
-   below using exactly one harness-native flow from the next section. Pass only the
+   ```text
+   node "<absolute skill directory>/watch-pr-monitor.mjs" mint [absolute-directory]
+   ```
+
+   Write `monitorUrl` exactly once to the helper's stdin and capture only its single
+   stdout path. Omit `absolute-directory` to use the OS temporary directory. On POSIX,
+   a supplied existing directory must be absolute and outside the repository; the helper
+   atomically creates an owner-only `0600` file. Windows does not expose POSIX owner
+   permission bits, so the helper rejects custom directories and uses the per-user OS
+   temporary directory. It atomically creates each capability file with a protected DACL
+   granting full control only to the invoking user, verifies that DACL, and writes the URL
+   before publishing the path; minting fails closed if that setup cannot run. This excludes
+   other unprivileged SIDs, but not same-user processes or elevated Administrator, SYSTEM,
+   or backup access. On POSIX, the reader canonicalizes the path and rejects paths inside a
+   repository. On Windows, it additionally rejects paths outside the canonical per-user
+   temporary directory. Never interpolate the URL into shell text or a heredoc, or put it in
+   arguments, environment variables, output, logs, messages,
+   repository files, or process names.
+   Do not use a PTY for the mint helper because terminal echo can expose stdin. If the
+   harness cannot provide a private stdin channel, fail clearly rather than minting the
+   file by hand or exposing the capability.
+
+4. Start exactly one watcher through the harness-native flow below. Pass only the
    capability-file path, never the monitor URL:
 
    ```text
@@ -139,6 +156,26 @@ subagent running until the terminal result or explicit cancellation.
 
 ### Oh My Pi
 
+The `mint` helper from step 3 is a short-lived setup process, not the watcher. Oh My Pi's
+`hub(op: "start")` has no stdin at launch, so start the helper with `pty: false` and
+`progress: "off"`, send `monitorUrl` through its private stdin with `hub(op: "send")`,
+read its path-only stdout, and wait for it to exit before starting the watcher below.
+Never put the URL in `args`, `env`, shell text, or a PTY that can echo input.
+
+```text
+hub(
+  op: "start",
+  name: "watch-pr-mint-<owner>-<repository>-<number>",
+  application: "node",
+  args: ["<absolute skill directory>/watch-pr-monitor.mjs", "mint"],
+  pty: false,
+  progress: "off"
+)
+hub(op: "send", name: "watch-pr-mint-<owner>-<repository>-<number>", text: "<monitorUrl>", enter: true)
+```
+
+The mint helper must finish successfully and return one capability-file path. Stop or
+clean up that short-lived helper before starting the one persistent watcher.
 Start one hub-managed persistent process with `hub(op: "start")`. Use a capability-free,
 unique name and pass only the capability-file path as the watcher argument:
 

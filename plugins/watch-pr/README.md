@@ -12,11 +12,22 @@ Claude CLI, another MCP client or transport, and polling are not supported worka
 
 The server owns GitHub webhooks, minute reconciliation, durable snapshots, and durable
 event cursors. For a nonterminal PR, after `watch_pr` the root session calls
-`open_pr_monitor`, atomically writes its opaque read-only `monitorUrl` to a temporary
-file outside the repository with owner-only `0600` permissions, and invokes the watcher
-only as `watch-pr-monitor.mjs --url-file <capability-file>`. Every harness passes only
-this capability-free path. The URL must never appear in arguments, environment
-variables, output, logs, messages, repository files, or process names. The watcher
+`open_pr_monitor` and starts the one-shot `watch-pr-monitor.mjs mint [absolute-directory]`
+helper. The helper reads the opaque read-only `monitorUrl` once from a private stdin
+channel. On POSIX it atomically creates an owner-only `0600` capability file in the OS
+temporary directory (or a supplied existing absolute directory outside the repository).
+Windows rejects custom directories and uses only the per-user OS temporary directory. It
+atomically creates each capability file with a protected DACL granting full control only to
+the invoking user, verifies that DACL, and writes the URL before publishing the path; minting
+fails closed if that setup cannot run. This excludes other unprivileged SIDs, but not same-user
+processes or elevated Administrator, SYSTEM, or backup access. On POSIX, the reader canonicalizes
+the path and rejects paths inside a repository. On Windows, it additionally rejects paths outside
+the canonical per-user temporary directory.
+The helper writes the URL and prints only the capability-free path. Feed stdin through a
+harness-native process API with no PTY; never interpolate the URL into shell text or a
+heredoc, or put it in arguments, environment variables, output, logs, messages,
+repository files, or process names. Every harness
+passes only this path to `watch-pr-monitor.mjs --url-file <capability-file>`. The watcher
 reads and unlinks the file immediately, retaining the URL only in memory.
 
 The watcher prints concise plain-text records:
@@ -51,9 +62,10 @@ one backend watch scope, so its `unwatch_pr` revokes the root watcher's capabili
   path, runs the watcher in the foreground, reports `watch-pr: ready` without requesting
   `get_pr`, relays each intermediate `PR <n> updated: ...` line without exiting, and
   returns only for a terminal `PR <n> finished: ...` line or error.
-- **Oh My Pi:** one hub-managed persistent process receives only the capability-file
-  path and is started with `hub(op: "start")`, `progress: "wake"`, and readiness regex
-  `^watch-pr: ready$`; asynchronous Bash is not used.
+- **Oh My Pi:** first run the `mint` helper as a short-lived hub process with `pty:false`
+  and `progress:"off"`, feed its stdin privately, and retain its path-only output; then
+  run one hub-managed persistent watcher with `progress:"wake"` and readiness regex
+  `^watch-pr: ready$`. A hub start has no stdin at launch, so use its private send channel.
 - **Other harnesses:** one long-lived subagent receives only the capability-file path
   and follows the same foreground-process and root-message contract. A harness that
   cannot deliver intermediate messages must fail
