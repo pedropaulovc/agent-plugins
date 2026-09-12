@@ -219,5 +219,7 @@ has ended, delete the capability file if the watcher failed before consuming it,
 call `unwatch_pr`. Never leave a detached process or capability file behind.
 
 A permanent watcher error is not an invitation to rearm. Report its stderr to the root,
-stop/close its harness container, call `unwatch_pr` when possible, and do not launch a
-replacement watcher in this session.
+stop/close its harness container, delete the capability file if startup failed before
+the watcher consumed it, call `unwatch_pr` when possible, and do not launch a
+replacement watcher in this session. Apply the same file cleanup if startup is
+cancelled while the watcher is still opening the file.
