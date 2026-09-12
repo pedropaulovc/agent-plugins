@@ -40,7 +40,7 @@ test("watch-pr package ships its watcher with aligned v2 manifests", () => {
   const codexManifest = JSON.parse(readFileSync(new URL(".codex-plugin/plugin.json", pluginRoot), "utf8"));
   const packageManifest = JSON.parse(readFileSync(new URL("package.json", pluginRoot), "utf8"));
 
-  assert.equal(claudeManifest.version, "2.0.0");
+  assert.match(claudeManifest.version, /^2\./);
   assert.equal(codexManifest.version, claudeManifest.version);
   assert.equal(packageManifest.version, claudeManifest.version);
   assert.equal(

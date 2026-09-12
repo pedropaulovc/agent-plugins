@@ -1,14 +1,32 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { readMonitorUrlFile } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
 
 const watcherPath = fileURLToPath(new URL(
   "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs",
   import.meta.url,
 ));
+
+const temporaryDirectory = mkdtempSync(join(tmpdir(), "watch-pr-monitor-test-"));
+let urlFileSequence = 0;
+
+test.after(() => {
+  rmSync(temporaryDirectory, { recursive: true, force: true });
+});
 
 function monitorEvent(id, terminalState = "watching", overrides = {}) {
   return {
@@ -39,8 +57,14 @@ async function startServer(handler) {
   };
 }
 
-function startWatcher(url) {
-  const child = spawn(process.execPath, [watcherPath, url], {
+function startWatcher(url, { createUrlFile = true, mode = 0o600 } = {}) {
+  const urlFile = join(temporaryDirectory, `${urlFileSequence += 1}.url`);
+  if (createUrlFile) {
+    writeFileSync(urlFile, url, { encoding: "utf8", mode });
+    chmodSync(urlFile, mode);
+  }
+
+  const child = spawn(process.execPath, [watcherPath, "--url-file", urlFile], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.setEncoding("utf8");
@@ -53,6 +77,7 @@ function startWatcher(url) {
   return {
     child,
     exited,
+    urlFile,
     stdout: () => stdout,
     stderr: () => stderr,
   };
@@ -73,7 +98,29 @@ async function closeServer(server) {
   });
 }
 
-test("prints an intermediate event and keeps the same watcher alive", async () => {
+test("prints readiness for a successful idle SSE response and stays alive", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.flushHeaders();
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    await waitFor(() => watcher.stdout().includes("\n"), "the readiness record");
+    assert.equal(watcher.child.exitCode, null);
+    assert.equal(watcher.stdout(), "watch-pr: ready\n");
+    assert.equal(existsSync(watcher.urlFile), false);
+
+    watcher.child.kill("SIGTERM");
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("prints readiness before the first PR event", async () => {
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     sendEvent(response, monitorEvent("event-1"));
@@ -81,9 +128,40 @@ test("prints an intermediate event and keeps the same watcher alive", async () =
   const watcher = startWatcher(url);
 
   try {
-    await waitFor(() => watcher.stdout().includes("\n"), "the intermediate event");
+    await waitFor(() => watcher.stdout().includes("PR 42 updated: head"), "the intermediate event");
     assert.equal(watcher.child.exitCode, null);
-    assert.deepEqual(JSON.parse(watcher.stdout().trim()), monitorEvent("event-1"));
+    const output = watcher.stdout().trim().split("\n");
+    assert.deepEqual(output, [
+      "watch-pr: ready",
+      "PR 42 updated: head",
+    ]);
+
+    watcher.child.kill("SIGTERM");
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("falls back to the GitHub event when an update has no changed fields", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    sendEvent(response, monitorEvent("event-base-push", "watching", {
+      githubEvent: "push",
+      changes: [],
+    }));
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    await waitFor(() => watcher.stdout().includes("PR 42 updated: push"), "the push update");
+    assert.equal(watcher.child.exitCode, null);
+    assert.deepEqual(watcher.stdout().trim().split("\n"), [
+      "watch-pr: ready",
+      "PR 42 updated: push",
+    ]);
 
     watcher.child.kill("SIGTERM");
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
@@ -120,9 +198,12 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
     assert.equal(requestHeaders.length, 2);
     assert.equal(requestHeaders[0]["last-event-id"], undefined);
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
-    const output = watcher.stdout().trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(output.map(({ id }) => id), ["event-1", "event-2"]);
-    assert.equal(output[1].terminalState, "closed");
+    const output = watcher.stdout().trim().split("\n");
+    assert.deepEqual(output, [
+      "watch-pr: ready",
+      "PR 42 updated: head",
+      "PR 42 finished: CLOSED",
+    ]);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -144,12 +225,15 @@ test("keeps one watcher alive from an intermediate event through terminal state"
   const watcher = startWatcher(url);
 
   try {
-    await waitFor(() => watcher.stdout().includes("event-intermediate"), "the intermediate event");
+    await waitFor(() => watcher.stdout().includes("PR 42 updated: head"), "the intermediate event");
     assert.equal(watcher.child.exitCode, null);
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
-    const output = watcher.stdout().trim().split("\n").map((line) => JSON.parse(line));
-    assert.deepEqual(output.map(({ id }) => id), ["event-intermediate", "event-terminal"]);
-    assert.equal(output[1].terminalState, "closed");
+    const output = watcher.stdout().trim().split("\n");
+    assert.deepEqual(output, [
+      "watch-pr: ready",
+      "PR 42 updated: head",
+      "PR 42 finished: CLOSED",
+    ]);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -169,7 +253,11 @@ test("prints a merged event and exits without waiting for the feed to close", as
 
   try {
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
-    assert.equal(JSON.parse(watcher.stdout().trim()).terminalState, "merged");
+    const output = watcher.stdout().trim().split("\n");
+    assert.deepEqual(output, [
+      "watch-pr: ready",
+      "PR 42 finished: MERGED",
+    ]);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -200,6 +288,76 @@ for (const status of [401, 403, 404]) {
     }
   });
 }
+
+test("does not print readiness for a permanently invalid SSE response", async () => {
+  let requests = 0;
+  const { server, url } = await startServer((_request, response) => {
+    requests += 1;
+    response.writeHead(200, { "Content-Type": "application/json" }).end("{}");
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+    assert.equal(requests, 1);
+    assert.equal(watcher.stdout(), "");
+    assert.match(watcher.stderr(), /expected text\/event-stream/);
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("rejects a monitor URL file with group or other access", async () => {
+  const watcher = startWatcher("https://watch-pr.example/monitor/capability", {
+    mode: 0o644,
+  });
+
+  assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+  assert.equal(watcher.stdout(), "");
+  assert.match(watcher.stderr(), /permissions.*group or other access/);
+  assert.equal(existsSync(watcher.urlFile), true);
+});
+
+test("reports a missing monitor URL file without exposing a capability", async () => {
+  const watcher = startWatcher("", { createUrlFile: false });
+
+  assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+  assert.equal(watcher.stdout(), "");
+  assert.match(watcher.stderr(), /could not open the monitor URL file/);
+  assert.equal(existsSync(watcher.urlFile), false);
+});
+
+test("portable file opening rejects symlinks when O_NOFOLLOW is unavailable", async () => {
+  const target = join(temporaryDirectory, `${urlFileSequence += 1}.target`);
+  const link = join(temporaryDirectory, `${urlFileSequence += 1}.link`);
+  writeFileSync(target, "https://watch-pr.example/monitor/capability", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  symlinkSync(target, link);
+
+  await assert.rejects(
+    readMonitorUrlFile(link, { noFollowFlag: null }),
+    /regular file, not a symbolic link/,
+  );
+  assert.equal(existsSync(target), true);
+  assert.equal(existsSync(link), true);
+});
+
+test("portable file opening verifies and consumes a regular capability file", async () => {
+  const urlFile = join(temporaryDirectory, `${urlFileSequence += 1}.portable`);
+  const monitorUrl = "https://watch-pr.example/monitor/capability";
+  writeFileSync(urlFile, monitorUrl, { encoding: "utf8", mode: 0o600 });
+
+  await assert.doesNotReject(async () => {
+    assert.equal(
+      await readMonitorUrlFile(urlFile, { noFollowFlag: null }),
+      monitorUrl,
+    );
+  });
+  assert.equal(existsSync(urlFile), false);
+});
 
 test("rejects non-HTTP URLs even when their hostname is loopback", async () => {
   const watcher = startWatcher("file://localhost/monitor/test-capability");

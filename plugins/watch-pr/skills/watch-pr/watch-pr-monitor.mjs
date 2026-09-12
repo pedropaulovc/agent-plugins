@@ -1,15 +1,99 @@
 #!/usr/bin/env node
 
+import { constants } from "node:fs";
+import { lstat, open, unlink } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const INITIAL_RECONNECT_DELAY_MS = 250;
 const MAX_RECONNECT_DELAY_MS = 10_000;
 const VALID_TERMINAL_STATES = new Set(["watching", "merged", "closed"]);
+const READY_LINE = "watch-pr: ready";
 
 class PermanentMonitorError extends Error { }
 
 function permanent(message) {
   return new PermanentMonitorError(message);
+}
+
+function sameFile(left, right) {
+  return left.dev !== 0 && left.ino !== 0 &&
+    left.dev === right.dev && left.ino === right.ino;
+}
+
+export async function readMonitorUrlFile(
+  urlFile,
+  { noFollowFlag = constants.O_NOFOLLOW } = {},
+) {
+  let pathStat;
+  try {
+    pathStat = await lstat(urlFile);
+  } catch {
+    throw permanent("could not open the monitor URL file");
+  }
+  if (pathStat.isSymbolicLink() || !pathStat.isFile()) {
+    throw permanent("monitor URL file must be a regular file, not a symbolic link");
+  }
+  if ((pathStat.mode & 0o077) !== 0) {
+    throw permanent("monitor URL file permissions must not grant group or other access");
+  }
+
+  let handle;
+  try {
+    handle = await open(urlFile, constants.O_RDONLY | (noFollowFlag ?? 0));
+  } catch (error) {
+    const noFollowUnsupported = noFollowFlag !== undefined && [
+      "EINVAL",
+      "ENOTSUP",
+      "EOPNOTSUPP",
+    ].includes(error?.code);
+    if (!noFollowUnsupported) {
+      throw permanent("could not safely open the monitor URL file");
+    }
+    try {
+      handle = await open(urlFile, constants.O_RDONLY);
+    } catch {
+      throw permanent("could not safely open the monitor URL file");
+    }
+  }
+
+  try {
+    const openedStat = await handle.stat();
+    let currentPathStat;
+    try {
+      currentPathStat = await lstat(urlFile);
+    } catch {
+      throw permanent("monitor URL file changed while it was being opened");
+    }
+    if (
+      currentPathStat.isSymbolicLink() ||
+      !sameFile(pathStat, openedStat) ||
+      !sameFile(openedStat, currentPathStat)
+    ) {
+      throw permanent("monitor URL file changed while it was being opened");
+    }
+
+    const monitorUrl = (await handle.readFile("utf8")).trim();
+    if (!monitorUrl) {
+      throw permanent("monitor URL file was empty");
+    }
+
+    try {
+      currentPathStat = await lstat(urlFile);
+    } catch {
+      throw permanent("monitor URL file changed before it could be removed");
+    }
+    if (currentPathStat.isSymbolicLink() || !sameFile(openedStat, currentPathStat)) {
+      throw permanent("monitor URL file changed before it could be removed");
+    }
+    try {
+      await unlink(urlFile);
+    } catch {
+      throw permanent("could not remove the monitor URL file after reading it");
+    }
+    return monitorUrl;
+  } finally {
+    await handle.close();
+  }
 }
 
 function abortableDelay(milliseconds, signal) {
@@ -115,6 +199,31 @@ function parseMonitorEvent(frame) {
   return { event, id };
 }
 
+function formatMonitorEvent(event) {
+  if (!Number.isInteger(event.pullRequestNumber) || event.pullRequestNumber <= 0) {
+    throw permanent("received an invalid pull request number");
+  }
+
+  if (event.terminalState === "merged" || event.terminalState === "closed") {
+    return `PR ${event.pullRequestNumber} finished: ${event.terminalState.toUpperCase()}`;
+  }
+
+  if (!Array.isArray(event.changes) || event.changes.some((change) => typeof change !== "string")) {
+    throw permanent("received invalid monitor event changes");
+  }
+  const changes = [...new Set(event.changes.map((change) => change.replace(/\s+/g, " ").trim()))]
+    .filter(Boolean);
+  let summary = changes.join(", ");
+  if (!summary) {
+    if (typeof event.githubEvent !== "string") {
+      throw permanent("received a monitor event without a GitHub event");
+    }
+    summary = event.githubEvent.replace(/\s+/g, " ").trim();
+    if (!summary) throw permanent("received an empty GitHub event");
+  }
+  return `PR ${event.pullRequestNumber} updated: ${summary}`;
+}
+
 function validateResponse(response) {
   if ([401, 403, 404].includes(response.status)) {
     throw permanent(
@@ -140,7 +249,12 @@ function validateResponse(response) {
 }
 
 export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } = {}) {
-  const parsedUrl = new URL(monitorUrl);
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(monitorUrl);
+  } catch {
+    throw permanent("monitor URL file did not contain a valid URL");
+  }
   const isHttps = parsedUrl.protocol === "https:";
   const isLoopbackHttp = parsedUrl.protocol === "http:" && (
     parsedUrl.hostname === "127.0.0.1" ||
@@ -155,6 +269,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
   let cursor;
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+  let readyEmitted = false;
 
   while (!effectiveSignal.aborted) {
     let response;
@@ -181,6 +296,10 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       if (!validateResponse(response)) {
         await response.body?.cancel();
       } else {
+        if (!readyEmitted) {
+          process.stdout.write(`${READY_LINE}\n`);
+          readyEmitted = true;
+        }
         for await (const frame of parseEventStream(response.body)) {
           const parsed = parseMonitorEvent(frame);
           cursor = parsed.id;
@@ -188,7 +307,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
           reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
           if (parsed.id === lastPrintedId) continue;
 
-          process.stdout.write(`${JSON.stringify(parsed.event)}\n`);
+          process.stdout.write(`${formatMonitorEvent(parsed.event)}\n`);
           lastPrintedId = parsed.id;
           if (parsed.event.terminalState === "merged" || parsed.event.terminalState === "closed") return;
         }
@@ -206,8 +325,8 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
 }
 
 async function main() {
-  if (process.argv.length !== 3) {
-    throw permanent("usage: node watch-pr-monitor.mjs <monitor-url>");
+  if (process.argv.length !== 4 || process.argv[2] !== "--url-file") {
+    throw permanent("usage: node watch-pr-monitor.mjs --url-file <path>");
   }
 
   const controller = new AbortController();
@@ -215,7 +334,8 @@ async function main() {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
   try {
-    await watchPrMonitor(process.argv[2], { signal: controller.signal });
+    const monitorUrl = await readMonitorUrlFile(process.argv[3]);
+    await watchPrMonitor(monitorUrl, { signal: controller.signal });
   } finally {
     process.removeListener("SIGINT", stop);
     process.removeListener("SIGTERM", stop);
