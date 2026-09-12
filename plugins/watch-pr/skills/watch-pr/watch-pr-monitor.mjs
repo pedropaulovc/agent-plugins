@@ -120,6 +120,7 @@ function runWindowsCommand(command, args, environment = process.env, input) {
       return;
     }
     let stdout = "";
+    let pendingError;
     let settled = false;
     let timer;
     const finish = (error, result) => {
@@ -129,25 +130,33 @@ function runWindowsCommand(command, args, environment = process.env, input) {
       if (error) reject(error);
       else resolve(result);
     };
-    timer = setTimeout(() => {
+    const terminate = (error) => {
+      if (settled || pendingError) return;
+      pendingError = error;
       try {
         child.kill();
       } catch {
-        // The process may have exited at the timeout boundary.
+        // The process may have exited at the termination boundary.
       }
-      finish(permanent(`Windows command timed out: ${command}`));
+    };
+    timer = setTimeout(() => {
+      terminate(permanent(`Windows command timed out: ${command}`));
     }, WINDOWS_COMMAND_TIMEOUT_MS);
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", chunk => {
       stdout += chunk;
     });
     child.stderr.resume();
-    child.once("error", error => finish(error));
+    child.once("error", error => terminate(error));
     if (input !== undefined) {
-      child.stdin.once("error", error => finish(error));
+      child.stdin.once("error", error => terminate(error));
       child.stdin.end(input);
     }
     child.once("close", (code, signal) => {
+      if (pendingError) {
+        finish(pendingError);
+        return;
+      }
       if (code === 0) {
         finish(undefined, { stdout });
         return;
