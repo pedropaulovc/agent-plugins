@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { constants } from "node:fs";
-import { open, unlink } from "node:fs/promises";
+import { lstat, open, unlink } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 const INITIAL_RECONNECT_DELAY_MS = 250;
@@ -15,39 +15,85 @@ function permanent(message) {
   return new PermanentMonitorError(message);
 }
 
-async function readMonitorUrlFile(urlFile) {
-  let handle;
+function sameFile(left, right) {
+  return left.dev !== 0 && left.ino !== 0 &&
+    left.dev === right.dev && left.ino === right.ino;
+}
+
+export async function readMonitorUrlFile(
+  urlFile,
+  { noFollowFlag = constants.O_NOFOLLOW } = {},
+) {
+  let pathStat;
   try {
-    handle = await open(urlFile, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    pathStat = await lstat(urlFile);
   } catch {
     throw permanent("could not open the monitor URL file");
   }
+  if (pathStat.isSymbolicLink() || !pathStat.isFile()) {
+    throw permanent("monitor URL file must be a regular file, not a symbolic link");
+  }
+  if ((pathStat.mode & 0o077) !== 0) {
+    throw permanent("monitor URL file permissions must not grant group or other access");
+  }
 
-  let monitorUrl;
+  let handle;
   try {
-    const fileStat = await handle.stat();
-    if (!fileStat.isFile()) {
-      throw permanent("monitor URL file must be a regular file");
+    handle = await open(urlFile, constants.O_RDONLY | (noFollowFlag ?? 0));
+  } catch (error) {
+    const noFollowUnsupported = noFollowFlag !== undefined && [
+      "EINVAL",
+      "ENOTSUP",
+      "EOPNOTSUPP",
+    ].includes(error?.code);
+    if (!noFollowUnsupported) {
+      throw permanent("could not safely open the monitor URL file");
     }
-    if ((fileStat.mode & 0o077) !== 0) {
-      throw permanent("monitor URL file permissions must not grant group or other access");
+    try {
+      handle = await open(urlFile, constants.O_RDONLY);
+    } catch {
+      throw permanent("could not safely open the monitor URL file");
     }
-    monitorUrl = await handle.readFile("utf8");
+  }
+
+  try {
+    const openedStat = await handle.stat();
+    let currentPathStat;
+    try {
+      currentPathStat = await lstat(urlFile);
+    } catch {
+      throw permanent("monitor URL file changed while it was being opened");
+    }
+    if (
+      currentPathStat.isSymbolicLink() ||
+      !sameFile(pathStat, openedStat) ||
+      !sameFile(openedStat, currentPathStat)
+    ) {
+      throw permanent("monitor URL file changed while it was being opened");
+    }
+
+    const monitorUrl = (await handle.readFile("utf8")).trim();
+    if (!monitorUrl) {
+      throw permanent("monitor URL file was empty");
+    }
+
+    try {
+      currentPathStat = await lstat(urlFile);
+    } catch {
+      throw permanent("monitor URL file changed before it could be removed");
+    }
+    if (currentPathStat.isSymbolicLink() || !sameFile(openedStat, currentPathStat)) {
+      throw permanent("monitor URL file changed before it could be removed");
+    }
+    try {
+      await unlink(urlFile);
+    } catch {
+      throw permanent("could not remove the monitor URL file after reading it");
+    }
+    return monitorUrl;
   } finally {
     await handle.close();
   }
-
-  try {
-    await unlink(urlFile);
-  } catch {
-    throw permanent("could not remove the monitor URL file after reading it");
-  }
-
-  monitorUrl = monitorUrl.trim();
-  if (!monitorUrl) {
-    throw permanent("monitor URL file was empty");
-  }
-  return monitorUrl;
 }
 
 function abortableDelay(milliseconds, signal) {

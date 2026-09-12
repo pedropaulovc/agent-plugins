@@ -6,6 +6,7 @@ import {
   existsSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
@@ -13,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
+import { readMonitorUrlFile } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
 
 const watcherPath = fileURLToPath(new URL(
   "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs",
@@ -324,6 +326,37 @@ test("reports a missing monitor URL file without exposing a capability", async (
   assert.equal(watcher.stdout(), "");
   assert.match(watcher.stderr(), /could not open the monitor URL file/);
   assert.equal(existsSync(watcher.urlFile), false);
+});
+
+test("portable file opening rejects symlinks when O_NOFOLLOW is unavailable", async () => {
+  const target = join(temporaryDirectory, `${urlFileSequence += 1}.target`);
+  const link = join(temporaryDirectory, `${urlFileSequence += 1}.link`);
+  writeFileSync(target, "https://watch-pr.example/monitor/capability", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+  symlinkSync(target, link);
+
+  await assert.rejects(
+    readMonitorUrlFile(link, { noFollowFlag: null }),
+    /regular file, not a symbolic link/,
+  );
+  assert.equal(existsSync(target), true);
+  assert.equal(existsSync(link), true);
+});
+
+test("portable file opening verifies and consumes a regular capability file", async () => {
+  const urlFile = join(temporaryDirectory, `${urlFileSequence += 1}.portable`);
+  const monitorUrl = "https://watch-pr.example/monitor/capability";
+  writeFileSync(urlFile, monitorUrl, { encoding: "utf8", mode: 0o600 });
+
+  await assert.doesNotReject(async () => {
+    assert.equal(
+      await readMonitorUrlFile(urlFile, { noFollowFlag: null }),
+      monitorUrl,
+    );
+  });
+  assert.equal(existsSync(urlFile), false);
 });
 
 test("rejects non-HTTP URLs even when their hostname is loopback", async () => {
