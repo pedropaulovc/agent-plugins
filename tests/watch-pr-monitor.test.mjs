@@ -6,13 +6,13 @@ import {
   existsSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   readdirSync,
   rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { realpath } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -145,8 +145,9 @@ test("mints an owner-only capability file from stdin and prints only its path", 
     assert.deepEqual(await mint.exited, { code: 0, signal: null });
     const urlFile = mint.stdout().trim();
     assert.equal(mint.stdout(), `${urlFile}\n`);
-    const expectedDirectory = process.platform === "win32" ? realpathSync(tmpdir()) : temporaryDirectory;
-    assert.equal(realpathSync(dirname(urlFile)), expectedDirectory);
+    const expectedDirectory = process.platform === "win32" ? await realpath(tmpdir()) : temporaryDirectory;
+    const actualDirectory = process.platform === "win32" ? await realpath(dirname(urlFile)) : dirname(urlFile);
+    assert.equal(actualDirectory, expectedDirectory);
     assert.equal(basename(urlFile).startsWith("watch-pr-monitor-"), true);
     if (process.platform !== "win32") {
       assert.equal(statSync(urlFile).mode & 0o777, 0o600);
