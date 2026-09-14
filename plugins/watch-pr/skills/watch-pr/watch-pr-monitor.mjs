@@ -18,6 +18,7 @@ const CAPABILITY_FILE_MODE = 0o600;
 const CAPABILITY_FILE_ATTEMPTS = 4;
 const WINDOWS_COMMAND_TIMEOUT_MS = 10_000;
 const USAGE = "usage: node watch-pr-monitor.mjs --url-file <path> | " +
+  "node watch-pr-monitor.mjs --from-stdin | " +
   "node watch-pr-monitor.mjs mint [directory]";
 
 class PermanentMonitorError extends Error { }
@@ -424,8 +425,11 @@ function sameFile(left, right) {
 }
 
 
-function readMonitorUrlFromStdin(signal) {
-  if (signal?.aborted) return Promise.reject(permanent("monitor URL minting was cancelled"));
+function readMonitorUrlFromStdin(
+  signal,
+  cancellationMessage = "monitor URL minting was cancelled",
+) {
+  if (signal?.aborted) return Promise.reject(permanent(cancellationMessage));
 
   const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
   return new Promise((resolve, reject) => {
@@ -446,7 +450,7 @@ function readMonitorUrlFromStdin(signal) {
     const onLine = (line) => finish(undefined, line);
     const onClose = () => finish(undefined, "");
     const onError = (error) => finish(error);
-    const onAbort = () => finish(permanent("monitor URL minting was cancelled"));
+    const onAbort = () => finish(permanent(cancellationMessage));
 
     input.once("line", onLine);
     input.once("close", onClose);
@@ -456,11 +460,10 @@ function readMonitorUrlFromStdin(signal) {
   });
 }
 
-async function mintMonitorUrlFile(directory, { signal } = {}) {
-  const targetDirectory = await capabilityDirectory(directory);
+async function monitorUrlFromStdin(signal, cancellationMessage) {
   let input;
   try {
-    input = await readMonitorUrlFromStdin(signal);
+    input = await readMonitorUrlFromStdin(signal, cancellationMessage);
   } catch (error) {
     if (error instanceof PermanentMonitorError) throw error;
     throw permanent("could not read monitor URL from stdin");
@@ -470,6 +473,12 @@ async function mintMonitorUrlFile(directory, { signal } = {}) {
   if (/\s/.test(monitorUrl)) {
     throw permanent("monitor URL from stdin must contain one URL");
   }
+  return monitorUrl;
+}
+
+async function mintMonitorUrlFile(directory, { signal } = {}) {
+  const targetDirectory = await capabilityDirectory(directory);
+  const monitorUrl = await monitorUrlFromStdin(signal);
 
   for (let attempt = 0; attempt < CAPABILITY_FILE_ATTEMPTS; attempt += 1) {
     const urlFile = join(targetDirectory, `watch-pr-monitor-${randomUUID()}.url`);
@@ -812,11 +821,34 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
   }
 }
 
+async function watchMonitorFromStdin() {
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    const monitorUrl = await monitorUrlFromStdin(
+      controller.signal,
+      "monitor URL reading was cancelled",
+    );
+    await watchPrMonitor(monitorUrl, { signal: controller.signal });
+  } finally {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   if (args[0] === "mint") {
     if (args.length > 2) throw permanent(USAGE);
     await mintFromStdin(args[1]);
+    return;
+  }
+
+  if (args[0] === "--from-stdin") {
+    if (args.length !== 1) throw permanent(USAGE);
+    await watchMonitorFromStdin();
     return;
   }
 

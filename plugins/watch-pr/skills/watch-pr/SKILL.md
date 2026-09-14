@@ -70,9 +70,13 @@ same watcher emits the readiness record.
    or launch a watcher. Call `get_pr`, perform the matching terminal action below, and
    clean up with `unwatch_pr`.
 
-   Otherwise, resolve `watch-pr-monitor.mjs` from the absolute directory containing this
-   `SKILL.md`; do not search the checkout or assume the current working directory. Start
-   its one-shot `mint` helper through a process API with a private stdin channel:
+   For Oh My Pi, skip the file-based mint and watcher steps below and follow the
+   direct-stdin flow in the Oh My Pi section. Starting the watcher before handing it
+   the URL removes the gap in which an external process can delete a capability file.
+   For Claude Code, Codex, and other file-based harnesses, resolve
+   `watch-pr-monitor.mjs` from the absolute directory containing this `SKILL.md`; do
+   not search the checkout or assume the current working directory. Start its one-shot
+   `mint` helper through a process API with a private stdin channel:
 
    ```text
    node "<absolute skill directory>/watch-pr-monitor.mjs" mint [absolute-directory]
@@ -89,15 +93,16 @@ same watcher emits the readiness record.
    other unprivileged SIDs, but not same-user processes or elevated Administrator, SYSTEM,
    or backup access. On POSIX, the reader canonicalizes the path and rejects paths inside a
    repository. On Windows, it additionally rejects paths outside the canonical per-user
-   temporary directory. Never interpolate the URL into shell text or a heredoc, or put it in
-   arguments, environment variables, output, logs, messages,
+   temporary directory. Never interpolate the URL into shell text or a heredoc, or put it
+   in arguments, environment variables, output, logs, messages,
    repository files, or process names.
    Do not use a PTY for the mint helper because terminal echo can expose stdin. If the
    harness cannot provide a private stdin channel, fail clearly rather than minting the
    file by hand or exposing the capability.
 
-4. Start exactly one watcher through the harness-native flow below. Pass only the
-   capability-file path, never the monitor URL:
+4. For Claude Code, Codex, and other file-based harnesses, start exactly one watcher
+   through the harness-native flow below. Pass only the capability-file path, never the
+   monitor URL:
 
    ```text
    node "<absolute skill directory>/watch-pr-monitor.mjs" --url-file "<capability-file>"
@@ -156,48 +161,36 @@ subagent running until the terminal result or explicit cancellation.
 
 ### Oh My Pi
 
-The `mint` helper from step 3 is a short-lived setup process, not the watcher. Oh My Pi's
-`hub(op: "start")` has no stdin at launch, so start the helper with `pty: false` and
-`progress: "off"`, send `monitorUrl` through its private stdin with `hub(op: "send")`,
-read its path-only stdout, and wait for it to exit before starting the watcher below.
-Never put the URL in `args`, `env`, shell text, or a PTY that can echo input.
-
-```text
-hub(
-  op: "start",
-  name: "watch-pr-mint-<owner>-<repository>-<number>",
-  application: "node",
-  args: ["<absolute skill directory>/watch-pr-monitor.mjs", "mint"],
-  pty: false,
-  progress: "off"
-)
-hub(op: "send", name: "watch-pr-mint-<owner>-<repository>-<number>", text: "<monitorUrl>", enter: true)
-```
-
-The mint helper must finish successfully and return one capability-file path. Stop or
-clean up that short-lived helper before starting the one persistent watcher.
-Start one hub-managed persistent process with `hub(op: "start")`. Use a capability-free,
-unique name and pass only the capability-file path as the watcher argument:
+Oh My Pi uses direct private stdin instead of a temporary capability file. Start the
+watcher first without a readiness condition, send `monitorUrl` through the private stdin
+channel, then wait once for its readiness line. Do not add a `ready` condition to
+`hub(op: "start")`: that call waits for readiness before returning, so the later
+`hub(op: "send")` would never deliver the URL.
 
 ```text
 hub(
   op: "start",
   name: "watch-pr-<owner>-<repository>-<number>",
   application: "node",
-  args: ["<absolute skill directory>/watch-pr-monitor.mjs", "--url-file", "<capability-file>"],
-  ready: {
-    log: "^watch-pr: ready$",
-    timeout: 60
-  },
+  args: ["<absolute skill directory>/watch-pr-monitor.mjs", "--from-stdin"],
+  pty: false,
   progress: "wake"
+)
+hub(op: "send", name: "watch-pr-<owner>-<repository>-<number>", text: "<monitorUrl>", enter: true)
+hub(
+  op: "wait",
+  name: "watch-pr-<owner>-<repository>-<number>",
+  pattern: "^watch-pr: ready(?:\\r?\\n|$)",
+  timeout: 60
 )
 ```
 
 Retain the process name for cancellation. The matching line establishes readiness and
 must not trigger `get_pr`. Keep the same process running; every later
 `PR <n> updated: ...` or `PR <n> finished: ...` line wakes the root session, which calls
-`get_pr`. Do not use asynchronous Bash, `hub wait`, job polling, a second process, or a
-restart after intermediate events.
+`get_pr`. The readiness wait above is a single startup gate, not polling. Do not use
+asynchronous Bash, recurring `hub wait`, job polling, a second process, or a restart
+after intermediate events.
 
 ### Other or uncertain harnesses
 
@@ -252,11 +245,12 @@ later reviews, rebases, reruns, and merge events remain part of the same lifecyc
 If the user cancels before a terminal event, first stop the exact harness watcher:
 stop the Claude Monitor, interrupt and close the Codex/generic subagent, or call
 `hub(op: "stop", name: "<recorded process name>")` for Oh My Pi. Confirm that process
-has ended, delete the capability file if the watcher failed before consuming it, then
-call `unwatch_pr`. Never leave a detached process or capability file behind.
+has ended. For Claude Code, Codex, and other file-based harnesses, delete the capability
+file if the watcher failed before consuming it. The Oh My Pi stdin flow has no capability
+file. Then call `unwatch_pr`. Never leave a detached process or capability file behind.
 
 A permanent watcher error is not an invitation to rearm. Report its stderr to the root,
-stop/close its harness container, delete the capability file if startup failed before
-the watcher consumed it, call `unwatch_pr` when possible, and do not launch a
-replacement watcher in this session. Apply the same file cleanup if startup is
-cancelled while the watcher is still opening the file.
+stop/close its harness container, delete the capability file if a file-based watcher
+failed before consuming it, call `unwatch_pr` when possible, and do not launch a
+replacement watcher in this session. Apply the same file cleanup if a file-based startup
+is cancelled while the watcher is still opening the file.

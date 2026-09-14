@@ -86,6 +86,27 @@ function startWatcher(url, { createUrlFile = true, mode = 0o600 } = {}) {
     stderr: () => stderr,
   };
 }
+
+function startStdinWatcher(url, { sendInput = true } = {}) {
+  const child = spawn(process.execPath, [watcherPath, "--from-stdin"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
+  if (sendInput) child.stdin.end(`${url}\n`);
+  return {
+    child,
+    exited,
+    stdout: () => stdout,
+    stderr: () => stderr,
+  };
+}
+
 function startMint(
   monitorUrl,
   directory = process.platform === "win32" ? undefined : temporaryDirectory,
@@ -311,6 +332,30 @@ test("prints readiness for a successful idle SSE response and stays alive", asyn
     assert.equal(watcher.child.exitCode, null);
     assert.equal(watcher.stdout(), "watch-pr: ready\n");
     assert.equal(existsSync(watcher.urlFile), false);
+
+    watcher.child.kill("SIGTERM");
+    await assertWatcherStoppedByTest(watcher.exited);
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("reads a watcher URL directly from stdin without creating a capability file", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.flushHeaders();
+  });
+  const before = capabilityNames();
+  const watcher = startStdinWatcher(url, { sendInput: false });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  watcher.child.stdin.end(`${url}\n`);
+  try {
+    await waitFor(() => watcher.stdout().includes("\n"), "the readiness record");
+    assert.equal(watcher.child.exitCode, null);
+    assert.equal(watcher.stdout(), "watch-pr: ready\n");
+    assert.deepEqual(capabilityNames(), before);
 
     watcher.child.kill("SIGTERM");
     await assertWatcherStoppedByTest(watcher.exited);
