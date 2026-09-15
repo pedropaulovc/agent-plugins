@@ -197,18 +197,20 @@ CONFIRMED. A critical raised by one voice alone is still flagged.
 
 ## Phase 0: Intake
 
-1. **Restore point.** Before amending anything, copy the input doc verbatim to
-   `<doc>.pre-autoplan.md` next to it. Tell the user the path. To re-run from scratch,
-   copy that file back over the input doc.
-2. Read the existing design doc, plan, or project documentation, and the user's stated
+1. Read the existing design doc, plan, or project documentation, and the user's stated
    goals and context.
-3. If no design doc exists, offer `office-hours` first:
+2. If no design doc exists, offer `office-hours` first:
    > "No design doc found. `office-hours` creates one through structured brainstorming.
    > Want to run that first, or proceed with what we have?"
+   If the user proceeds anyway, there is no file to amend and no restore point. Say so,
+   and write the run's output to a new doc instead of amending one.
+3. **Restore point.** Once an input doc exists and before amending it, copy it verbatim
+   to `<doc>.pre-autoplan.md` next to it. Tell the user the path. To re-run from
+   scratch, copy that file back over the input doc.
 4. Announce the run:
-   > "Here's what I'm working with: [one-paragraph summary]. Restore point: [path].
-   > Running CEO review, then market research, then product review, with auto-decisions.
-   > I'll come back to you once, at the end."
+   > "Here's what I'm working with: [one-paragraph summary]. Restore point: [path, or
+   > 'none, writing to a new doc']. Running CEO review, then market research, then
+   > product review, with auto-decisions. I'll come back to you once, at the end."
 
 ---
 
@@ -514,7 +516,8 @@ Then:
 - D: make the changes, re-run the affected phases (premises or scope -> 1, competitive
   evidence -> 2, prioritization or PMF -> 3). Re-running any earlier phase re-runs the
   product phase after it, because the gate always reviews the final brief. Max 3 cycles.
-- E: start over from the restore point.
+- E: start over from the restore point. If the run had no input doc, there is no restore
+  point: discard the generated doc instead and say that is what you did.
 
 ---
 
