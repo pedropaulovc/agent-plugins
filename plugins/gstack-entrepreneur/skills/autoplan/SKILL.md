@@ -113,8 +113,11 @@ Keep ONE phase active. Close it by completing these gates in order:
 2. Run the phase's own analysis at full depth, auto-deciding as you go.
 3. Run the second opinion, consume its output, then finish the primary review.
 4. Write every output, amendment, and decision row into the working doc.
-5. Send the completion summary as a standalone message starting with
-   `Phase N complete.` Only then touch the next phase.
+5. Append the completion summary to the working doc as a line starting with
+   `Phase N complete.`, then send the same summary as a standalone message starting with
+   that marker. The written marker is what a resumed run looks for, so a summary that
+   only existed in the conversation does not close the phase. Only then touch the next
+   phase.
 
 A missing gate means the phase is still open, even if a reviewer finished. Never draft a
 later phase's review early. A heading is not a finding and a promise is not an output.
@@ -270,7 +273,7 @@ regardless of the other.
 - Decision audit entries
 - Actionable items in the task shape (see Phase 4)
 
-**Close the phase:**
+**Close the phase** (append to the working doc, then send as a message):
 
 > **Phase 1 complete.** Second opinion: [N concerns / unavailable].
 > Consensus: [X/6 confirmed, Y disagreements queued for the gate].
@@ -311,7 +314,7 @@ independent so it can contradict Phase 1 cleanly.
 - Decision audit entries
 - Actionable items in the task shape (see Phase 4)
 
-**Close the phase:**
+**Close the phase** (append to the working doc, then send as a message):
 
 > **Phase 2 complete.** Competitors mapped: [N]. Second opinion: [N concerns /
 > unavailable]. Premises amended by evidence: [N]. Conflicts with Phase 1: [N, each
@@ -375,7 +378,7 @@ instead of a resolution.
 - Decision audit entries
 - Actionable items in the task shape (see Phase 4)
 
-**Close the phase:**
+**Close the phase** (append to the working doc, then send as a message):
 
 > **Phase 3 complete.** PMF verdict: [one line]. Conflicts reconciled: [N].
 > User challenges queued: [N]. Taste decisions queued: [N]. Moving to the gate.

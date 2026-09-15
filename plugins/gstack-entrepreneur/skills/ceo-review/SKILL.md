@@ -405,11 +405,14 @@ Apply temporal depth:
 
 Ask: "Want an independent second opinion on this strategy review?"
 
-If yes, dispatch via the Task tool with a structured summary of the plan, your findings,
-and key decisions. If the harness lets you choose the agent type and model per dispatch
-(Oh My Pi, Claude Code subagent types), send the reviewer to a different model family
-than the one running this review. That is what makes it cross-model rather than just
-fresh-context. Ask the subagent to:
+If yes, dispatch via the Task tool. Send the plan and the context it stands on: problem
+statement, constraints, and the approach under review. Do NOT send your findings, your
+draft recommendations, or the decisions you already made. A reviewer fed your
+conclusions returns your conclusions, and then its agreement proves nothing. If the
+harness lets you choose the agent type and model per dispatch (Oh My Pi, Claude Code
+subagent types), send the reviewer to a different model family than the one running this
+review. That is what makes it cross-model rather than just fresh-context. Ask the
+subagent to:
 1. Challenge the strategic foundations
 2. Find blind spots
 3. Identify the biggest risk not yet addressed
@@ -418,8 +421,9 @@ fresh-context. Ask the subagent to:
 Require it to close with `RECOMMENDATION: [action] because [specific reason]`. A refusal,
 an empty response, or a summary with no position is a missing second opinion, not a pass.
 
-Present findings and synthesize. If the reviewer was the same model family, say so and
-weigh its agreement less. Disagreement is the signal worth having either way.
+Once the Task returns, compare its output against your own findings and synthesize the
+two. If the reviewer was the same model family, say so and weigh its agreement less.
+Disagreement is the signal worth having either way.
 
 Second-opinion findings are INFORMATIONAL until the user explicitly approves each one. Do
 NOT fold them into the plan without presenting each finding via AskUserQuestion and
