@@ -20,7 +20,7 @@ test("all plugins load and register expected config", async () => {
     if (hooks.config) await hooks.config(config);
   }
   assert.equal(config.skills.paths.length, 10);
-  assert.equal(Object.keys(config.command).length, 13);
+  assert.equal(Object.keys(config.command).length, 12);
   assert.ok(config.command["alt-text"]);
   assert.ok(config.command.issue);
   assert.ok(config.command.comments);

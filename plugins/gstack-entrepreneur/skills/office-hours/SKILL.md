@@ -1,7 +1,7 @@
 ---
 name: office-hours
 description: Use when brainstorming product ideas, validating startup concepts, or exploring whether something is worth building. Triggered by "brainstorm", "I have an idea", "help me think through this", "office hours", "is this worth building".
-allowed-tools: Bash, Read, Grep, Glob, Write, Edit, WebSearch, AskUserQuestion
+allowed-tools: Bash, Read, Grep, Glob, Write, Edit, WebSearch, AskUserQuestion, Task
 ---
 
 # YC Office Hours
@@ -34,6 +34,17 @@ builder.
 - Short paragraphs. Punchy standalone sentences. "That's it." "This is the whole game."
 - Stay curious, not lecturing.
 - End with what to do. Give the action.
+
+**Bounded closer.** When you wrap a phase or the session, report in a few short lines:
+what you concluded, what you skipped, what to watch. No tours, no restating the plan, no
+paragraphs defending choices nobody questioned. If the explanation outgrows the thing it
+explains, cut the explanation. The design doc and the decision briefs are the deliverable,
+this rule governs the prose around them.
+
+GOOD: "Locked the wedge to the weekly digest. Skipped the integrations question, you have
+no users yet. Watch whether the first customer asks for export."
+BAD: a recap of every question asked, a restatement of the premises, and three paragraphs
+on why the recommendation is the recommendation.
 
 ## AskUserQuestion Format
 
@@ -424,7 +435,13 @@ Use AskUserQuestion:
 
 If B: skip this phase.
 
-**If A:** Dispatch via the Agent tool. Assemble a structured context block from Phases 1-3:
+**If A:** Dispatch via the Task tool. If the harness lets you choose the agent type and
+model per dispatch (Oh My Pi, Claude Code subagent types), send the reviewer to a
+different model family than the one running this session. The reviewer starts with fresh
+context and no conversation bias, which is the whole point. If you could not change the
+model family, say so: it is probably the same model you are, so agreement is weak
+evidence. Weigh a second opinion that agrees with you less than one that does not.
+Assemble a structured context block from Phases 1-3:
 - Mode (Startup or Builder)
 - Problem statement
 - Key answers (summarize each Q&A in 1-2 sentences, include verbatim user quotes)
@@ -445,6 +462,11 @@ haven't considered? 2) What's the ONE thing from their answers that reveals what
 them most? Quote it. 3) What existing project or tool gets them 50% of the way there...
 and what's the 50% they'd need to build? 4) If you had a weekend to build this, what
 would you build first? Be direct."
+
+Require the reviewer to close with `RECOMMENDATION: [action] because [specific reason]`.
+If it has no objection, it has to say so and say why. A refusal to answer, an empty
+response, or a summary with no position is not a pass, it is a missing second opinion.
+Say so rather than treating it as agreement.
 
 Present findings under `SECOND OPINION:` header. Provide 3-5 bullet cross-model synthesis
 (where you agree, disagree, and why).
@@ -503,6 +525,13 @@ Count signals for use in the closing (Phase 6).
 ## Phase 5: Design Doc
 
 Write the design document.
+
+**The doc is a decision record, not a transcript.** One bullet per decision with the
+reason behind it. An approach the user ruled out during the session gets one line, the
+name and why it lost, never a resurrected section that re-argues the case. Drop template
+sections that are empty or that restate something already settled. There is no page
+limit, but extra length has to come from genuinely open questions, not from filling in
+the template.
 
 ### Startup mode template:
 
@@ -591,7 +620,7 @@ Mode: Builder
 
 ### Spec Review Loop
 
-Before presenting to the user, dispatch a reviewer subagent via Agent tool:
+Before presenting to the user, dispatch a reviewer subagent via the Task tool:
 
 - Give it the document content
 - "Review on 5 dimensions: Completeness, Consistency, Clarity, Scope, Feasibility.

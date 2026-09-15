@@ -12,7 +12,6 @@ export const GstackEntrepreneurPlugin = async () => ({
     const commands = {
       autoplan: "Create a structured decision plan",
       "ceo-review": "Review strategy from a CEO perspective",
-      codex: "Get an independent cross-model second opinion",
       "market-research": "Research a market and its competitors",
       "office-hours": "Work through an idea as a YC office-hours session",
     };

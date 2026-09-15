@@ -1,6 +1,6 @@
 # gstack-entrepreneur
 
-Entrepreneurship toolkit adapted from [gstack](https://github.com/garrytan/gstack), Garry Tan's AI engineering workflow framework. Stripped of all coding tooling. Keeps the pure methodology: YC-style questioning, CEO cognitive patterns, competitive research, and multi-AI second opinions.
+Entrepreneurship toolkit adapted from [gstack](https://github.com/garrytan/gstack), Garry Tan's AI engineering workflow framework. Stripped of all coding tooling. Keeps the pure methodology: YC-style questioning, CEO cognitive patterns, competitive research, and independent second opinions.
 
 **Who this is for:**
 - Founders validating ideas before writing code
@@ -15,13 +15,12 @@ Entrepreneurship toolkit adapted from [gstack](https://github.com/garrytan/gstac
 | `/ceo-review` | **CEO / Founder** | Rethink the problem. 18 cognitive patterns from Bezos, Munger, Grove, Horowitz, Altman, Jobs, Chesky. Four modes: Expansion, Selective Expansion, Hold Scope, Reduction. |
 | `/market-research` | **Product Strategist** | Competitive landscape research with three-layer synthesis: what everyone knows, what's trending, and what first-principles reasoning reveals they're all getting wrong. |
 | `/autoplan` | **Review Pipeline** | Runs CEO review, market research, and product review sequentially. Auto-decides mechanical choices using 6 decision principles. Surfaces only taste decisions for your approval. |
-| `/codex` | **Second Opinion** | Independent review from OpenAI Codex. Three modes: structured review (pass/fail), adversarial challenge (find weaknesses), and free-form consultation with session continuity. |
 
 ## The flow
 
 **Think -> Challenge -> Research -> Decide**
 
-Each skill feeds into the next. `/office-hours` writes a design doc that `/ceo-review` reads. `/market-research` validates (or invalidates) the positioning. `/autoplan` runs the whole pipeline automatically. `/codex` gives you an independent second opinion at any point.
+Each skill feeds into the next. `/office-hours` writes a design doc that `/ceo-review` reads. `/market-research` validates (or invalidates) the positioning. `/autoplan` runs the whole pipeline automatically.
 
 ## Quick start
 
@@ -37,7 +36,7 @@ Each skill feeds into the next. `/office-hours` writes a design doc that `/ceo-r
 - **`/plan-ceo-review`** cognitive patterns: all 18 mental models (classification instinct, paranoid scanning, inversion reflex, focus as subtraction, speed calibration, proxy skepticism, temporal depth, and more)
 - **`/design-consultation`** research methodology: three-layer synthesis (tried-and-true, new-and-popular, first-principles), eureka detection
 - **`/autoplan`** decision framework: 6 decision principles, mechanical vs taste classification, sequential pipeline with final approval gate
-- **`/codex`** multi-AI integration: review, challenge, and consult modes with cross-model synthesis
+- **`/codex`** independent-reviewer methodology: adversarial challenge briefs, consensus tables, and the rule that a refusal or a position-free summary is a missing second opinion, not agreement. Folded into `/office-hours` Phase 3.5 and `/autoplan` instead of shipping as its own skill.
 
 ## What was stripped
 
@@ -49,6 +48,6 @@ Based on [gstack](https://github.com/garrytan/gstack) by [Garry Tan](https://x.c
 
 ## Codex and OpenCode support
 
-Works in both. The `codex` second-opinion skill is explicit-only and cross-model: under Claude Code it consults Codex; under Codex (where `codex exec` would be a recursive self-call) it consults the `claude` CLI instead, or stops if no cross-model CLI is available.
+Works in both. OpenCode registers all four skills as slash commands.
 
-OpenCode registers all five skills as slash commands. The second-opinion skill consults Codex unless the active OpenCode model is itself Codex, in which case it uses the Claude CLI.
+Second opinions are dispatched as subagents through the host harness rather than by shelling out to another vendor's CLI. On a harness that lets you pick the agent type and model per dispatch (Oh My Pi, Claude Code subagent types), point the reviewer at a different model family than the one running the skill and you get a real cross-model read. On a harness without that control you still get a fresh-context reviewer, and the skills tell you to discount its agreement accordingly.
