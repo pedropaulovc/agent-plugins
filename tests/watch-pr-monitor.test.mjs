@@ -178,6 +178,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #991 @reviewer: > ~~~html > <!-- blockquote source --> > ~~~ Keep",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-comment-container-exit", "watching", {
+      details: [
+        "comment #1051 @reviewer:\n> <!-- hidden\nroot -->\n    <!-- hidden instruction -->Keep",
+      ],
+    })),
+    "comment #1051 @reviewer: > root --> Keep",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-list-fence", "watching", {
       details: [
         "comment #992 @reviewer:\n10. ```html\n    <!-- list source -->\n    ```\n<!-- hidden metadata -->Keep",
@@ -192,6 +200,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       ],
     })),
     "comment #992 @reviewer: - ```html ```\n+1 more changes",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-tabbed-closing-fence", "watching", {
+      details: [
+        "comment #1052 @reviewer:\n-\t```html\n\tcode\n\t```\n\t<!-- hidden instruction -->Keep",
+      ],
+    })),
+    "comment #1052 @reviewer: - ```html code ``` Keep\n+1 more changes",
   );
   assert.equal(
     formatMonitorEvent(monitorEvent("event-inherited-list-fence", "watching", {

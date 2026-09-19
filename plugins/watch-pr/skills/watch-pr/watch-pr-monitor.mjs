@@ -240,9 +240,9 @@ function isFencePosition(value, lineStart, index) {
 }
 
 function isWhitespaceIndentWithin(value, lineStart, index, maximumIndent) {
-  if (index - lineStart > maximumIndent) return false;
+  if (visualColumn(value, lineStart, index) > maximumIndent) return false;
   for (let cursor = lineStart; cursor < index; cursor += 1) {
-    if (value[cursor] !== " ") return false;
+    if (value[cursor] !== " " && value[cursor] !== "\t") return false;
   }
   return true;
 }
@@ -744,6 +744,44 @@ function hasClosingInlineDelimiter(
   }
   return false;
 }
+function scanHtmlCommentEndWithinContainer(
+  value,
+  commentStart,
+  openingLineStart,
+  openingListIndent,
+) {
+  const commentEnd = value.indexOf("-->", commentStart + 4);
+  const openingDepth = containerDepth(value, openingLineStart, commentStart);
+  const openingQuoteDepth = containerQuoteDepth(value, openingLineStart, commentStart);
+  const openingListDepth = Math.max(
+    openingDepth - openingQuoteDepth,
+    openingListIndent > 0 ? 1 : 0,
+  );
+  const openingContainerIndent = Math.max(
+    visualColumn(value, openingLineStart, commentStart),
+    openingListIndent,
+  );
+  let scanLineStart = openingLineStart;
+  while (true) {
+    const newline = value.indexOf("\n", scanLineStart);
+    if (newline === -1 || (commentEnd !== -1 && newline >= commentEnd)) {
+      return { end: commentEnd, crossedContainer: false };
+    }
+    const nextLineStart = newline + 1;
+    if (
+      !continuesOpeningContainer(
+        value,
+        nextLineStart,
+        openingQuoteDepth,
+        openingListDepth,
+        openingContainerIndent,
+      )
+    ) {
+      return { end: newline, crossedContainer: true };
+    }
+    scanLineStart = nextLineStart;
+  }
+}
 
 function stripMarkdownHtmlComments(value) {
   let result = "";
@@ -934,7 +972,26 @@ function stripMarkdownHtmlComments(value) {
       !indentedCodeLine
     ) {
       const blockLevel = cursor === blockContentStart(value, lineStart, lineEnd(value, lineStart));
-      const commentEnd = value.indexOf("-->", cursor + 4);
+      let commentEnd = value.indexOf("-->", cursor + 4);
+      let crossedContainer = false;
+      if (blockLevel) {
+        const scanned = scanHtmlCommentEndWithinContainer(
+          value,
+          cursor,
+          lineStart,
+          activeListIndent,
+        );
+        commentEnd = scanned.end;
+        crossedContainer = scanned.crossedContainer;
+      }
+      if (crossedContainer) {
+        // A block-level comment cannot consume lines after its quote/list container ends.
+        // Leave that newline for the normal line transition so the outer container is
+        // classified before the following text is scanned.
+        htmlBlockEndsLine = true;
+        cursor = commentEnd;
+        continue;
+      }
       if (commentEnd === -1) {
         cursor = value.length;
         continue;
