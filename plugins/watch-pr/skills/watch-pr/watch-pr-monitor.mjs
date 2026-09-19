@@ -13,6 +13,7 @@ const MAX_DETAIL_LENGTH = 1_000;
 const MAX_UPDATE_LINE_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
 const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
+const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
 
 function permanent(message) {
   return new PermanentMonitorError(message);
@@ -154,10 +155,32 @@ export function formatMonitorEvent(event) {
   }
   const details = [...new Set(event.details.map(compactDetail))].filter(Boolean);
   if (details.length === 0) return null;
-  return truncate(
-    `PR ${event.pullRequestNumber} updated: ${details.join(" | ")}`,
-    MAX_UPDATE_LINE_LENGTH,
-  );
+
+  const actionable = [];
+  let omitted = 0;
+  for (const detail of details) {
+    const match = OVERFLOW_DETAIL_RE.exec(detail);
+    const count = match ? Number(match[1]) : Number.NaN;
+    if (!Number.isSafeInteger(count) || count < 0) {
+      actionable.push(detail);
+      continue;
+    }
+    omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + count);
+  }
+
+  const prefix = `PR ${event.pullRequestNumber} updated: `;
+  const included = [];
+  for (const detail of actionable) {
+    const omittedAfterDetail = omitted + actionable.length - included.length - 1;
+    const parts = [...included, detail];
+    if (omittedAfterDetail > 0) parts.push(`+${omittedAfterDetail} more changes`);
+    if (`${prefix}${parts.join(" | ")}`.length > MAX_UPDATE_LINE_LENGTH) break;
+    included.push(detail);
+  }
+  omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + actionable.length - included.length);
+  if (omitted > 0) included.push(`+${omitted} more changes`);
+  if (included.length === 0) return null;
+  return `${prefix}${included.join(" | ")}`;
 }
 
 function validateResponse(response, { readyEmitted, cursor }) {

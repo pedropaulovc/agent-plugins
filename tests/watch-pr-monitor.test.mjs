@@ -137,9 +137,17 @@ test("sanitizes control characters and bounds actionable wake lines", () => {
     ),
   }));
 
-  assert.equal(line.length, 4_096);
+  assert.ok(line.length <= 4_096);
   assert.doesNotMatch(line, /\u001b/u);
-  assert.match(line, /…$/u);
+  assert.match(line, /\+2 more changes$/u);
+  const markedLine = formatMonitorEvent(monitorEvent("event-many-checks", "watching", {
+    details: [
+      ...Array.from({ length: 5 }, (_, index) => `check ${index}: ${"x".repeat(2_000)}`),
+      "+7 more changes",
+    ],
+  }));
+  assert.ok(markedLine.length <= 4_096);
+  assert.match(markedLine, /\+8 more changes$/u);
   const unicodeLine = formatMonitorEvent(monitorEvent("event-unicode", "watching", {
     details: [`${"x".repeat(998)}😀z`],
   }));
