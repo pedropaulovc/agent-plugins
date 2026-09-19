@@ -81,7 +81,8 @@ same watcher emits the readiness record.
 
 5. Classify each stdout line before acting:
    - The exact first line `watch-pr: ready` is startup readiness. It is not a PR event.
-   - `PR <n> updated: <details>` contains the actionable event details inline. Check
+   - Every other nonterminal stdout line contains actionable event details inline. One
+     watcher is scoped to one PR, so these lines omit a redundant PR/update prefix. Check
      failures include their URL; comments, reviews, and feedback include the changed body
      and GitHub URL. Act from this line without calling `get_pr`.
    - Routine check transitions and no-op webhook deliveries emit nothing. A check rerun
@@ -101,7 +102,7 @@ same watcher emits the readiness record.
 
 Create one persistent `Monitor` running the watcher command with `monitorUrl` as its
 sole argument. Keep that Monitor active after intermediate updates. Treat
-`watch-pr: ready` only as successful startup; each later `PR <n> updated: ...` or
+`watch-pr: ready` only as successful startup; each later nonterminal detail line or
 `PR <n> finished: ...` line wakes the root session. Record the Monitor identifier for
 explicit cancellation. Do not run the command in an ordinary background shell, create
 a scheduled task, or replace the Monitor after an intermediate event.
@@ -114,8 +115,8 @@ path and `monitorUrl`, and instruct it exactly as follows:
 ```text
 Run `node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"` in the
 foreground. Report the exact line `watch-pr: ready` to the root as startup readiness,
-then continue reading the same process. For each `PR <n> updated: ...` line, immediately
-send the exact line to the root session through the parent-message channel, then
+then continue reading the same process. For each nonterminal line after readiness,
+immediately send the exact line to the root session through the parent-message channel,
 continue reading the same process. For `PR <n> finished: MERGED` or
 `PR <n> finished: CLOSED`, return the exact line to the root as the terminal result and
 exit. If the process writes stderr or exits nonzero, send the error to the root and

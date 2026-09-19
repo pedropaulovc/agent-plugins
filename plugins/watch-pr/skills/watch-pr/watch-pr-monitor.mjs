@@ -170,19 +170,18 @@ export function formatMonitorEvent(event) {
     omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + count);
   }
 
-  const prefix = `PR ${event.pullRequestNumber} updated: `;
   const included = [];
   for (const detail of actionable) {
     const omittedAfterDetail = omitted + actionable.length - included.length - 1;
     const parts = [...included, detail];
     if (omittedAfterDetail > 0) parts.push(`+${omittedAfterDetail} more changes`);
-    if (`${prefix}${parts.join(" | ")}`.length > MAX_UPDATE_LINE_LENGTH) break;
+    if (parts.join(" | ").length > MAX_UPDATE_LINE_LENGTH) break;
     included.push(detail);
   }
   omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + actionable.length - included.length);
   if (omitted > 0) included.push(`+${omitted} more changes`);
   if (included.length === 0) return null;
-  return `${prefix}${included.join(" | ")}`;
+  return included.join(" | ");
 }
 
 function validateResponse(response, { readyEmitted, cursor }) {

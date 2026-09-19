@@ -118,7 +118,7 @@ test("prints actionable details inline without a follow-up snapshot fetch", asyn
     await waitFor(() => watcher.stdout().includes(comment), "the comment event");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
-      `PR 42 updated: ${comment}`,
+      comment,
     ]);
     assert.equal(watcher.child.exitCode, null);
     await stopWatcher(watcher);
@@ -171,7 +171,7 @@ test("suppresses non-actionable feed churn", async () => {
     await waitFor(() => watcher.stdout().includes("all terminal"), "the terminal check summary");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
-      "PR 42 updated: checks: all terminal (pass: 8, fail: 0, skipping: 0, cancel: 0)",
+      "checks: all terminal (pass: 8, fail: 0, skipping: 0, cancel: 0)",
     ]);
     await stopWatcher(watcher);
     assert.equal(watcher.stderr(), "");
@@ -216,7 +216,7 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
-      "PR 42 updated: checks: rerun started (pending: CI, Lint)",
+      "checks: rerun started (pending: CI, Lint)",
       "PR 42 finished: CLOSED",
     ]);
     assert.equal(watcher.stderr(), "");
@@ -290,7 +290,7 @@ test("reports the last event id when a ready capability expires", async () => {
     assert.deepEqual(await watcher.exited, { code: 1, signal: null });
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
-      "PR 42 updated: checks: rerun started (pending: CI)",
+      "checks: rerun started (pending: CI)",
     ]);
     assert.match(watcher.stderr(), /after readiness/);
     assert.match(watcher.stderr(), /last event id "event-before-expiry"/);

@@ -26,8 +26,9 @@ The watcher prints:
 
 1. `watch-pr: ready` after the first SSE response has been validated. Reconnects do not
    print readiness again.
-2. `PR <n> updated: <details>` when an actionable change arrives. The line includes
-   check names and URLs, changed comment or review bodies and IDs, and rebase state.
+2. `<details>` when an actionable change arrives. One watcher is scoped to one PR, so
+   intermediate lines omit a redundant PR/update prefix. Details include check names and
+   URLs, changed comment or review bodies and IDs, and rebase state.
 3. `PR <n> finished: MERGED|CLOSED` before a terminal feed exits.
 
 Routine check completions and no-op webhook deliveries stay silent. A CI rerun emits
