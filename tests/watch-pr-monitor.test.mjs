@@ -330,6 +330,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1055 @reviewer: - item # heading <!-- visible -->",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-html-comment-padding", "watching", {
+      details: [
+        "comment #1056 @reviewer:\n- item\n\n    <!-- hidden\n# heading\n    <!-- visible -->",
+      ],
+    })),
+    "comment #1056 @reviewer: - item # heading <!-- visible -->",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
       details: [
         "comment #1003 @reviewer:\n- item\n\n    <!-- hidden -->Keep",
@@ -476,6 +484,22 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1040 @reviewer: paragraph <pre>x</pre>",
       "comment #1050 @reviewer: <pre> ``` ``` </pre>",
     ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-matching-raw-closer", "watching", {
+      details: [
+        "comment #1057 @reviewer:\n<pre>\n</script>\n```\n<!-- hidden -->Keep\n```\n</pre>",
+      ],
+    })),
+    "comment #1057 @reviewer: <pre> </script> ``` Keep ``` </pre>",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-type7-attribute-grammar", "watching", {
+      details: [
+        "comment #1058 @reviewer:\n<x =>\n```\n<!-- hidden -->Keep\n```",
+      ],
+    })),
+    "comment #1058 @reviewer: <x => ``` <!-- hidden -->Keep ```",
   );
   assert.equal(
     formatMonitorEvent(monitorEvent("event-html-block-scope", "watching", {

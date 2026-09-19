@@ -378,8 +378,13 @@ const HTML_BLOCK_TAG_NAMES =
   "h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|" +
   "noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|" +
   "thead|title|tr|track|ul";
+const HTML_TYPE_7_OPEN_RE =
+  /^(?:<[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[^\s"'=<>`]+(?:[ \t]*=[ \t]*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s"'=<>`]+))?)*[ \t]*\/?>|<\/[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*\r?$/u;
 const HTML_BLOCK_KINDS = [
-  { open: /^<(?:script|pre|style|textarea)(?:[ \t\r>]|$)/iu, close: /<\/(?:script|pre|style|textarea)>/iu },
+  { open: /^<script(?:[ \t\r>]|$)/iu, close: /<\/script>/iu },
+  { open: /^<pre(?:[ \t\r>]|$)/iu, close: /<\/pre>/iu },
+  { open: /^<style(?:[ \t\r>]|$)/iu, close: /<\/style>/iu },
+  { open: /^<textarea(?:[ \t\r>]|$)/iu, close: /<\/textarea>/iu },
   { open: /^<!--/u, close: /-->/u },
   { open: /^<\?/u, close: /\?>/u },
   // cmark-gfm, the renderer GitHub uses, keeps the original declaration rule: `<!` plus an
@@ -387,7 +392,7 @@ const HTML_BLOCK_KINDS = [
   { open: /^<![A-Z]/u, close: />/u },
   { open: /^<!\[CDATA\[/u, close: /\]\]>/u },
   { open: new RegExp(`^</?(?:${HTML_BLOCK_TAG_NAMES})(?:[ \t\r>]|/>|$)`, "iu"), close: null },
-  { open: /^<\/?[A-Za-z][A-Za-z0-9-]*(?:[ \t][^<>]*)?\/?>[ \t]*\r?$/u, close: null, interrupts: false },
+  { open: HTML_TYPE_7_OPEN_RE, close: null, interrupts: false },
 ];
 
 function htmlBlockKindAt(value, lineStart, lineEnd) {
@@ -757,10 +762,9 @@ function scanHtmlCommentEndWithinContainer(
     openingDepth - openingQuoteDepth,
     openingListIndent > 0 ? 1 : 0,
   );
-  const openingContainerIndent = Math.max(
-    visualColumn(value, openingLineStart, commentStart),
-    openingListIndent,
-  );
+  const openingContainerIndent = openingListIndent > 0
+    ? openingListIndent
+    : visualColumn(value, openingLineStart, commentStart);
   let scanLineStart = openingLineStart;
   while (true) {
     const newline = value.indexOf("\n", scanLineStart);
@@ -976,10 +980,14 @@ function stripMarkdownHtmlComments(value) {
       !isEscaped(value, cursor) &&
       !indentedCodeLine
     ) {
+      const leadingIndent = leadingIndentColumn(value, lineStart);
+      const commentColumn = visualColumn(value, lineStart, cursor);
       const blockLevel = cursor === blockContentStart(value, lineStart, lineEnd(value, lineStart)) ||
         (
           activeListIndent > 0 &&
-          leadingIndentColumn(value, lineStart) === activeListIndent
+          commentColumn === leadingIndent &&
+          leadingIndent >= activeListIndent &&
+          leadingIndent <= activeListIndent + 3
         );
       let commentEnd = value.indexOf("-->", cursor + 4);
       let crossedContainer = false;
