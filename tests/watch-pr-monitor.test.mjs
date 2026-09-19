@@ -297,6 +297,50 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1018 @reviewer: paragraph Keep",
     ].join("\n"),
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-setext-underline-context", "watching", {
+      details: [
+        "comment #1019 @reviewer:\n===\n    <!-- hidden -->Keep",
+        "comment #1020 @reviewer:\n# Heading\n===\n    <!-- hidden -->Keep",
+        "comment #1021 @reviewer:\nTitle\n===\n    const marker = \"<!-- visible -->\";",
+        "comment #1022 @reviewer:\n---\n    const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1019 @reviewer: === Keep",
+      "comment #1020 @reviewer: # Heading === Keep",
+      "comment #1021 @reviewer: Title === const marker = \"<!-- visible -->\";",
+      "comment #1022 @reviewer: --- const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-interruption", "watching", {
+      details: [
+        "comment #1023 @reviewer:\nparagraph\n2.     <!-- hidden -->Keep",
+        "comment #1024 @reviewer:\nparagraph\n1.     const marker = \"<!-- visible -->\";",
+        "comment #1025 @reviewer:\nparagraph\n-     const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1023 @reviewer: paragraph 2. Keep",
+      "comment #1024 @reviewer: paragraph 1. const marker = \"<!-- visible -->\";",
+      "comment #1025 @reviewer: paragraph - const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-lazy-marker-state", "watching", {
+      details: [
+        "comment #1026 @reviewer:\nparagraph\n2.     <!-- hidden -->X\n1.     const marker = \"<!-- visible -->\";",
+        "comment #1027 @reviewer:\nparagraph\n2. text\n\n    const marker = \"<!-- visible -->\";",
+        "comment #1028 @reviewer:\nparagraph\n-\n      <!-- hidden -->Keep",
+      ],
+    })),
+    [
+      "comment #1026 @reviewer: paragraph 2. X 1. const marker = \"<!-- visible -->\";",
+      "comment #1027 @reviewer: paragraph 2. text const marker = \"<!-- visible -->\";",
+      "comment #1028 @reviewer: paragraph - Keep",
+    ].join("\n"),
+  );
 });
 
 test("prints each actionable category on its own line", () => {

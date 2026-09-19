@@ -14,6 +14,9 @@ const MAX_UPDATE_OUTPUT_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
 const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
 const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
+const ATX_HEADING_RE = /^#{1,6}(?:[ \t]|$)/u;
+const SETEXT_UNDERLINE_RE = /^(?:=+|-+)[ \t]*$/u;
+const THEMATIC_BREAK_RE = /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/u;
 // Deterministic backend record prefixes (`comment`/`review`/`feedback`) that precede a
 // Markdown body: the body always follows the `:` that closes the structured header.
 const DETAIL_BODY_PREFIX_RES = [
@@ -336,19 +339,53 @@ function isBlankMarkdownLine(value, lineStart, lineEnd) {
   return cursor === lineEnd;
 }
 
-function startsNonParagraphBlock(value, lineStart, lineEnd) {
-  if (isBlankMarkdownLine(value, lineStart, lineEnd)) return true;
-  let cursor = containerContentStart(value, lineStart, lineEnd);
-  cursor = consumeContainerIndent(value, cursor, lineEnd);
-  if (value[cursor] === "`" || value[cursor] === "~") {
-    const delimiter = value[cursor];
-    const runLength = delimiterRunLength(value, cursor, delimiter);
-    if (runLength >= 3 && validFenceOpener(value, cursor, runLength, delimiter)) return true;
-  }
+function blockContentStart(value, lineStart, lineEnd) {
+  const cursor = containerContentStart(value, lineStart, lineEnd);
+  return consumeContainerIndent(value, cursor, lineEnd);
+}
+
+function opensFence(value, cursor) {
+  const delimiter = value[cursor];
+  if (delimiter !== "`" && delimiter !== "~") return false;
+  const runLength = delimiterRunLength(value, cursor, delimiter);
+  return runLength >= 3 && validFenceOpener(value, cursor, runLength, delimiter);
+}
+
+function isParagraphContentLine(value, lineStart, lineEnd) {
+  if (isBlankMarkdownLine(value, lineStart, lineEnd)) return false;
+  if (isIndentedCodeLine(value, lineStart)) return false;
+  const cursor = blockContentStart(value, lineStart, lineEnd);
+  if (opensFence(value, cursor)) return false;
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
-  if (/^#{1,6}(?:[ \t]|$)/u.test(line)) return true;
-  if (/^(?:=+|-+)[ \t]*$/u.test(line)) return true;
-  return /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/u.test(line);
+  return !ATX_HEADING_RE.test(line) &&
+    !THEMATIC_BREAK_RE.test(line) &&
+    !SETEXT_UNDERLINE_RE.test(line);
+}
+
+function previousLineStartOf(value, lineStart) {
+  if (lineStart === 0) return -1;
+  // `lastIndexOf` clamps a negative start to 0, so an empty leading line needs its own exit.
+  if (lineStart === 1) return 0;
+  return value.lastIndexOf("\n", lineStart - 2) + 1;
+}
+
+// A setext underline exists only under an open paragraph; a `===` run that opens a
+// document, or follows a blank line or another block, is ordinary paragraph text.
+function followsParagraphContent(value, lineStart) {
+  const previousStart = previousLineStartOf(value, lineStart);
+  if (previousStart < 0) return false;
+  return isParagraphContentLine(value, previousStart, lineStart - 1);
+}
+
+function startsNonParagraphBlock(value, lineStart, lineEnd) {
+  // A lazy marker line is paragraph text, even when the marker consumes the whole line.
+  if (isLazyListContinuation(value, lineStart, lineEnd)) return false;
+  if (isBlankMarkdownLine(value, lineStart, lineEnd)) return true;
+  const cursor = blockContentStart(value, lineStart, lineEnd);
+  if (opensFence(value, cursor)) return true;
+  const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
+  if (ATX_HEADING_RE.test(line) || THEMATIC_BREAK_RE.test(line)) return true;
+  return SETEXT_UNDERLINE_RE.test(line) && followsParagraphContent(value, lineStart);
 }
 
 function listIndentForNextLine(
@@ -358,13 +395,57 @@ function listIndentForNextLine(
   nextLineStart,
   activeListIndent,
 ) {
-  const indent = listContentIndent(value, previousLineStart, previousLineEnd) ?? activeListIndent;
+  const indent = establishedListContentIndent(value, previousLineStart, previousLineEnd) ??
+    activeListIndent;
   const nextLineEnd = lineEnd(value, nextLineStart);
-  const nextExplicitIndent = listContentIndent(value, nextLineStart, nextLineEnd);
+  const nextExplicitIndent = establishedListContentIndent(value, nextLineStart, nextLineEnd);
   if (nextExplicitIndent !== null) return nextExplicitIndent;
   if (isBlankMarkdownLine(value, nextLineStart, nextLineEnd)) return indent;
   if (indent > 0 && containerExtent(value, nextLineStart) >= indent) return indent;
   return 0;
+}
+
+// CommonMark only lets a container interrupt an open paragraph when it is a block quote,
+// a non-empty bullet item, or a non-empty ordered item numbered 1; anything else is a
+// lazy continuation of that paragraph.
+function interruptsParagraph(value, lineStart, limit) {
+  const markerStart = consumeContainerIndent(value, lineStart, limit);
+  if (markerStart >= limit) return false;
+  if (value[markerStart] === ">") return true;
+  const marker = listMarkerEnd(value, markerStart, limit, 0);
+  if (marker === null) return true;
+  if (value[markerStart] >= "0" && value[markerStart] <= "9") {
+    let digitsEnd = markerStart;
+    while (value[digitsEnd] >= "0" && value[digitsEnd] <= "9") digitsEnd += 1;
+    if (Number(value.slice(markerStart, digitsEnd)) !== 1) return false;
+  }
+  let cursor = marker.end;
+  while (
+    cursor < limit &&
+    (value[cursor] === " " || value[cursor] === "\t" || value[cursor] === "\r")
+  ) cursor += 1;
+  return cursor < limit;
+}
+
+// A marker line that cannot interrupt the paragraph above it (`2.` after body text) is
+// lazy paragraph text, so it establishes neither list indentation nor container depth.
+function isLazyListContinuation(value, lineStart, limit) {
+  if (containerDepth(value, lineStart, limit) === 0) return false;
+  if (interruptsParagraph(value, lineStart, limit)) return false;
+  return followsParagraphContent(value, lineStart);
+}
+
+function establishedListContentIndent(value, lineStart, limit) {
+  if (isLazyListContinuation(value, lineStart, limit)) return null;
+  return listContentIndent(value, lineStart, limit);
+}
+
+function establishedContainerDepth(value, lineStart, limit) {
+  if (!isLazyListContinuation(value, lineStart, limit)) {
+    return containerDepth(value, lineStart, limit);
+  }
+  const previousStart = previousLineStartOf(value, lineStart);
+  return containerDepth(value, previousStart, lineStart - 1);
 }
 
 function startsIndentedCodeLine(
@@ -378,10 +459,15 @@ function startsIndentedCodeLine(
   if (!isIndentedCodeLine(value, lineStart, activeListIndent)) return false;
   if (previousLineWasIndentedCode) return true;
   if (startsNonParagraphBlock(value, previousLineStart, previousLineEnd)) return true;
-  return (
-    containerDepth(value, lineStart, value.length) >
-    containerDepth(value, previousLineStart, previousLineEnd)
-  );
+  // The guards above leave an open paragraph on the previous line, so a deeper container
+  // only begins an indented code block when it may interrupt that paragraph.
+  if (
+    containerDepth(value, lineStart, value.length) <=
+    establishedContainerDepth(value, previousLineStart, previousLineEnd)
+  ) {
+    return false;
+  }
+  return interruptsParagraph(value, lineStart, lineEnd(value, lineStart));
 }
 
 function continuesFenceContainer(
