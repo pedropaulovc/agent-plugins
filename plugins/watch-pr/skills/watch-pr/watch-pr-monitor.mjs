@@ -241,6 +241,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       throw permanent("monitor URL cursor is not a valid Last-Event-ID");
     }
   }
+  parsedUrl.searchParams.delete("cursor");
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   let readyEmitted = false;

@@ -183,9 +183,11 @@ test("suppresses non-actionable feed churn", async () => {
 
 test("reconnects with its cursor and does not print a replay twice", async () => {
   const requestHeaders = [];
+  const requestUrls = [];
   let connection = 0;
   const { server, url } = await startServer((request, response) => {
     requestHeaders.push(request.headers);
+    requestUrls.push(request.url);
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     connection += 1;
     if (connection === 1) {
@@ -206,6 +208,10 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
   try {
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
     assert.equal(requestHeaders.length, 2);
+    assert.deepEqual(requestUrls, [
+      "/monitor/transcript-safe-capability",
+      "/monitor/transcript-safe-capability",
+    ]);
     assert.equal(requestHeaders[0]["last-event-id"], "initial-cursor");
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
