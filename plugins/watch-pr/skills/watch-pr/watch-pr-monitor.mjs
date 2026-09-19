@@ -169,24 +169,32 @@ function listMarkerEnd(value, cursor, limit) {
   return marker + 2;
 }
 
-function isFencePosition(value, lineStart, index) {
+function containerContentStart(value, lineStart, limit) {
   let cursor = lineStart;
-  while (cursor < index) {
-    cursor = consumeContainerIndent(value, cursor, index);
-    if (value[cursor] === ">") {
-      cursor += 1;
+  while (cursor < limit) {
+    const marker = consumeContainerIndent(value, cursor, limit);
+    if (value[marker] === ">") {
+      cursor = marker + 1;
       if (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
       continue;
     }
-    const markerEnd = listMarkerEnd(value, cursor, index);
+    const markerEnd = listMarkerEnd(value, marker, limit);
     if (markerEnd !== null) {
       cursor = markerEnd;
       continue;
     }
     break;
   }
-  cursor = consumeContainerIndent(value, cursor, index);
-  return cursor === index;
+  return cursor;
+}
+
+function isFencePosition(value, lineStart, index) {
+  const contentStart = containerContentStart(value, lineStart, index);
+  if (index - contentStart > 3) return false;
+  for (let cursor = contentStart; cursor < index; cursor += 1) {
+    if (value[cursor] !== " ") return false;
+  }
+  return true;
 }
 
 function isWhitespaceIndentWithin(value, lineStart, index, maximumIndent) {
@@ -217,7 +225,8 @@ function isEscaped(value, index) {
 
 function isIndentedCodeLine(value, lineStart) {
   let indentation = 0;
-  for (let cursor = lineStart; cursor < value.length; cursor += 1) {
+  const contentStart = containerContentStart(value, lineStart, value.length);
+  for (let cursor = contentStart; cursor < value.length; cursor += 1) {
     if (value[cursor] === " ") {
       indentation += 1;
       continue;
@@ -347,16 +356,17 @@ function stripMarkdownHtmlComments(value) {
       !indentedCodeLine
     ) {
       const commentEnd = value.indexOf("-->", cursor + 4);
-      if (commentEnd !== -1) {
-        const nextCursor = commentEnd + 3;
-        const lastNewline = value.lastIndexOf("\n", nextCursor - 1);
-        if (lastNewline >= cursor) {
-          lineStart = lastNewline + 1;
-          indentedCodeLine = isIndentedCodeLine(value, lineStart);
-        }
-        cursor = nextCursor;
+      if (commentEnd === -1) {
+        cursor = value.length;
         continue;
       }
+      const nextCursor = commentEnd + 3;
+      if (value.lastIndexOf("\n", nextCursor - 1) >= cursor) {
+        lineStart = nextCursor;
+        indentedCodeLine = false;
+      }
+      cursor = nextCursor;
+      continue;
     }
 
     result += character;
@@ -373,6 +383,7 @@ function compactDetail(detail) {
   const value = stripMarkdownHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""))
     .replace(/\s+/gu, " ")
     .replace(CONTROL_CHARACTERS_RE, "")
+    .replace(/\|/gu, "\\|")
     .trim();
   return {
     value: truncate(value, MAX_DETAIL_LENGTH),

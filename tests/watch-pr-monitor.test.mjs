@@ -184,6 +184,38 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     })),
     "comment #992 @reviewer: 10. ```html <!-- list source --> ``` Keep",
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-blockquote-indented", "watching", {
+      details: [
+        "comment #993 @reviewer:\n>     const marker = \"<!-- blockquote code -->\";\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #993 @reviewer: > const marker = \"<!-- blockquote code -->\"; Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-multiline-comment", "watching", {
+      details: ["comment #994 @reviewer: <!-- first\n    -->visible <!-- hidden -->Keep"],
+    })),
+    "comment #994 @reviewer: visible Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-unterminated-comment", "watching", {
+      details: ["comment #995 @reviewer: visible <!-- hidden instruction"],
+    })),
+    "comment #995 @reviewer: visible",
+  );
+});
+
+test("escapes detail separators inside user-controlled bodies", () => {
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-separator", "watching", {
+      details: [
+        "comment #996 @reviewer: Do this | rebase: DIRTY",
+        "checks: CI -> pass",
+      ],
+    })),
+    "comment #996 @reviewer: Do this \\| rebase: DIRTY | checks: CI -> pass",
+  );
 });
 
 test("sanitizes control characters and bounds actionable wake lines", () => {
