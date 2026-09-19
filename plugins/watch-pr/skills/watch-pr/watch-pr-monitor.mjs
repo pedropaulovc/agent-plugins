@@ -259,6 +259,30 @@ function containerDepth(value, lineStart, limit) {
   return depth;
 }
 
+function containerQuoteDepth(value, lineStart, limit) {
+  let cursor = lineStart;
+  let depth = 0;
+  while (cursor < limit) {
+    const marker = consumeContainerIndent(value, cursor, limit);
+    if (value[marker] === ">") {
+      cursor = marker + 1;
+      if (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
+      depth += 1;
+      continue;
+    }
+    const markerEnd = listMarkerEnd(value, marker, limit);
+    if (markerEnd === null) break;
+    cursor = markerEnd;
+  }
+  return depth;
+}
+
+function containerExtent(value, lineStart) {
+  let cursor = containerContentStart(value, lineStart, value.length);
+  while (value[cursor] === " ") cursor += 1;
+  return cursor - lineStart;
+}
+
 function isBlankMarkdownLine(value, lineStart, lineEnd) {
   let cursor = containerContentStart(value, lineStart, lineEnd);
   while (
@@ -266,6 +290,17 @@ function isBlankMarkdownLine(value, lineStart, lineEnd) {
     (value[cursor] === " " || value[cursor] === "\t" || value[cursor] === "\r")
   ) cursor += 1;
   return cursor === lineEnd;
+}
+
+function startsNonParagraphBlock(value, lineStart, lineEnd) {
+  if (isBlankMarkdownLine(value, lineStart, lineEnd)) return true;
+  let cursor = containerContentStart(value, lineStart, lineEnd);
+  cursor = consumeContainerIndent(value, cursor, lineEnd);
+  const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
+  if (/^#{1,6}(?:[ \t]|$)/u.test(line)) return true;
+  if (/^(?:`{3,}|~{3,})/u.test(line)) return true;
+  if (/^(?:=+|-+)[ \t]*$/u.test(line)) return true;
+  return /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/u.test(line);
 }
 
 function startsIndentedCodeLine(
@@ -277,11 +312,26 @@ function startsIndentedCodeLine(
 ) {
   if (!isIndentedCodeLine(value, lineStart)) return false;
   if (previousLineWasIndentedCode) return true;
-  if (isBlankMarkdownLine(value, previousLineStart, previousLineEnd)) return true;
+  if (startsNonParagraphBlock(value, previousLineStart, previousLineEnd)) return true;
   return (
     containerDepth(value, lineStart, value.length) >
     containerDepth(value, previousLineStart, previousLineEnd)
   );
+}
+
+function continuesFenceContainer(
+  value,
+  lineStart,
+  quoteDepth,
+  listDepth,
+  containerIndent,
+) {
+  const nextQuoteDepth = containerQuoteDepth(value, lineStart, value.length);
+  if (nextQuoteDepth < quoteDepth) return false;
+  if (listDepth === 0) return true;
+  const depth = containerDepth(value, lineStart, value.length);
+  if (depth - nextQuoteDepth >= listDepth) return true;
+  return containerExtent(value, lineStart) >= containerIndent;
 }
 
 function validFenceOpener(value, index, runLength, delimiter) {
@@ -323,6 +373,9 @@ function stripMarkdownHtmlComments(value) {
   let fenceDelimiter;
   let fenceLength = 0;
   let fenceIndentLimit = 3;
+  let fenceQuoteDepth = 0;
+  let fenceListDepth = 0;
+  let fenceContainerIndent = 0;
   let inlineLength = 0;
 
   while (cursor < value.length) {
@@ -344,6 +397,9 @@ function stripMarkdownHtmlComments(value) {
           fenceDelimiter = undefined;
           fenceLength = 0;
           fenceIndentLimit = 3;
+          fenceQuoteDepth = 0;
+          fenceListDepth = 0;
+          fenceContainerIndent = 0;
         }
         continue;
       }
@@ -358,6 +414,23 @@ function stripMarkdownHtmlComments(value) {
           cursor - 1,
           indentedCodeLine,
         );
+        if (
+          fenceDelimiter &&
+          !continuesFenceContainer(
+            value,
+            nextLineStart,
+            fenceQuoteDepth,
+            fenceListDepth,
+            fenceContainerIndent,
+          )
+        ) {
+          fenceDelimiter = undefined;
+          fenceLength = 0;
+          fenceIndentLimit = 3;
+          fenceQuoteDepth = 0;
+          fenceListDepth = 0;
+          fenceContainerIndent = 0;
+        }
         lineStart = nextLineStart;
       }
       continue;
@@ -396,6 +469,10 @@ function stripMarkdownHtmlComments(value) {
       ) {
         fenceDelimiter = character;
         fenceLength = runLength;
+        const openingDepth = containerDepth(value, lineStart, cursor);
+        fenceQuoteDepth = containerQuoteDepth(value, lineStart, cursor);
+        fenceListDepth = openingDepth - fenceQuoteDepth;
+        fenceContainerIndent = cursor - lineStart;
         fenceIndentLimit = Math.max(3, cursor - lineStart);
       } else if (
         character === "`" &&

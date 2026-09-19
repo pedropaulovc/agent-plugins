@@ -211,6 +211,26 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     })),
     "comment #996 @reviewer: paragraph Keep",
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-container-fence-end", "watching", {
+      details: [
+        "comment #999 @reviewer:\n> ```html\n> code\n<!-- hidden -->\n```\nKeep",
+        "comment #1000 @reviewer:\n10. ```html\n    code\n<!-- hidden -->\n```\nKeep",
+      ],
+    })),
+    [
+      "comment #999 @reviewer: > ```html > code ``` Keep",
+      "comment #1000 @reviewer: 10. ```html code ``` Keep",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-heading-indentation", "watching", {
+      details: [
+        "comment #1001 @reviewer:\n# Heading\n    const marker = \"<!-- visible -->\";\n<!-- hidden -->Keep",
+      ],
+    })),
+    "comment #1001 @reviewer: # Heading const marker = \"<!-- visible -->\"; Keep",
+  );
 });
 
 test("prints each actionable category on its own line", () => {
