@@ -63,92 +63,59 @@ same watcher emits the readiness record.
    - `number`: the pull-request number
 
 3. From the root session, call `open_pr_monitor` with the same arguments. Parse its JSON
-   result and retain the opaque `monitorUrl`. It is a read-only bearer capability for
-   this OAuth session and PR.
+   result and retain `monitorUrl`. The URL is a read-only capability scoped to this OAuth
+   session and PR. It expires 12 hours after minting and carries no GitHub credential.
+   It is safe to include in harness calls, process arguments, transcripts, and logs.
 
-   If `terminalState` is already `merged` or `closed`, do not mint a capability file
-   or launch a watcher. Call `get_pr`, perform the matching terminal action below, and
-   clean up with `unwatch_pr`.
+   If `terminalState` is already `merged` or `closed`, do not launch a watcher. Call
+   `get_pr`, perform the matching terminal action below, and clean up with `unwatch_pr`.
 
-   For Oh My Pi, skip the file-based mint and watcher steps below and follow the
-   direct-stdin flow in the Oh My Pi section. Starting the watcher before handing it
-   the URL removes the gap in which an external process can delete a capability file.
-   For Claude Code, Codex, and other file-based harnesses, resolve
-   `watch-pr-monitor.mjs` from the absolute directory containing this `SKILL.md`; do
-   not search the checkout or assume the current working directory. Start its one-shot
-   `mint` helper through a process API with a private stdin channel:
+4. Resolve `watch-pr-monitor.mjs` from the absolute directory containing this `SKILL.md`;
+   do not search the checkout or assume the current working directory. Start exactly one
+   watcher through the harness-native flow below, passing the URL directly:
 
    ```text
-   node "<absolute skill directory>/watch-pr-monitor.mjs" mint [absolute-directory]
+   node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"
    ```
 
-   Write `monitorUrl` exactly once to the helper's stdin and capture only its single
-   stdout path. Omit `absolute-directory` to use the OS temporary directory. On POSIX,
-   a supplied existing directory must be absolute and outside the repository; the helper
-   atomically creates an owner-only `0600` file. Windows does not expose POSIX owner
-   permission bits, so the helper rejects custom directories and uses the per-user OS
-   temporary directory. It atomically creates each capability file with a protected DACL
-   granting full control only to the invoking user, verifies that DACL, and writes the URL
-   before publishing the path; minting fails closed if that setup cannot run. This excludes
-   other unprivileged SIDs, but not same-user processes or elevated Administrator, SYSTEM,
-   or backup access. On POSIX, the reader canonicalizes the path and rejects paths inside a
-   repository. On Windows, it additionally rejects paths outside the canonical per-user
-   temporary directory. Never interpolate the URL into shell text or a heredoc, or put it
-   in arguments, environment variables, output, logs, messages,
-   repository files, or process names.
-   Do not use a PTY for the mint helper because terminal echo can expose stdin. If the
-   harness cannot provide a private stdin channel, fail clearly rather than minting the
-   file by hand or exposing the capability.
-
-4. For Claude Code, Codex, and other file-based harnesses, start exactly one watcher
-   through the harness-native flow below. Pass only the capability-file path, never the
-   monitor URL:
-
-   ```text
-   node "<absolute skill directory>/watch-pr-monitor.mjs" --url-file "<capability-file>"
-   ```
-
-5. Classify each concise stdout line before acting:
-   - The exact first line `watch-pr: ready` is the readiness record. It means the first
-     SSE response was validated and an otherwise idle watcher is healthy. It is not a
-     PR event, does not describe a PR state change, and must not trigger `get_pr`.
-   - `PR <n> updated: <changes>` is an intermediate PR event. The suffix names only the
-     changed fields; when the event has no changed fields it names the GitHub event
-     instead, so a direct base-branch push still wakes the root. Call `get_pr` in brief
-     mode for the current details and handle the resulting lifecycle lines.
-   - `PR <n> finished: MERGED` or `PR <n> finished: CLOSED` is a terminal PR event.
-     Call `get_pr` before performing the matching terminal action below.
+5. Classify each stdout line before acting:
+   - The exact first line `watch-pr: ready` is startup readiness. It is not a PR event.
+   - `PR <n> updated: <details>` contains the actionable event details inline. Check
+     failures include their URL; comments, reviews, and feedback include the changed body
+     and GitHub URL. Act from this line without calling `get_pr`.
+   - Routine check transitions and no-op webhook deliveries emit nothing. A check rerun
+     produces one start line, immediate named failures or cancellations, and one terminal
+     rollup after every pending check settles.
+   - `PR <n> finished: MERGED` or `PR <n> finished: CLOSED` is terminal. Call `get_pr`
+     once to reconcile final state before the terminal action below.
 
    The readiness record is emitted exactly once, including across SSE reconnects, and
-   precedes any PR event. Use `list_pr_events` only to explain a transition. Use
-   `get_pr` with `mode: "full"` when bodies, thread IDs, URLs, or exact snapshot fields
-   are needed. The watcher deliberately omits those details to keep wake output concise.
+   precedes every PR event. Use `get_pr` only for terminal reconciliation or when an
+   inline detail explicitly lacks information needed to act. Use `list_pr_events` only
+   to explain a transition.
 
 ## Start the harness watcher
 
 ### Claude Code
 
-Create one persistent `Monitor` running the watcher command with only the
-capability-file path. Keep that Monitor active after intermediate updates. Treat
+Create one persistent `Monitor` running the watcher command with `monitorUrl` as its
+sole argument. Keep that Monitor active after intermediate updates. Treat
 `watch-pr: ready` only as successful startup; each later `PR <n> updated: ...` or
-`PR <n> finished: ...` line must wake the root session, which calls `get_pr`. Do not
-run the command in an ordinary background shell, create a scheduled task, or replace
-the Monitor after an intermediate event. Record the Monitor identifier for explicit
-cancellation.
+`PR <n> finished: ...` line wakes the root session. Record the Monitor identifier for
+explicit cancellation. Do not run the command in an ordinary background shell, create
+a scheduled task, or replace the Monitor after an intermediate event.
 
 ### Codex
 
-Call `spawn_agent` once to create one long-lived watcher subagent. Give it only the
-capability-file path inside this private task, never the monitor URL, and instruct it
-exactly as follows:
+Call `spawn_agent` once to create one long-lived watcher subagent. Give it the watcher
+path and `monitorUrl`, and instruct it exactly as follows:
 
 ```text
-Run `node "<absolute skill directory>/watch-pr-monitor.mjs" --url-file
-"<capability-file>"` in the foreground. The exact line `watch-pr: ready` is startup
-readiness, not a PR event: report readiness to the root without calling or requesting
-get_pr, then continue reading the same process. For each `PR <n> updated: ...` line,
-immediately send the exact line to the root session through the parent-message channel,
-then continue reading the same process. For `PR <n> finished: MERGED` or
+Run `node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"` in the
+foreground. Report the exact line `watch-pr: ready` to the root as startup readiness,
+then continue reading the same process. For each `PR <n> updated: ...` line, immediately
+send the exact line to the root session through the parent-message channel, then
+continue reading the same process. For `PR <n> finished: MERGED` or
 `PR <n> finished: CLOSED`, return the exact line to the root as the terminal result and
 exit. If the process writes stderr or exits nonzero, send the error to the root and
 exit. Do not call MCP or GitHub tools, inspect or modify files, rebase, push, reply,
@@ -156,101 +123,83 @@ poll, restart, or launch another watcher.
 ```
 
 Retain the agent identifier. Do not close it or treat readiness or an intermediate
-message as its result. The root reacts only to PR-event messages and leaves the same
-subagent running until the terminal result or explicit cancellation.
+message as its result. The root acts directly from intermediate detail lines and leaves
+the same subagent running until the terminal result or explicit cancellation.
 
 ### Oh My Pi
 
-Oh My Pi uses direct private stdin instead of a temporary capability file. Start the
-watcher first without a readiness condition, send `monitorUrl` through the private stdin
-channel, then wait once for its readiness line. Do not add a `ready` condition to
-`hub(op: "start")`: that call waits for readiness before returning, so the later
-`hub(op: "send")` would never deliver the URL.
+Start one hub-managed persistent process with a capability-free unique name:
 
 ```text
 hub(
   op: "start",
   name: "watch-pr-<owner>-<repository>-<number>",
   application: "node",
-  args: ["<absolute skill directory>/watch-pr-monitor.mjs", "--from-stdin"],
-  pty: false,
+  args: ["<absolute skill directory>/watch-pr-monitor.mjs", "<monitorUrl>"],
+  ready: {
+    log: "^watch-pr: ready$",
+    timeout: 60
+  },
   progress: "wake"
-)
-hub(op: "send", name: "watch-pr-<owner>-<repository>-<number>", text: "<monitorUrl>", enter: true)
-hub(
-  op: "wait",
-  name: "watch-pr-<owner>-<repository>-<number>",
-  pattern: "^watch-pr: ready(?:\\r?\\n|$)",
-  timeout: 60
 )
 ```
 
-Retain the process name for cancellation. The matching line establishes readiness and
-must not trigger `get_pr`. Keep the same process running; every later
-`PR <n> updated: ...` or `PR <n> finished: ...` line wakes the root session, which calls
-`get_pr`. The readiness wait above is a single startup gate, not polling. Do not use
-asynchronous Bash, recurring `hub wait`, job polling, a second process, or a restart
-after intermediate events.
+Retain the process name for cancellation. The readiness match must not trigger
+`get_pr`. Keep the same process running; every later actionable or terminal line wakes
+the root. Do not use asynchronous Bash, recurring `hub wait`, job polling, a second
+process, or a restart after intermediate events.
 
 ### Other or uncertain harnesses
 
-Spawn exactly one long-lived subagent with the same capability-file,
-foreground-command, and messaging contract shown for Codex. It must distinguish the
-one `watch-pr: ready` line from later `PR <n> ...` events: readiness reports successful
-startup without triggering `get_pr`; intermediate updates are sent to the root while
-the same process continues; only a terminal `PR <n> finished: ...` line or error ends
-the subagent. If the harness cannot keep a subagent alive and
-deliver its messages to the root, report that the required watch cannot be established
-rather than substituting polling, a detached shell, MCP notifications, or repeated
-watcher launches.
+Spawn exactly one long-lived subagent with the direct-URL foreground command and
+messaging contract shown for Codex. It must distinguish the one readiness line from
+later PR events and remain alive through intermediate updates. If the harness cannot
+keep a subagent alive and deliver its messages to the root, report that the required
+watch cannot be established rather than substituting polling, a detached shell, MCP
+notifications, or repeated watcher launches.
 
 ## Act on lifecycle lines
 
 | Line | Action |
 |---|---|
-| `PR <n>: <state> [DRAFT]` | Record the current lifecycle state and whether review is still blocked by draft status. |
-| `head: <ref>@<sha>` | If the SHA changed, inspect the new commit and restarted checks before acting on earlier results. |
-| `mergeable: <yes\|no> (<state>)` | Treat `BEHIND` and `DIRTY` through the rebase actions below; other states are informational. |
-| `reviews: <n>` | Read full output when the count changed; `0` explicitly means no reviews. |
-| `check <name>: pending` | Informational; wait for a later update. |
-| `check <name>: pass`, `skipping`, or `cancel` | Record the terminal result. A canceled required check still needs investigation. |
-| `check <name>: fail` | Open the check URL from `get_pr` full output, inspect its logs, fix the cause, commit, and push. |
+| `head: <ref>@<sha>` | Inspect the new commit and restarted checks before acting on earlier results. |
 | `rebase: BEHIND` | Rebase the head branch onto the PR's base branch and push. |
 | `rebase: DIRTY` | Rebase, resolve every conflict, and force-push the feature branch with `--force-with-lease`. |
-| `review <login>: <state>` | Read `get_pr` full output; handle any substantive review body or unresolved thread. |
-| `comments: <n>` or `review-comments: <n>` | Read full output when the count changed; ignore comments authored by the authenticated user. |
-| `feedback [<thread>] <file>:<lines> @<author> <title>` | Read the matching unresolved thread and comment body from full output, inspect the named code, then fix or reply. |
-| `reaction <kind>: <n>` or `comment-reaction <kind>: <n>` | Informational aggregate only. Read full comments/reviews before attributing a reaction to a reviewer or treating it as a verdict. |
+| `checks: rerun started (pending: ...)` | Informational; wait for the rollup or an immediate failure. |
+| `check <name>: fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
+| `check <name>: cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
+| `checks: all terminal (...)` | Confirm every required check passed; investigate nonzero fail or cancel counts. |
+| `comment #<id> @<author> <url>: <body>` | Read the body inline, decide whether it requires action, then reply at the URL when needed. |
+| `review #<id> @<author> <state> <url>: <body>` | Handle the verdict and body directly; do not fetch the complete PR merely to locate it. |
+| `feedback [<thread>] #<comment-id> <file>:<lines> @<author> <url>: <body>` | Inspect the named code, fix or reply, and use the IDs when replying or resolving the thread. |
 | `PR <n> finished: MERGED` | Call `get_pr`, call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. The watcher exits on its own. |
 | `PR <n> finished: CLOSED` | Call `get_pr`, call `unwatch_pr`, and report that the PR closed without merging. The watcher exits on its own. |
 
 ## Handle review feedback
 
-For each active thread in `get_pr` full output:
+For each inline `comment`, `review`, or `feedback` detail:
 
-1. Read the entire thread and relevant local diff/code. Decide whether the finding is
+1. Read the supplied body and relevant local diff/code. Decide whether the finding is
    correct; do not blindly accept reviewer claims.
 2. Make and verify pertinent code changes. Keep unresolved design disagreements open;
    resolve settled threads after replying.
 3. Push the fix. This restarts checks and produces later feed events.
-4. Reply through `gh` using the comment and thread IDs from full output. Use the
-   repository's comments skill when available; otherwise use GitHub's REST reply
-   endpoint and GraphQL `resolveReviewThread` mutation directly.
+4. Reply through `gh` using the comment, review, thread, and URL identifiers already in
+   the event line. Use the repository's comments skill when available; otherwise use
+   GitHub's REST reply endpoint and GraphQL `resolveReviewThread` mutation directly.
 
 Continue until the watcher reports merge or closure. Passing checks is intermediate;
 later reviews, rebases, reruns, and merge events remain part of the same lifecycle.
 
-## Cancel or handle watcher failure
+## Cancel, renew, or handle watcher failure
 
-If the user cancels before a terminal event, first stop the exact harness watcher:
-stop the Claude Monitor, interrupt and close the Codex/generic subagent, or call
+If the user cancels before a terminal event, stop the exact harness watcher: stop the
+Claude Monitor, interrupt and close the Codex/generic subagent, or call
 `hub(op: "stop", name: "<recorded process name>")` for Oh My Pi. Confirm that process
-has ended. For Claude Code, Codex, and other file-based harnesses, delete the capability
-file if the watcher failed before consuming it. The Oh My Pi stdin flow has no capability
-file. Then call `unwatch_pr`. Never leave a detached process or capability file behind.
+has ended, then call `unwatch_pr`.
 
-A permanent watcher error is not an invitation to rearm. Report its stderr to the root,
-stop/close its harness container, delete the capability file if a file-based watcher
-failed before consuming it, call `unwatch_pr` when possible, and do not launch a
-replacement watcher in this session. Apply the same file cleanup if a file-based startup
-is cancelled while the watcher is still opening the file.
+A permanent watcher error is not an invitation to poll. Stop or close its harness
+container. For HTTP 401, 403, or 404 after a previously ready connection, call
+`open_pr_monitor` once to replace an expired or revoked 12-hour URL, then start one
+replacement watcher. For other permanent errors, call `unwatch_pr` when possible and
+report the error instead of launching a replacement.
