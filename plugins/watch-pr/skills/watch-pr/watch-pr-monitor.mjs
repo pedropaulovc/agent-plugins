@@ -123,7 +123,10 @@ function parseMonitorEvent(frame) {
 
 function truncate(value, maximumLength) {
   if (value.length <= maximumLength) return value;
-  return `${value.slice(0, maximumLength - 1)}…`;
+  let prefix = value.slice(0, maximumLength - 1);
+  const lastCodeUnit = prefix.charCodeAt(prefix.length - 1);
+  if (lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff) prefix = prefix.slice(0, -1);
+  return `${prefix}…`;
 }
 
 function compactDetail(detail) {
@@ -205,6 +208,14 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
 
   const effectiveSignal = signal ?? new AbortController().signal;
   let cursor = parsedUrl.searchParams.get("cursor") || undefined;
+  if (cursor !== undefined) {
+    if (cursor.length > 256) throw permanent("monitor URL cursor exceeds 256 characters");
+    try {
+      new Headers({ "Last-Event-ID": cursor });
+    } catch {
+      throw permanent("monitor URL cursor is not a valid Last-Event-ID");
+    }
+  }
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   let readyEmitted = false;

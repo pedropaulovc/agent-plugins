@@ -140,6 +140,10 @@ test("sanitizes control characters and bounds actionable wake lines", () => {
   assert.equal(line.length, 4_096);
   assert.doesNotMatch(line, /\u001b/u);
   assert.match(line, /…$/u);
+  const unicodeLine = formatMonitorEvent(monitorEvent("event-unicode", "watching", {
+    details: [`${"x".repeat(998)}😀z`],
+  }));
+  assert.equal(unicodeLine.isWellFormed(), true);
 });
 
 test("suppresses non-actionable feed churn", async () => {
@@ -280,6 +284,13 @@ test("reports the last event id when a ready capability expires", async () => {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
     await closeServer(server);
   }
+});
+
+test("rejects a malformed resume cursor before connecting", async () => {
+  const watcher = startWatcher("https://watch-pr.test/monitor/capability?cursor=bad%0Aid");
+  assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+  assert.equal(watcher.stdout(), "");
+  assert.match(watcher.stderr(), /cursor is not a valid Last-Event-ID/);
 });
 
 test("rejects non-HTTP monitor URLs", async () => {
