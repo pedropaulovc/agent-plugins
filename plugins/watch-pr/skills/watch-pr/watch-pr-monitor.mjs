@@ -10,9 +10,9 @@ const USAGE = "usage: node watch-pr-monitor.mjs <monitor-url>";
 
 class PermanentMonitorError extends Error { }
 const MAX_DETAIL_LENGTH = 1_000;
-const MAX_UPDATE_LINE_LENGTH = 4_096;
+const MAX_UPDATE_OUTPUT_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
-const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
+const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
 const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
 
 function permanent(message) {
@@ -240,6 +240,50 @@ function isIndentedCodeLine(value, lineStart) {
   return indentation >= 4;
 }
 
+function containerDepth(value, lineStart, limit) {
+  let cursor = lineStart;
+  let depth = 0;
+  while (cursor < limit) {
+    const marker = consumeContainerIndent(value, cursor, limit);
+    if (value[marker] === ">") {
+      cursor = marker + 1;
+      if (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
+      depth += 1;
+      continue;
+    }
+    const markerEnd = listMarkerEnd(value, marker, limit);
+    if (markerEnd === null) break;
+    cursor = markerEnd;
+    depth += 1;
+  }
+  return depth;
+}
+
+function isBlankMarkdownLine(value, lineStart, lineEnd) {
+  let cursor = containerContentStart(value, lineStart, lineEnd);
+  while (
+    cursor < lineEnd &&
+    (value[cursor] === " " || value[cursor] === "\t" || value[cursor] === "\r")
+  ) cursor += 1;
+  return cursor === lineEnd;
+}
+
+function startsIndentedCodeLine(
+  value,
+  lineStart,
+  previousLineStart,
+  previousLineEnd,
+  previousLineWasIndentedCode,
+) {
+  if (!isIndentedCodeLine(value, lineStart)) return false;
+  if (previousLineWasIndentedCode) return true;
+  if (isBlankMarkdownLine(value, previousLineStart, previousLineEnd)) return true;
+  return (
+    containerDepth(value, lineStart, value.length) >
+    containerDepth(value, previousLineStart, previousLineEnd)
+  );
+}
+
 function validFenceOpener(value, index, runLength, delimiter) {
   if (delimiter !== "`") return true;
   for (let cursor = index + runLength; cursor < value.length; cursor += 1) {
@@ -306,8 +350,15 @@ function stripMarkdownHtmlComments(value) {
       result += character;
       cursor += 1;
       if (character === "\n") {
-        lineStart = cursor;
-        indentedCodeLine = isIndentedCodeLine(value, lineStart);
+        const nextLineStart = cursor;
+        indentedCodeLine = startsIndentedCodeLine(
+          value,
+          nextLineStart,
+          lineStart,
+          cursor - 1,
+          indentedCodeLine,
+        );
+        lineStart = nextLineStart;
       }
       continue;
     }
@@ -323,8 +374,15 @@ function stripMarkdownHtmlComments(value) {
       result += character;
       cursor += 1;
       if (character === "\n") {
-        lineStart = cursor;
-        indentedCodeLine = isIndentedCodeLine(value, lineStart);
+        const nextLineStart = cursor;
+        indentedCodeLine = startsIndentedCodeLine(
+          value,
+          nextLineStart,
+          lineStart,
+          cursor - 1,
+          indentedCodeLine,
+        );
+        lineStart = nextLineStart;
       }
       continue;
     }
@@ -372,8 +430,15 @@ function stripMarkdownHtmlComments(value) {
     result += character;
     cursor += 1;
     if (character === "\n") {
-      lineStart = cursor;
-      indentedCodeLine = isIndentedCodeLine(value, lineStart);
+      const nextLineStart = cursor;
+      indentedCodeLine = startsIndentedCodeLine(
+        value,
+        nextLineStart,
+        lineStart,
+        cursor - 1,
+        indentedCodeLine,
+      );
+      lineStart = nextLineStart;
     }
   }
   return result;
@@ -383,7 +448,6 @@ function compactDetail(detail) {
   const value = stripMarkdownHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""))
     .replace(/\s+/gu, " ")
     .replace(CONTROL_CHARACTERS_RE, "")
-    .replace(/\|/gu, "\\|")
     .trim();
   return {
     value: truncate(value, MAX_DETAIL_LENGTH),
@@ -424,13 +488,13 @@ export function formatMonitorEvent(event) {
     const omittedAfterDetail = omitted + actionable.length - included.length - 1;
     const parts = [...included, detail];
     if (omittedAfterDetail > 0) parts.push(`+${omittedAfterDetail} more changes`);
-    if (parts.join(" | ").length > MAX_UPDATE_LINE_LENGTH) break;
+    if (parts.join("\n").length > MAX_UPDATE_OUTPUT_LENGTH) break;
     included.push(detail);
   }
   omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + actionable.length - included.length);
   if (omitted > 0) included.push(`+${omitted} more changes`);
   if (included.length === 0) return null;
-  return included.join(" | ");
+  return included.join("\n");
 }
 
 function validateResponse(response, { readyEmitted, cursor }) {

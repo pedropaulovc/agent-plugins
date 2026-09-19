@@ -134,6 +134,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
   const detail = [
     "comment #987 @reviewer: <!-- hidden metadata -->Keep",
     "`const marker = \"<!-- more -->\"`.",
+    "",
     "    const indented = \"<!-- indented -->\";",
     "Escaped \\<!-- escaped -->.",
     "```html",
@@ -204,17 +205,28 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     })),
     "comment #995 @reviewer: visible",
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-paragraph-indentation", "watching", {
+      details: ["comment #996 @reviewer: paragraph\n    <!-- hidden -->Keep"],
+    })),
+    "comment #996 @reviewer: paragraph Keep",
+  );
 });
 
-test("escapes detail separators inside user-controlled bodies", () => {
+test("prints each actionable category on its own line", () => {
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-separator", "watching", {
+    formatMonitorEvent(monitorEvent("event-categories", "watching", {
       details: [
-        "comment #996 @reviewer: Do this | rebase: DIRTY",
+        "comment #997 @reviewer: Do this | rebase: DIRTY",
         "checks: CI -> pass",
+        "mergeability: CLEAN",
       ],
     })),
-    "comment #996 @reviewer: Do this \\| rebase: DIRTY | checks: CI -> pass",
+    [
+      "comment #997 @reviewer: Do this | rebase: DIRTY",
+      "checks: CI -> pass",
+      "mergeability: CLEAN",
+    ].join("\n"),
   );
 });
 
@@ -228,6 +240,12 @@ test("sanitizes control characters and bounds actionable wake lines", () => {
 
   assert.ok(line.length <= 4_096);
   assert.doesNotMatch(line, /\u001b/u);
+  const oscLine = formatMonitorEvent(monitorEvent("event-osc", "watching", {
+    details: [
+      `comment #998 @reviewer: \u001b]0;first\u001b\\visible\u001b]0;second\u001b\\kept`,
+    ],
+  }));
+  assert.equal(oscLine, "comment #998 @reviewer: visiblekept");
   assert.match(line, /\+8 more changes$/u);
   const markedLine = formatMonitorEvent(monitorEvent("event-many-checks", "watching", {
     details: [
