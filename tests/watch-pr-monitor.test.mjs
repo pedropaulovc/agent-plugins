@@ -357,6 +357,30 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1032 @reviewer: paragraph",
     ].join("\n"),
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-raw-blocks", "watching", {
+      details: [
+        "comment #1033 @reviewer:\n<pre>x</pre>\n    <!-- visible code -->",
+        "comment #1034 @reviewer:\n<PRE>\nx\n</PrE>\n    <!-- visible code -->",
+        "comment #1035 @reviewer:\n<?php\necho 1;\n?>\n    <!-- visible code -->",
+        "comment #1036 @reviewer:\n<!DOCTYPE\nhtml>\n    <!-- visible code -->",
+        "comment #1037 @reviewer:\n<![CDATA[\nx\n]]>\n    <!-- visible code -->",
+        "comment #1038 @reviewer:\n<div>\ntext\n\n    <!-- visible code -->",
+        "comment #1039 @reviewer:\n<pre>\n\n    <!-- hidden -->\n</pre>",
+        "comment #1040 @reviewer:\nparagraph <pre>x</pre>\n    <!-- hidden -->",
+      ],
+    })),
+    [
+      "comment #1033 @reviewer: <pre>x</pre> <!-- visible code -->",
+      "comment #1034 @reviewer: <PRE> x </PrE> <!-- visible code -->",
+      "comment #1035 @reviewer: <?php echo 1; ?> <!-- visible code -->",
+      "comment #1036 @reviewer: <!DOCTYPE html> <!-- visible code -->",
+      "comment #1037 @reviewer: <![CDATA[ x ]]> <!-- visible code -->",
+      "comment #1038 @reviewer: <div> text <!-- visible code -->",
+      "comment #1039 @reviewer: <pre> </pre>",
+      "comment #1040 @reviewer: paragraph <pre>x</pre>",
+    ].join("\n"),
+  );
 });
 
 test("prints each actionable category on its own line", () => {

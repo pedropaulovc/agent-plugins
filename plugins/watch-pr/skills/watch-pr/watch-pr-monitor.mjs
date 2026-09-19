@@ -351,13 +351,50 @@ function opensFence(value, cursor) {
   return runLength >= 3 && validFenceOpener(value, cursor, runLength, delimiter);
 }
 
-// CommonMark HTML block type 2: `<!--` at block content start opens a leaf block that may
-// interrupt a paragraph and that ends with the line containing `-->`, so the line after it
-// carries no open paragraph. An inline `<!--` later in a line stays paragraph content.
-function opensHtmlCommentBlock(value, lineStart, lineEnd) {
-  if (isIndentedCodeLine(value, lineStart)) return false;
+// CommonMark HTML blocks that close on a token rather than on a blank line: type 1 raw text
+// elements, type 2 comments, type 3 processing instructions, type 4 declarations and type 5
+// CDATA. Each may interrupt a paragraph, and the line holding the closing token ends the
+// block, so the line after it carries no open paragraph. Types 6 and 7 close on a blank
+// line, which the blank-predecessor path already handles.
+const HTML_BLOCK_KINDS = [
+  { open: /^<(?:script|pre|style|textarea)(?:[ \t\r>]|$)/iu, close: /<\/(?:script|pre|style|textarea)>/iu },
+  { open: /^<!--/u, close: /-->/u },
+  { open: /^<\?/u, close: /\?>/u },
+  { open: /^<![A-Za-z]/u, close: />/u },
+  { open: /^<!\[CDATA\[/u, close: /\]\]>/u },
+];
+
+function htmlBlockKindAt(value, lineStart, lineEnd) {
   const cursor = blockContentStart(value, lineStart, lineEnd);
-  return cursor + 4 <= lineEnd && value.startsWith("<!--", cursor);
+  if (value[cursor] !== "<" || isIndentedCodeLine(value, lineStart)) return null;
+  const line = value.slice(cursor, lineEnd);
+  for (const kind of HTML_BLOCK_KINDS) {
+    const opener = kind.open.exec(line);
+    if (opener) return { kind, contentStart: cursor + opener[0].length };
+  }
+  return null;
+}
+
+// An inline `<pre>` or `<!--` later in a line leaves the paragraph open, and an opener whose
+// closing token lands on a later line keeps the block open across the lines in between.
+function completesHtmlBlock(value, lineStart, lineEnd) {
+  const opened = htmlBlockKindAt(value, lineStart, lineEnd);
+  if (!opened) return false;
+  return opened.kind.close.test(value.slice(opened.contentStart, lineEnd));
+}
+
+// Sentinel distinguishing "this line closed the block" from "no block is open".
+const HTML_BLOCK_CLOSED = { closed: true };
+
+function advanceHtmlBlockState(value, lineStart, lineEnd, openHtmlBlock) {
+  if (openHtmlBlock) {
+    if (!openHtmlBlock.close.test(value.slice(lineStart, lineEnd))) return openHtmlBlock;
+    return HTML_BLOCK_CLOSED;
+  }
+  const opened = htmlBlockKindAt(value, lineStart, lineEnd);
+  if (!opened) return null;
+  if (opened.kind.close.test(value.slice(opened.contentStart, lineEnd))) return HTML_BLOCK_CLOSED;
+  return opened.kind;
 }
 
 function isParagraphContentLine(value, lineStart, lineEnd) {
@@ -365,7 +402,7 @@ function isParagraphContentLine(value, lineStart, lineEnd) {
   if (isIndentedCodeLine(value, lineStart)) return false;
   const cursor = blockContentStart(value, lineStart, lineEnd);
   if (opensFence(value, cursor)) return false;
-  if (opensHtmlCommentBlock(value, lineStart, lineEnd)) return false;
+  if (completesHtmlBlock(value, lineStart, lineEnd)) return false;
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
   return !ATX_HEADING_RE.test(line) &&
     !THEMATIC_BREAK_RE.test(line) &&
@@ -393,7 +430,7 @@ function startsNonParagraphBlock(value, lineStart, lineEnd) {
   if (isBlankMarkdownLine(value, lineStart, lineEnd)) return true;
   const cursor = blockContentStart(value, lineStart, lineEnd);
   if (opensFence(value, cursor)) return true;
-  if (opensHtmlCommentBlock(value, lineStart, lineEnd)) return true;
+  if (completesHtmlBlock(value, lineStart, lineEnd)) return true;
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
   if (ATX_HEADING_RE.test(line) || THEMATIC_BREAK_RE.test(line)) return true;
   return SETEXT_UNDERLINE_RE.test(line) && followsParagraphContent(value, lineStart);
@@ -545,8 +582,10 @@ function stripMarkdownHtmlComments(value) {
   let fenceListDepth = 0;
   let fenceContainerIndent = 0;
   let inlineLength = 0;
-  // Set while scanning a line that closes a multi-line HTML comment block, consumed by the
-  // newline handler below: after that line the block is finished and no paragraph is open.
+  // Raw HTML block state carried across lines: `openHtmlBlock` holds the kind whose closing
+  // token has not been seen yet, and `htmlBlockEndsLine` marks the line that closes a block,
+  // which the newline handlers consume so the next line may start an indented code block.
+  let openHtmlBlock = null;
   let htmlBlockEndsLine = false;
 
   while (cursor < value.length) {
@@ -695,7 +734,8 @@ function stripMarkdownHtmlComments(value) {
         lineStart = nextCursor;
         indentedCodeLine = false;
       }
-      if (blockLevel) htmlBlockEndsLine = true;
+      // A comment nested in an already open raw block does not end that block.
+      if (blockLevel && !openHtmlBlock) htmlBlockEndsLine = true;
       cursor = nextCursor;
       continue;
     }
@@ -704,6 +744,13 @@ function stripMarkdownHtmlComments(value) {
     cursor += 1;
     if (character === "\n") {
       const nextLineStart = cursor;
+      const advanced = advanceHtmlBlockState(value, lineStart, cursor - 1, openHtmlBlock);
+      if (advanced === HTML_BLOCK_CLOSED) {
+        openHtmlBlock = null;
+        htmlBlockEndsLine = true;
+      } else {
+        openHtmlBlock = advanced;
+      }
       activeListIndent = listIndentForNextLine(
         value,
         lineStart,
@@ -720,6 +767,8 @@ function stripMarkdownHtmlComments(value) {
         activeListIndent,
         htmlBlockEndsLine,
       );
+      // Lines inside an open raw block are markup, never the start of an indented code block.
+      if (openHtmlBlock) indentedCodeLine = false;
       htmlBlockEndsLine = false;
       lineStart = nextLineStart;
     }
