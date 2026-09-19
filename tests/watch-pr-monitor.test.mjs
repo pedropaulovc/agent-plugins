@@ -139,7 +139,7 @@ test("sanitizes control characters and bounds actionable wake lines", () => {
 
   assert.ok(line.length <= 4_096);
   assert.doesNotMatch(line, /\u001b/u);
-  assert.match(line, /\+2 more changes$/u);
+  assert.match(line, /\+8 more changes$/u);
   const markedLine = formatMonitorEvent(monitorEvent("event-many-checks", "watching", {
     details: [
       ...Array.from({ length: 5 }, (_, index) => `check ${index}: ${"x".repeat(2_000)}`),
@@ -147,11 +147,12 @@ test("sanitizes control characters and bounds actionable wake lines", () => {
     ],
   }));
   assert.ok(markedLine.length <= 4_096);
-  assert.match(markedLine, /\+8 more changes$/u);
+  assert.match(markedLine, /\+13 more changes$/u);
   const unicodeLine = formatMonitorEvent(monitorEvent("event-unicode", "watching", {
     details: [`${"x".repeat(998)}😀z`],
   }));
   assert.equal(unicodeLine.isWellFormed(), true);
+  assert.match(unicodeLine, /\+1 more changes$/u);
 });
 
 test("suppresses non-actionable feed churn", async () => {

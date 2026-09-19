@@ -131,14 +131,15 @@ function truncate(value, maximumLength) {
 }
 
 function compactDetail(detail) {
-  return truncate(
-    detail
-      .replace(ANSI_ESCAPE_SEQUENCE_RE, "")
-      .replace(/\s+/gu, " ")
-      .replace(CONTROL_CHARACTERS_RE, "")
-      .trim(),
-    MAX_DETAIL_LENGTH,
-  );
+  const value = detail
+    .replace(ANSI_ESCAPE_SEQUENCE_RE, "")
+    .replace(/\s+/gu, " ")
+    .replace(CONTROL_CHARACTERS_RE, "")
+    .trim();
+  return {
+    value: truncate(value, MAX_DETAIL_LENGTH),
+    truncated: value.length > MAX_DETAIL_LENGTH,
+  };
 }
 
 export function formatMonitorEvent(event) {
@@ -153,11 +154,12 @@ export function formatMonitorEvent(event) {
   if (!Array.isArray(event.details) || event.details.some((detail) => typeof detail !== "string")) {
     throw permanent("received invalid monitor event details");
   }
-  const details = [...new Set(event.details.map(compactDetail))].filter(Boolean);
+  const compactedDetails = event.details.map(compactDetail);
+  const details = [...new Set(compactedDetails.map((detail) => detail.value))].filter(Boolean);
   if (details.length === 0) return null;
 
   const actionable = [];
-  let omitted = 0;
+  let omitted = compactedDetails.filter((detail) => detail.truncated).length;
   for (const detail of details) {
     const match = OVERFLOW_DETAIL_RE.exec(detail);
     const count = match ? Number(match[1]) : Number.NaN;
