@@ -22,7 +22,7 @@ const THEMATIC_BREAK_RE = /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})
 const DETAIL_BODY_PREFIX_RES = [
   /^comment #\d+ @[^\s:]+(?: \S+)?:\s/u,
   /^review #\d+ @[^\s:]+ [^\s:]+(?: \S+)?:\s/u,
-  /^feedback \[[^\]\s]*\] #\d+(?: .*?)? @[^\s:]+(?: \S+)?:\s/u,
+  /^feedback \[[^\]\s]*\] #\d+(?: .+:\d+(?:-\d+)?)? @[^\s:]+(?: https:\/\/github\.com\/\S+)?:\s/u,
 ];
 
 function permanent(message) {
@@ -680,15 +680,18 @@ function blankLineFollows(value, newlineIndex) {
 }
 
 function hasClosingInlineDelimiter(value, index, runLength, openingLineStart) {
-  const openingDepth = containerDepth(value, openingLineStart, lineEnd(value, openingLineStart));
-  const openingQuoteDepth = containerQuoteDepth(
+  const openingLineEnd = lineEnd(value, openingLineStart);
+  const openingCanContinue = !startsNonParagraphBlock(
     value,
     openingLineStart,
-    lineEnd(value, openingLineStart),
+    openingLineEnd,
   );
+  const openingDepth = containerDepth(value, openingLineStart, openingLineEnd);
+  const openingQuoteDepth = containerQuoteDepth(value, openingLineStart, openingLineEnd);
   let cursor = index;
   while (cursor < value.length) {
     if (value[cursor] === "\n") {
+      if (!openingCanContinue) return false;
       if (blankLineFollows(value, cursor)) return false;
       const nextLineStart = cursor + 1;
       const nextLineEnd = lineEnd(value, nextLineStart);

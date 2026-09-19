@@ -246,6 +246,12 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1002 @reviewer: > `fake # heading `close",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-heading-code-span-boundary", "watching", {
+      details: ["comment #1002 @reviewer:\n# `fake <!-- hidden instruction -->\n`close"],
+    })),
+    "comment #1002 @reviewer: # `fake `close",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
       details: [
         "comment #1003 @reviewer:\n- item\n\n    <!-- hidden -->Keep",
@@ -294,6 +300,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
         "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1:     <!-- visible example -->",
         "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer:     <!-- visible example -->",
         "feedback [PRRT_2] #1018 docs/my file.md:12 @reviewer:     <!-- visible example -->",
+        "feedback [PRRT_3] #1019 docs @fake: name.md:12 @reviewer https://github.com/o/r/pull/1#discussion_r1:     <!-- visible example -->",
         "comment #1018 @reviewer: paragraph\n    <!-- hidden -->Keep",
       ],
     })),
@@ -302,6 +309,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1: <!-- visible example -->",
       "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer: <!-- visible example -->",
       "feedback [PRRT_2] #1018 docs/my file.md:12 @reviewer: <!-- visible example -->",
+      "feedback [PRRT_3] #1019 docs @fake: name.md:12 @reviewer https://github.com/o/r/pull/1#discussion_r1: <!-- visible example -->",
       "comment #1018 @reviewer: paragraph Keep",
     ].join("\n"),
   );
