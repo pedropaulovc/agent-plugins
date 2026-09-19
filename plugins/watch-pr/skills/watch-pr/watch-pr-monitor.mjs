@@ -682,7 +682,13 @@ function blankLineFollows(value, newlineIndex) {
   return value[cursor] === "\n";
 }
 
-function hasClosingInlineDelimiter(value, index, runLength, openingLineStart) {
+function hasClosingInlineDelimiter(
+  value,
+  index,
+  runLength,
+  openingLineStart,
+  openingListIndent,
+) {
   const openingLineEnd = lineEnd(value, openingLineStart);
   const openingCanContinue = !startsNonParagraphBlock(
     value,
@@ -691,6 +697,10 @@ function hasClosingInlineDelimiter(value, index, runLength, openingLineStart) {
   );
   const openingDepth = containerDepth(value, openingLineStart, openingLineEnd);
   const openingQuoteDepth = containerQuoteDepth(value, openingLineStart, openingLineEnd);
+  const openingListDepth = Math.max(
+    openingDepth - openingQuoteDepth,
+    openingListIndent > 0 ? 1 : 0,
+  );
   let cursor = index;
   while (cursor < value.length) {
     if (value[cursor] === "\n") {
@@ -698,6 +708,17 @@ function hasClosingInlineDelimiter(value, index, runLength, openingLineStart) {
       if (blankLineFollows(value, cursor)) return false;
       const nextLineStart = cursor + 1;
       const nextLineEnd = lineEnd(value, nextLineStart);
+      if (
+        !continuesOpeningContainer(
+          value,
+          nextLineStart,
+          openingQuoteDepth,
+          openingListDepth,
+          openingListIndent,
+        )
+      ) {
+        return false;
+      }
       if (startsNonParagraphBlock(value, nextLineStart, nextLineEnd)) return false;
       const nextListIndent = establishedListContentIndent(value, nextLineStart, nextLineEnd);
       if (nextListIndent !== null && interruptsParagraph(value, nextLineStart, nextLineEnd)) {
@@ -880,13 +901,25 @@ function stripMarkdownHtmlComments(value) {
         fenceLength = runLength;
         const openingDepth = containerDepth(value, lineStart, cursor);
         fenceQuoteDepth = containerQuoteDepth(value, lineStart, cursor);
-        fenceListDepth = openingDepth - fenceQuoteDepth;
-        fenceContainerIndent = visualColumn(value, lineStart, cursor);
+        fenceListDepth = Math.max(
+          openingDepth - fenceQuoteDepth,
+          activeListIndent > 0 ? 1 : 0,
+        );
+        fenceContainerIndent = Math.max(
+          visualColumn(value, lineStart, cursor),
+          activeListIndent,
+        );
         fenceIndentLimit = Math.max(3, fenceContainerIndent);
       } else if (
         !escapedDelimiter &&
         character === "`" &&
-        hasClosingInlineDelimiter(value, cursor + runLength, runLength, lineStart)
+        hasClosingInlineDelimiter(
+          value,
+          cursor + runLength,
+          runLength,
+          lineStart,
+          activeListIndent,
+        )
       ) {
         inlineLength = runLength;
       }
@@ -933,8 +966,14 @@ function stripMarkdownHtmlComments(value) {
         if (advanced && advanced !== openHtmlBlock) {
           const openingDepth = containerDepth(value, lineStart, advanced.blockStart);
           htmlQuoteDepth = containerQuoteDepth(value, lineStart, advanced.blockStart);
-          htmlListDepth = openingDepth - htmlQuoteDepth;
-          htmlContainerIndent = visualColumn(value, lineStart, advanced.blockStart);
+          htmlListDepth = Math.max(
+            openingDepth - htmlQuoteDepth,
+            activeListIndent > 0 ? 1 : 0,
+          );
+          htmlContainerIndent = Math.max(
+            visualColumn(value, lineStart, advanced.blockStart),
+            activeListIndent,
+          );
           // CommonMark forbids this opener from interrupting a paragraph; the scanner
           // opens it anyway, so the two readings of the lines below it are both live.
           if (advanced.kind.interrupts === false && followsParagraphContent(value, lineStart)) {

@@ -194,6 +194,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #992 @reviewer: - ```html ```\n+1 more changes",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-fence", "watching", {
+      details: [
+        "comment #992 @reviewer:\n- item\n\n  ```html\nroot\n<!-- hidden instruction -->",
+      ],
+    })),
+    "comment #992 @reviewer: - item ```html root",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-blockquote-indented", "watching", {
       details: [
         "comment #993 @reviewer:\n>     const marker = \"<!-- blockquote code -->\";\n<!-- hidden metadata -->Keep",
@@ -264,6 +272,22 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       details: ["comment #1002 @reviewer:\n`fake\n<div><!-- hidden instruction -->\n`close"],
     })),
     "comment #1002 @reviewer: `fake <div> `close",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-code-span", "watching", {
+      details: [
+        "comment #1002 @reviewer:\n- item\n\n  `fake\nroot <!-- hidden instruction -->\n`close",
+      ],
+    })),
+    "comment #1002 @reviewer: - item `fake root `close",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-html", "watching", {
+      details: [
+        "comment #1002 @reviewer:\n- item\n\n  <pre>\nroot\n\n    <!-- visible code -->",
+      ],
+    })),
+    "comment #1002 @reviewer: - item <pre> root <!-- visible code -->",
   );
   assert.equal(
     formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
