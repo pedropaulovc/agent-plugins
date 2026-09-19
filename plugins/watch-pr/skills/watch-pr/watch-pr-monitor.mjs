@@ -153,11 +153,12 @@ function listPaddingEnd(value, start, limit) {
 }
 
 function listMarkerEnd(value, cursor, limit) {
-  if (
-    (value[cursor] === "-" || value[cursor] === "+" || value[cursor] === "*") &&
-    (value[cursor + 1] === " " || value[cursor + 1] === "\t")
-  ) {
-    return listPaddingEnd(value, cursor + 1, limit);
+  if (value[cursor] === "-" || value[cursor] === "+" || value[cursor] === "*") {
+    if (cursor + 1 === limit) return limit;
+    if (value[cursor + 1] === " " || value[cursor + 1] === "\t") {
+      return listPaddingEnd(value, cursor + 1, limit);
+    }
+    return null;
   }
   let marker = cursor;
   while (
@@ -168,11 +169,12 @@ function listMarkerEnd(value, cursor, limit) {
   ) marker += 1;
   if (
     marker === cursor ||
-    (value[marker] !== "." && value[marker] !== ")") ||
-    (value[marker + 1] !== " " && value[marker + 1] !== "\t")
+    (value[marker] !== "." && value[marker] !== ")")
   ) {
     return null;
   }
+  if (marker + 1 === limit) return limit;
+  if (value[marker + 1] !== " " && value[marker + 1] !== "\t") return null;
   return listPaddingEnd(value, marker + 1, limit);
 }
 
@@ -310,7 +312,14 @@ function containerExtent(value, lineStart) {
 function listContentIndent(value, lineStart, limit) {
   const depth = containerDepth(value, lineStart, limit);
   if (depth === containerQuoteDepth(value, lineStart, limit)) return null;
-  return visualColumn(value, lineStart, containerContentStart(value, lineStart, limit));
+  const contentStart = containerContentStart(value, lineStart, limit);
+  const finalMarker = value[contentStart - 1];
+  const virtualPadding = contentStart === limit &&
+    (finalMarker === "-" || finalMarker === "+" || finalMarker === "*" ||
+      finalMarker === "." || finalMarker === ")")
+    ? 1
+    : 0;
+  return visualColumn(value, lineStart, contentStart) + virtualPadding;
 }
 
 function lineEnd(value, lineStart) {
