@@ -147,6 +147,27 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     })),
     "comment #987 @reviewer: Keep `const marker = \"<!-- more -->\"`. const indented = \"<!-- indented -->\"; Escaped \\<!-- escaped -->. ```html <!-- fenced example --> ```",
   );
+
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-crlf-comment", "watching", {
+      details: [
+        "comment #988 @reviewer:\r\n```html\r\n<!-- visible source -->\r\n```\r\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #988 @reviewer: ```html <!-- visible source --> ``` Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-paragraph-comment", "watching", {
+      details: ["comment #989 @reviewer: `first\n\n<!-- hidden metadata -->\n\nsecond`"],
+    })),
+    "comment #989 @reviewer: `first second`",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-invalid-fence", "watching", {
+      details: ["comment #990 @reviewer:\n```a`b\n<!-- hidden metadata -->\nKeep"],
+    })),
+    "comment #990 @reviewer: ```a`b Keep",
+  );
 });
 
 test("sanitizes control characters and bounds actionable wake lines", () => {

@@ -136,8 +136,7 @@ function delimiterRunLength(value, index, delimiter) {
   return end - index;
 }
 
-function isFencePosition(value, index) {
-  const lineStart = value.lastIndexOf("\n", index - 1) + 1;
+function isFencePosition(value, lineStart, index) {
   if (index - lineStart > 3) return false;
   for (let cursor = lineStart; cursor < index; cursor += 1) {
     if (value[cursor] !== " ") return false;
@@ -148,7 +147,11 @@ function isFencePosition(value, index) {
 function closesFence(value, index, runLength) {
   let cursor = index + runLength;
   while (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
-  return cursor === value.length || value[cursor] === "\n";
+  return (
+    cursor === value.length ||
+    value[cursor] === "\n" ||
+    value[cursor] === "\r"
+  );
 }
 
 function isEscaped(value, index) {
@@ -159,10 +162,9 @@ function isEscaped(value, index) {
   return backslashes % 2 === 1;
 }
 
-function isIndentedCodeLine(value, index) {
-  const lineStart = value.lastIndexOf("\n", index - 1) + 1;
+function isIndentedCodeLine(value, lineStart) {
   let indentation = 0;
-  for (let cursor = lineStart; cursor < index; cursor += 1) {
+  for (let cursor = lineStart; cursor < value.length; cursor += 1) {
     if (value[cursor] === " ") {
       indentation += 1;
       continue;
@@ -176,9 +178,30 @@ function isIndentedCodeLine(value, index) {
   return indentation >= 4;
 }
 
+function validFenceOpener(value, index, runLength, delimiter) {
+  if (delimiter !== "`") return true;
+  for (let cursor = index + runLength; cursor < value.length; cursor += 1) {
+    if (value[cursor] === "\n" || value[cursor] === "\r") return true;
+    if (value[cursor] === "`") return false;
+  }
+  return true;
+}
+
+function blankLineFollows(value, newlineIndex) {
+  let cursor = newlineIndex + 1;
+  while (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
+  if (value[cursor] === "\r") cursor += 1;
+  return value[cursor] === "\n";
+}
+
 function hasClosingInlineDelimiter(value, index, runLength) {
   let cursor = index;
-  while ((cursor = value.indexOf("`", cursor)) !== -1) {
+  while (cursor < value.length) {
+    if (value[cursor] === "\n" && blankLineFollows(value, cursor)) return false;
+    if (value[cursor] !== "`") {
+      cursor += 1;
+      continue;
+    }
     const candidateLength = delimiterRunLength(value, cursor, "`");
     if (candidateLength === runLength) return true;
     cursor += candidateLength;
@@ -189,6 +212,8 @@ function hasClosingInlineDelimiter(value, index, runLength) {
 function stripMarkdownHtmlComments(value) {
   let result = "";
   let cursor = 0;
+  let lineStart = 0;
+  let indentedCodeLine = isIndentedCodeLine(value, lineStart);
   let fenceDelimiter;
   let fenceLength = 0;
   let inlineLength = 0;
@@ -196,51 +221,59 @@ function stripMarkdownHtmlComments(value) {
   while (cursor < value.length) {
     const character = value[cursor];
     if (fenceDelimiter) {
-      const runLength = delimiterRunLength(value, cursor, fenceDelimiter);
-      if (
-        character === fenceDelimiter &&
-        runLength >= fenceLength &&
-        isFencePosition(value, cursor) &&
-        closesFence(value, cursor, runLength)
-      ) {
+      if (character === fenceDelimiter) {
+        const runLength = delimiterRunLength(value, cursor, fenceDelimiter);
         result += value.slice(cursor, cursor + runLength);
         cursor += runLength;
-        fenceDelimiter = undefined;
-        fenceLength = 0;
+        if (
+          runLength >= fenceLength &&
+          isFencePosition(value, lineStart, cursor - runLength) &&
+          closesFence(value, cursor - runLength, runLength)
+        ) {
+          fenceDelimiter = undefined;
+          fenceLength = 0;
+        }
         continue;
       }
       result += character;
       cursor += 1;
+      if (character === "\n") {
+        lineStart = cursor;
+        indentedCodeLine = isIndentedCodeLine(value, lineStart);
+      }
       continue;
     }
 
     if (inlineLength > 0) {
-      if (character !== "`") {
-        result += character;
-        cursor += 1;
+      if (character === "`") {
+        const runLength = delimiterRunLength(value, cursor, "`");
+        result += value.slice(cursor, cursor + runLength);
+        cursor += runLength;
+        if (runLength === inlineLength) inlineLength = 0;
         continue;
       }
-      const runLength = delimiterRunLength(value, cursor, "`");
-      result += value.slice(cursor, cursor + runLength);
-      cursor += runLength;
-      if (runLength === inlineLength) inlineLength = 0;
+      result += character;
+      cursor += 1;
+      if (character === "\n") {
+        lineStart = cursor;
+        indentedCodeLine = isIndentedCodeLine(value, lineStart);
+      }
       continue;
     }
 
-    if ((character === "`" || character === "~") && isFencePosition(value, cursor)) {
+    if (character === "`" || character === "~") {
       const runLength = delimiterRunLength(value, cursor, character);
-      if (runLength >= 3) {
-        result += value.slice(cursor, cursor + runLength);
-        cursor += runLength;
+      if (
+        runLength >= 3 &&
+        isFencePosition(value, lineStart, cursor) &&
+        validFenceOpener(value, cursor, runLength, character)
+      ) {
         fenceDelimiter = character;
         fenceLength = runLength;
-        continue;
-      }
-    }
-
-    if (character === "`") {
-      const runLength = delimiterRunLength(value, cursor, "`");
-      if (hasClosingInlineDelimiter(value, cursor + runLength, runLength)) {
+      } else if (
+        character === "`" &&
+        hasClosingInlineDelimiter(value, cursor + runLength, runLength)
+      ) {
         inlineLength = runLength;
       }
       result += value.slice(cursor, cursor + runLength);
@@ -251,17 +284,27 @@ function stripMarkdownHtmlComments(value) {
     if (
       value.startsWith("<!--", cursor) &&
       !isEscaped(value, cursor) &&
-      !isIndentedCodeLine(value, cursor)
+      !indentedCodeLine
     ) {
       const commentEnd = value.indexOf("-->", cursor + 4);
       if (commentEnd !== -1) {
-        cursor = commentEnd + 3;
+        const nextCursor = commentEnd + 3;
+        const lastNewline = value.lastIndexOf("\n", nextCursor - 1);
+        if (lastNewline >= cursor) {
+          lineStart = lastNewline + 1;
+          indentedCodeLine = isIndentedCodeLine(value, lineStart);
+        }
+        cursor = nextCursor;
         continue;
       }
     }
 
     result += character;
     cursor += 1;
+    if (character === "\n") {
+      lineStart = cursor;
+      indentedCodeLine = isIndentedCodeLine(value, lineStart);
+    }
   }
   return result;
 }
