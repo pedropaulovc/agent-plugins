@@ -14,6 +14,13 @@ const MAX_UPDATE_OUTPUT_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
 const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
 const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
+// Deterministic backend record prefixes (`comment`/`review`/`feedback`) that precede a
+// Markdown body: the body always follows the `:` that closes the structured header.
+const DETAIL_BODY_PREFIX_RES = [
+  /^comment #\d+ @[^\s:]+(?: \S+)?:\s/u,
+  /^review #\d+ @[^\s:]+ [^\s:]+(?: \S+)?:\s/u,
+  /^feedback \[[^\]\s]*\] #\d+(?: [^\s@]\S*)? @[^\s:]+(?: \S+)?:\s/u,
+];
 
 function permanent(message) {
   return new PermanentMonitorError(message);
@@ -145,56 +152,79 @@ function consumeContainerIndent(value, cursor, limit) {
   return cursor;
 }
 
-function listPaddingEnd(value, start, limit) {
-  if (value[start] === "\t") return start + 1;
+function listPaddingEnd(value, start, limit, markerColumn) {
   let end = start;
-  while (end < limit && end - start < 5 && value[end] === " ") end += 1;
-  return end - start <= 4 ? end : start + 1;
+  let column = markerColumn;
+  while (end < limit && column - markerColumn < 5) {
+    if (value[end] === " ") column += 1;
+    else if (value[end] === "\t") column += 4 - (column % 4);
+    else break;
+    end += 1;
+  }
+  if (column - markerColumn <= 4) return { end, column };
+  return { end: start + 1, column: markerColumn + 1 };
 }
 
-function listMarkerEnd(value, cursor, limit) {
-  if (value[cursor] === "-" || value[cursor] === "+" || value[cursor] === "*") {
-    if (cursor + 1 === limit) return limit;
-    if (value[cursor + 1] === " " || value[cursor + 1] === "\t") {
-      return listPaddingEnd(value, cursor + 1, limit);
-    }
-    return null;
-  }
+function listMarkerEnd(value, cursor, limit, column) {
   let marker = cursor;
-  while (
-    marker < limit &&
-    marker - cursor < 9 &&
-    value[marker] >= "0" &&
-    value[marker] <= "9"
-  ) marker += 1;
-  if (
-    marker === cursor ||
-    (value[marker] !== "." && value[marker] !== ")")
-  ) {
-    return null;
+  if (value[cursor] === "-" || value[cursor] === "+" || value[cursor] === "*") {
+    marker = cursor + 1;
+  } else {
+    while (
+      marker < limit &&
+      marker - cursor < 9 &&
+      value[marker] >= "0" &&
+      value[marker] <= "9"
+    ) marker += 1;
+    if (
+      marker === cursor ||
+      (value[marker] !== "." && value[marker] !== ")")
+    ) {
+      return null;
+    }
+    marker += 1;
   }
-  if (marker + 1 === limit) return limit;
-  if (value[marker + 1] !== " " && value[marker + 1] !== "\t") return null;
-  return listPaddingEnd(value, marker + 1, limit);
+  const markerColumn = column + (marker - cursor);
+  if (marker >= limit) return { end: limit, column: markerColumn };
+  if (value[marker] !== " " && value[marker] !== "\t") return null;
+  return listPaddingEnd(value, marker, limit, markerColumn);
+}
+
+function scanContainers(value, lineStart, limit) {
+  let cursor = lineStart;
+  let column = 0;
+  let depth = 0;
+  let quoteDepth = 0;
+  while (cursor < limit) {
+    const markerStart = consumeContainerIndent(value, cursor, limit);
+    const markerColumn = column + (markerStart - cursor);
+    if (markerStart < limit && value[markerStart] === ">") {
+      cursor = markerStart + 1;
+      column = markerColumn + 1;
+      if (cursor < limit && value[cursor] === " ") {
+        cursor += 1;
+        column += 1;
+      } else if (cursor < limit && value[cursor] === "\t") {
+        column += 4 - (column % 4);
+        cursor += 1;
+      }
+      depth += 1;
+      quoteDepth += 1;
+      continue;
+    }
+    const marker = markerStart < limit
+      ? listMarkerEnd(value, markerStart, limit, markerColumn)
+      : null;
+    if (marker === null) break;
+    cursor = marker.end;
+    column = marker.column;
+    depth += 1;
+  }
+  return { contentStart: cursor, column, depth, quoteDepth };
 }
 
 function containerContentStart(value, lineStart, limit) {
-  let cursor = lineStart;
-  while (cursor < limit) {
-    const marker = consumeContainerIndent(value, cursor, limit);
-    if (value[marker] === ">") {
-      cursor = marker + 1;
-      if (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
-      continue;
-    }
-    const markerEnd = listMarkerEnd(value, marker, limit);
-    if (markerEnd !== null) {
-      cursor = markerEnd;
-      continue;
-    }
-    break;
-  }
-  return cursor;
+  return scanContainers(value, lineStart, limit).contentStart;
 }
 
 function isFencePosition(value, lineStart, index) {
@@ -242,8 +272,8 @@ function visualColumn(value, start, end) {
 }
 
 function isIndentedCodeLine(value, lineStart, activeListIndent = 0) {
-  const contentStart = containerContentStart(value, lineStart, value.length);
-  let column = visualColumn(value, lineStart, contentStart);
+  const { contentStart, column: contentColumn } = scanContainers(value, lineStart, value.length);
+  let column = contentColumn;
   for (let cursor = contentStart; cursor < value.length; cursor += 1) {
     if (value[cursor] === " ") {
       column += 1;
@@ -256,70 +286,40 @@ function isIndentedCodeLine(value, lineStart, activeListIndent = 0) {
     break;
   }
   const explicitListIndent = listContentIndent(value, lineStart, value.length);
-  const baseIndent = explicitListIndent ??
-    (activeListIndent || visualColumn(value, lineStart, contentStart));
+  const baseIndent = explicitListIndent ?? (activeListIndent || contentColumn);
   return column >= baseIndent + 4;
 }
 
 function containerDepth(value, lineStart, limit) {
-  let cursor = lineStart;
-  let depth = 0;
-  while (cursor < limit) {
-    const marker = consumeContainerIndent(value, cursor, limit);
-    if (value[marker] === ">") {
-      cursor = marker + 1;
-      if (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
-      depth += 1;
-      continue;
-    }
-    const markerEnd = listMarkerEnd(value, marker, limit);
-    if (markerEnd === null) break;
-    cursor = markerEnd;
-    depth += 1;
-  }
-  return depth;
+  return scanContainers(value, lineStart, limit).depth;
 }
 
 function containerQuoteDepth(value, lineStart, limit) {
-  let cursor = lineStart;
-  let depth = 0;
-  while (cursor < limit) {
-    const marker = consumeContainerIndent(value, cursor, limit);
-    if (value[marker] === ">") {
-      cursor = marker + 1;
-      if (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
-      depth += 1;
-      continue;
-    }
-    const markerEnd = listMarkerEnd(value, marker, limit);
-    if (markerEnd === null) break;
-    cursor = markerEnd;
-  }
-  return depth;
+  return scanContainers(value, lineStart, limit).quoteDepth;
 }
 
 function containerExtent(value, lineStart) {
-  let cursor = containerContentStart(value, lineStart, value.length);
-  let column = visualColumn(value, lineStart, cursor);
+  const { contentStart, column } = scanContainers(value, lineStart, value.length);
+  let cursor = contentStart;
+  let extent = column;
   while (value[cursor] === " " || value[cursor] === "\t") {
-    if (value[cursor] === " ") column += 1;
-    else column += 4 - (column % 4);
+    if (value[cursor] === " ") extent += 1;
+    else extent += 4 - (extent % 4);
     cursor += 1;
   }
-  return column;
+  return extent;
 }
 
 function listContentIndent(value, lineStart, limit) {
-  const depth = containerDepth(value, lineStart, limit);
-  if (depth === containerQuoteDepth(value, lineStart, limit)) return null;
-  const contentStart = containerContentStart(value, lineStart, limit);
+  const { contentStart, column, depth, quoteDepth } = scanContainers(value, lineStart, limit);
+  if (depth === quoteDepth) return null;
   const finalMarker = value[contentStart - 1];
   const virtualPadding = contentStart === limit &&
     (finalMarker === "-" || finalMarker === "+" || finalMarker === "*" ||
       finalMarker === "." || finalMarker === ")")
     ? 1
     : 0;
-  return visualColumn(value, lineStart, contentStart) + virtualPadding;
+  return column + virtualPadding;
 }
 
 function lineEnd(value, lineStart) {
@@ -340,9 +340,13 @@ function startsNonParagraphBlock(value, lineStart, lineEnd) {
   if (isBlankMarkdownLine(value, lineStart, lineEnd)) return true;
   let cursor = containerContentStart(value, lineStart, lineEnd);
   cursor = consumeContainerIndent(value, cursor, lineEnd);
+  if (value[cursor] === "`" || value[cursor] === "~") {
+    const delimiter = value[cursor];
+    const runLength = delimiterRunLength(value, cursor, delimiter);
+    if (runLength >= 3 && validFenceOpener(value, cursor, runLength, delimiter)) return true;
+  }
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
   if (/^#{1,6}(?:[ \t]|$)/u.test(line)) return true;
-  if (/^(?:`{3,}|~{3,})/u.test(line)) return true;
   if (/^(?:=+|-+)[ \t]*$/u.test(line)) return true;
   return /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/u.test(line);
 }
@@ -611,8 +615,25 @@ function stripMarkdownHtmlComments(value) {
   return result;
 }
 
+function markdownBodyStart(detail) {
+  for (const pattern of DETAIL_BODY_PREFIX_RES) {
+    const match = pattern.exec(detail);
+    if (match) return match[0].length;
+  }
+  return 0;
+}
+
+function stripDetailHtmlComments(detail) {
+  const bodyStart = markdownBodyStart(detail);
+  if (bodyStart === 0) return stripMarkdownHtmlComments(detail);
+  return (
+    stripMarkdownHtmlComments(detail.slice(0, bodyStart)) +
+    stripMarkdownHtmlComments(detail.slice(bodyStart))
+  );
+}
+
 function compactDetail(detail) {
-  const value = stripMarkdownHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""))
+  const value = stripDetailHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""))
     .replace(/\s+/gu, " ")
     .replace(CONTROL_CHARACTERS_RE, "")
     .trim();

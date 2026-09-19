@@ -263,6 +263,40 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1011 @reviewer: - const marker = \"<!-- visible -->\";",
     ].join("\n"),
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-mixed-list-padding", "watching", {
+      details: [
+        "comment #1012 @reviewer:\n- \titem\n\n      <!-- hidden -->Keep",
+        "comment #1013 @reviewer:\n- \titem\n\n        const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1012 @reviewer: - item Keep",
+      "comment #1013 @reviewer: - item const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-invalid-fence-predecessor", "watching", {
+      details: ["comment #1014 @reviewer:\n```a`b\n    <!-- hidden -->\nKeep"],
+    })),
+    "comment #1014 @reviewer: ```a`b Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-record-prefix-body", "watching", {
+      details: [
+        "comment #1015 @reviewer:     <!-- visible example -->",
+        "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1:     <!-- visible example -->",
+        "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer:     <!-- visible example -->",
+        "comment #1018 @reviewer: paragraph\n    <!-- hidden -->Keep",
+      ],
+    })),
+    [
+      "comment #1015 @reviewer: <!-- visible example -->",
+      "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1: <!-- visible example -->",
+      "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer: <!-- visible example -->",
+      "comment #1018 @reviewer: paragraph Keep",
+    ].join("\n"),
+  );
 });
 
 test("prints each actionable category on its own line", () => {
