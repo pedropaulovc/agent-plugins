@@ -313,6 +313,18 @@ function containerExtent(value, lineStart) {
   return extent;
 }
 
+// Visual column of the first non-space character, counted before any container marker is
+// consumed, which is where the line sits relative to an enclosing list item's content.
+function leadingIndentColumn(value, lineStart) {
+  let cursor = lineStart;
+  let column = 0;
+  while (value[cursor] === " " || value[cursor] === "\t") {
+    column += value[cursor] === " " ? 1 : 4 - (column % 4);
+    cursor += 1;
+  }
+  return column;
+}
+
 function listContentIndent(value, lineStart, limit) {
   const { contentStart, column, depth, quoteDepth } = scanContainers(value, lineStart, limit);
   if (depth === quoteDepth) return null;
@@ -351,26 +363,40 @@ function opensFence(value, cursor) {
   return runLength >= 3 && validFenceOpener(value, cursor, runLength, delimiter);
 }
 
-// CommonMark HTML blocks that close on a token rather than on a blank line: type 1 raw text
-// elements, type 2 comments, type 3 processing instructions, type 4 declarations and type 5
-// CDATA. Each may interrupt a paragraph, and the line holding the closing token ends the
-// block, so the line after it carries no open paragraph. Types 6 and 7 close on a blank
-// line, which the blank-predecessor path already handles.
+// CommonMark HTML blocks. Types 1 to 5 close on a token: raw text elements, comments,
+// processing instructions, declarations and CDATA. Types 6 and 7 close on a blank line and
+// swallow every line until then, so a comment on one of those lines is hidden too.
+//
+// Type 7 is the one kind CommonMark forbids from interrupting a paragraph. This scanner
+// opens it anyway, because guarding on the previous line either misreads laziness across a
+// container boundary or costs a walk back to the start of the document; `interrupts: false`
+// marks the case so a type 7 opener under an open paragraph reconciles the detail instead
+// of silently choosing a reading.
+const HTML_BLOCK_TAG_NAMES =
+  "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|" +
+  "details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|" +
+  "h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|" +
+  "noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|" +
+  "thead|title|tr|track|ul";
 const HTML_BLOCK_KINDS = [
   { open: /^<(?:script|pre|style|textarea)(?:[ \t\r>]|$)/iu, close: /<\/(?:script|pre|style|textarea)>/iu },
   { open: /^<!--/u, close: /-->/u },
   { open: /^<\?/u, close: /\?>/u },
-  { open: /^<![A-Za-z]/u, close: />/u },
+  // cmark-gfm, the renderer GitHub uses, keeps the original declaration rule: `<!` plus an
+  // uppercase ASCII letter. `<!foo>` stays paragraph text, so its continuation stays hidden.
+  { open: /^<![A-Z]/u, close: />/u },
   { open: /^<!\[CDATA\[/u, close: /\]\]>/u },
+  { open: new RegExp(`^</?(?:${HTML_BLOCK_TAG_NAMES})(?:[ \t\r>]|/>|$)`, "iu"), close: null },
+  { open: /^<\/?[A-Za-z][A-Za-z0-9-]*(?:[ \t][^<>]*)?\/?>[ \t]*\r?$/u, close: null, interrupts: false },
 ];
 
 function htmlBlockKindAt(value, lineStart, lineEnd) {
-  const cursor = blockContentStart(value, lineStart, lineEnd);
-  if (value[cursor] !== "<" || isIndentedCodeLine(value, lineStart)) return null;
-  const line = value.slice(cursor, lineEnd);
+  const blockStart = blockContentStart(value, lineStart, lineEnd);
+  if (value[blockStart] !== "<" || isIndentedCodeLine(value, lineStart)) return null;
+  const line = value.slice(blockStart, lineEnd);
   for (const kind of HTML_BLOCK_KINDS) {
     const opener = kind.open.exec(line);
-    if (opener) return { kind, contentStart: cursor + opener[0].length };
+    if (opener) return { kind, blockStart, contentStart: blockStart + opener[0].length };
   }
   return null;
 }
@@ -379,7 +405,7 @@ function htmlBlockKindAt(value, lineStart, lineEnd) {
 // closing token lands on a later line keeps the block open across the lines in between.
 function completesHtmlBlock(value, lineStart, lineEnd) {
   const opened = htmlBlockKindAt(value, lineStart, lineEnd);
-  if (!opened) return false;
+  if (!opened || !opened.kind.close) return false;
   return opened.kind.close.test(value.slice(opened.contentStart, lineEnd));
 }
 
@@ -388,13 +414,17 @@ const HTML_BLOCK_CLOSED = { closed: true };
 
 function advanceHtmlBlockState(value, lineStart, lineEnd, openHtmlBlock) {
   if (openHtmlBlock) {
-    if (!openHtmlBlock.close.test(value.slice(lineStart, lineEnd))) return openHtmlBlock;
-    return HTML_BLOCK_CLOSED;
+    const ends = openHtmlBlock.kind.close
+      ? openHtmlBlock.kind.close.test(value.slice(lineStart, lineEnd))
+      : isBlankMarkdownLine(value, lineStart, lineEnd);
+    return ends ? HTML_BLOCK_CLOSED : openHtmlBlock;
   }
   const opened = htmlBlockKindAt(value, lineStart, lineEnd);
   if (!opened) return null;
-  if (opened.kind.close.test(value.slice(opened.contentStart, lineEnd))) return HTML_BLOCK_CLOSED;
-  return opened.kind;
+  if (opened.kind.close && opened.kind.close.test(value.slice(opened.contentStart, lineEnd))) {
+    return HTML_BLOCK_CLOSED;
+  }
+  return opened;
 }
 
 function isParagraphContentLine(value, lineStart, lineEnd) {
@@ -402,7 +432,9 @@ function isParagraphContentLine(value, lineStart, lineEnd) {
   if (isIndentedCodeLine(value, lineStart)) return false;
   const cursor = blockContentStart(value, lineStart, lineEnd);
   if (opensFence(value, cursor)) return false;
-  if (completesHtmlBlock(value, lineStart, lineEnd)) return false;
+  // Any raw block opener ends the paragraph, whether or not its closing token is on the
+  // line: the lines that follow belong to the block and cannot be lazily continued.
+  if (htmlBlockKindAt(value, lineStart, lineEnd) !== null) return false;
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
   return !ATX_HEADING_RE.test(line) &&
     !THEMATIC_BREAK_RE.test(line) &&
@@ -449,6 +481,14 @@ function listIndentForNextLine(
   const nextExplicitIndent = establishedListContentIndent(value, nextLineStart, nextLineEnd);
   if (nextExplicitIndent !== null) return nextExplicitIndent;
   if (isBlankMarkdownLine(value, nextLineStart, nextLineEnd)) return indent;
+  // A list indent only carries into lines of the same block quote context; entering or
+  // leaving a quote starts a different container, whose own markers set the indent.
+  if (
+    containerQuoteDepth(value, nextLineStart, nextLineEnd) !==
+    containerQuoteDepth(value, previousLineStart, previousLineEnd)
+  ) {
+    return 0;
+  }
   if (indent > 0 && containerExtent(value, nextLineStart) >= indent) return indent;
   return 0;
 }
@@ -488,12 +528,35 @@ function establishedListContentIndent(value, lineStart, limit) {
   return listContentIndent(value, lineStart, limit);
 }
 
-function establishedContainerDepth(value, lineStart, limit) {
-  if (!isLazyListContinuation(value, lineStart, limit)) {
-    return containerDepth(value, lineStart, limit);
+// The container that owns the paragraph left open by this line. A lazy continuation drops
+// container markers without opening anything (root-level text under a blockquote, or a `2.`
+// marker that cannot interrupt), so the paragraph still belongs to the line that began it.
+// `floor` is the first line the scanner knows is outside any raw HTML block: lines before it
+// are block markup that only looks like paragraph text.
+function openParagraphContainer(value, lineStart, limit, floor) {
+  let start = lineStart;
+  let end = limit;
+  if (isLazyListContinuation(value, start, end)) {
+    end = start - 1;
+    start = previousLineStartOf(value, start);
   }
-  const previousStart = previousLineStartOf(value, lineStart);
-  return containerDepth(value, previousStart, lineStart - 1);
+  let quoteDepth = containerQuoteDepth(value, start, end);
+  let listDepth = containerDepth(value, start, end) - quoteDepth;
+  while (isParagraphContentLine(value, start, end)) {
+    const previousStart = previousLineStartOf(value, start);
+    if (previousStart < floor) break;
+    const previousEnd = start - 1;
+    if (!isParagraphContentLine(value, previousStart, previousEnd)) break;
+    const previousQuoteDepth = containerQuoteDepth(value, previousStart, previousEnd);
+    const previousListDepth = containerDepth(value, previousStart, previousEnd) - previousQuoteDepth;
+    // Adding a marker of either kind opens a new container instead of continuing lazily.
+    if (quoteDepth > previousQuoteDepth || listDepth > previousListDepth) break;
+    quoteDepth = previousQuoteDepth;
+    listDepth = previousListDepth;
+    start = previousStart;
+    end = previousEnd;
+  }
+  return { quoteDepth, listDepth };
 }
 
 function startsIndentedCodeLine(
@@ -504,6 +567,7 @@ function startsIndentedCodeLine(
   previousLineWasIndentedCode,
   activeListIndent,
   previousLineEndedHtmlBlock,
+  paragraphFloor,
 ) {
   if (!isIndentedCodeLine(value, lineStart, activeListIndent)) return false;
   if (previousLineWasIndentedCode) return true;
@@ -511,18 +575,75 @@ function startsIndentedCodeLine(
   // the scanner reports that end explicitly; line-local predicates cover the single-line form.
   if (previousLineEndedHtmlBlock) return true;
   if (startsNonParagraphBlock(value, previousLineStart, previousLineEnd)) return true;
-  // The guards above leave an open paragraph on the previous line, so a deeper container
-  // only begins an indented code block when it may interrupt that paragraph.
-  if (
-    containerDepth(value, lineStart, value.length) <=
-    establishedContainerDepth(value, previousLineStart, previousLineEnd)
-  ) {
+  // The guards above leave an open paragraph, so this line only begins an indented code
+  // block when it opens a container of its own that may interrupt that paragraph. Quotes and
+  // lists are compared separately: equal totals can still be two different containers.
+  const openContainer = openParagraphContainer(
+    value,
+    previousLineStart,
+    previousLineEnd,
+    paragraphFloor,
+  );
+  const quoteDepth = containerQuoteDepth(value, lineStart, value.length);
+  const listDepth = containerDepth(value, lineStart, value.length) - quoteDepth;
+  if (quoteDepth <= openContainer.quoteDepth && listDepth <= openContainer.listDepth) {
     return false;
   }
   return interruptsParagraph(value, lineStart, lineEnd(value, lineStart));
 }
 
-function continuesFenceContainer(
+// Which container owns an indented line decides whether it is code, where a comment is
+// literal text, or paragraph continuation, where GitHub hides it. That call is only
+// locally evident while the surrounding lines sit in the same container: once the quote
+// depth changes, or a list indent reaches the line through a marker-less continuation,
+// this scanner can land on either side. Such a detail is reconciled rather than trusted.
+function indentedLineIsAmbiguous(
+  value,
+  lineStart,
+  previousLineStart,
+  previousLineEnd,
+  lastContentStart,
+  lastContentEnd,
+  activeListIndent,
+) {
+  // Indentation measured against the line's own markers only: an inherited list indent is
+  // exactly the quantity in doubt, so it cannot gate the question.
+  if (!isIndentedCodeLine(value, lineStart, 0)) return false;
+  // A blank line closes any paragraph above it, so nothing can be lazily continued across
+  // it; only an enclosing list item, whose indent survives the blank, keeps the question
+  // open.
+  const afterBlankLine = previousLineStart >= 0 &&
+    isBlankMarkdownLine(value, previousLineStart, previousLineEnd);
+  if (afterBlankLine && activeListIndent === 0) return false;
+  // Blank lines carry no container of their own, so the comparison uses the last line that
+  // did. A quote opened or left between the two leaves both readings of this line live,
+  // but only while that line could have left a paragraph open: block markup could not, and
+  // a type 7 opener is the one kind whose own opening is already in doubt.
+  if (lastContentStart >= 0) {
+    const lastKind = htmlBlockKindAt(value, lastContentStart, lastContentEnd);
+    if (
+      (lastKind === null || lastKind.kind.interrupts === false) &&
+      !startsNonParagraphBlock(value, lastContentStart, lastContentEnd) &&
+      containerQuoteDepth(value, lineStart, lineEnd(value, lineStart)) !==
+        containerQuoteDepth(value, lastContentStart, lastContentEnd)
+    ) {
+      return true;
+    }
+  }
+  if (previousLineStart < 0) return false;
+  // A blank line inside a list item restates nothing but ends nothing either: the indent
+  // in force is still the item's own, so the inheritance question below is already settled.
+  if (afterBlankLine || activeListIndent === 0) return false;
+  // A line carrying its own list marker fixes the indent it is measured against, so its
+  // content needs no inherited context to classify.
+  if (establishedListContentIndent(value, lineStart, lineEnd(value, lineStart)) !== null) {
+    return false;
+  }
+  return establishedListContentIndent(value, previousLineStart, previousLineEnd) === null;
+}
+
+// Shared by fenced code and raw HTML blocks: both end where their opening container ends.
+function continuesOpeningContainer(
   value,
   lineStart,
   quoteDepth,
@@ -533,6 +654,10 @@ function continuesFenceContainer(
   if (nextQuoteDepth < quoteDepth) return false;
   if (listDepth === 0) return true;
   if (isBlankMarkdownLine(value, lineStart, lineEnd(value, lineStart))) return true;
+  // A quote marker the block was not already inside starts a container of its own, so the
+  // list item only survives when that marker is indented into the item's content column.
+  // `containerExtent` cannot answer this: it measures the column after the markers.
+  if (nextQuoteDepth > quoteDepth) return leadingIndentColumn(value, lineStart) >= containerIndent;
   const depth = containerDepth(value, lineStart, value.length);
   if (depth - nextQuoteDepth >= listDepth) return true;
   return containerExtent(value, lineStart) >= containerIndent;
@@ -583,10 +708,22 @@ function stripMarkdownHtmlComments(value) {
   let fenceContainerIndent = 0;
   let inlineLength = 0;
   // Raw HTML block state carried across lines: `openHtmlBlock` holds the kind whose closing
-  // token has not been seen yet, and `htmlBlockEndsLine` marks the line that closes a block,
-  // which the newline handlers consume so the next line may start an indented code block.
+  // token has not been seen yet, together with the container it opened in, and
+  // `htmlBlockEndsLine` marks the line that closes a block, which the newline handlers
+  // consume so the next line may start an indented code block.
   let openHtmlBlock = null;
+  let htmlQuoteDepth = 0;
+  let htmlListDepth = 0;
+  let htmlContainerIndent = 0;
   let htmlBlockEndsLine = false;
+  // First line known to sit outside every raw HTML block; paragraph lookback stops here.
+  let paragraphFloor = 0;
+  // Set when a line's block type cannot be decided from the text alone. The caller then
+  // drops every comment in the detail and reports it as unreconciled.
+  let ambiguous = false;
+  // Last line that carried content, so container comparisons can see past blank lines.
+  let lastContentStart = -1;
+  let lastContentEnd = -1;
 
   while (cursor < value.length) {
     const character = value[cursor];
@@ -617,6 +754,10 @@ function stripMarkdownHtmlComments(value) {
       cursor += 1;
       if (character === "\n") {
         const nextLineStart = cursor;
+        if (!isBlankMarkdownLine(value, lineStart, cursor - 1)) {
+          lastContentStart = lineStart;
+          lastContentEnd = cursor - 1;
+        }
         activeListIndent = listIndentForNextLine(
           value,
           lineStart,
@@ -632,11 +773,12 @@ function stripMarkdownHtmlComments(value) {
           indentedCodeLine,
           activeListIndent,
           htmlBlockEndsLine,
+          paragraphFloor,
         );
         htmlBlockEndsLine = false;
         if (
           fenceDelimiter &&
-          !continuesFenceContainer(
+          !continuesOpeningContainer(
             value,
             nextLineStart,
             fenceQuoteDepth,
@@ -668,6 +810,10 @@ function stripMarkdownHtmlComments(value) {
       cursor += 1;
       if (character === "\n") {
         const nextLineStart = cursor;
+        if (!isBlankMarkdownLine(value, lineStart, cursor - 1)) {
+          lastContentStart = lineStart;
+          lastContentEnd = cursor - 1;
+        }
         activeListIndent = listIndentForNextLine(
           value,
           lineStart,
@@ -683,6 +829,7 @@ function stripMarkdownHtmlComments(value) {
           indentedCodeLine,
           activeListIndent,
           htmlBlockEndsLine,
+          paragraphFloor,
         );
         htmlBlockEndsLine = false;
         lineStart = nextLineStart;
@@ -744,12 +891,45 @@ function stripMarkdownHtmlComments(value) {
     cursor += 1;
     if (character === "\n") {
       const nextLineStart = cursor;
+      if (!isBlankMarkdownLine(value, lineStart, cursor - 1)) {
+        lastContentStart = lineStart;
+        lastContentEnd = cursor - 1;
+      }
       const advanced = advanceHtmlBlockState(value, lineStart, cursor - 1, openHtmlBlock);
       if (advanced === HTML_BLOCK_CLOSED) {
         openHtmlBlock = null;
         htmlBlockEndsLine = true;
       } else {
+        if (advanced && advanced !== openHtmlBlock) {
+          const openingDepth = containerDepth(value, lineStart, advanced.blockStart);
+          htmlQuoteDepth = containerQuoteDepth(value, lineStart, advanced.blockStart);
+          htmlListDepth = openingDepth - htmlQuoteDepth;
+          htmlContainerIndent = visualColumn(value, lineStart, advanced.blockStart);
+          // CommonMark forbids this opener from interrupting a paragraph; the scanner
+          // opens it anyway, so the two readings of the lines below it are both live.
+          if (advanced.kind.interrupts === false && followsParagraphContent(value, lineStart)) {
+            ambiguous = true;
+          }
+        }
         openHtmlBlock = advanced;
+      }
+      // A raw block ends with the container it opened in, so the first line outside that
+      // blockquote or list item is already free to start an indented code block.
+      if (
+        openHtmlBlock &&
+        !continuesOpeningContainer(
+          value,
+          nextLineStart,
+          htmlQuoteDepth,
+          htmlListDepth,
+          htmlContainerIndent,
+        )
+      ) {
+        openHtmlBlock = null;
+        htmlQuoteDepth = 0;
+        htmlListDepth = 0;
+        htmlContainerIndent = 0;
+        htmlBlockEndsLine = true;
       }
       activeListIndent = listIndentForNextLine(
         value,
@@ -766,14 +946,31 @@ function stripMarkdownHtmlComments(value) {
         indentedCodeLine,
         activeListIndent,
         htmlBlockEndsLine,
+        paragraphFloor,
       );
+      if (
+        indentedLineIsAmbiguous(
+          value,
+          nextLineStart,
+          lineStart,
+          cursor - 1,
+          lastContentStart,
+          lastContentEnd,
+          activeListIndent,
+        )
+      ) {
+        ambiguous = true;
+      }
       // Lines inside an open raw block are markup, never the start of an indented code block.
       if (openHtmlBlock) indentedCodeLine = false;
+      // Once a line belongs to a raw block, earlier lines can no longer hold an open
+      // paragraph, so paragraph lookback must not walk past this boundary.
+      if (openHtmlBlock || htmlBlockEndsLine) paragraphFloor = nextLineStart;
       htmlBlockEndsLine = false;
       lineStart = nextLineStart;
     }
   }
-  return result;
+  return { text: result, ambiguous };
 }
 
 function markdownBodyStart(detail) {
@@ -784,23 +981,39 @@ function markdownBodyStart(detail) {
   return 0;
 }
 
+// The fallback for an undecidable detail: every comment span goes, and so does an
+// unterminated `<!--` tail, whose hidden text runs to the end of the value.
+function dropEveryHtmlComment(value) {
+  const stripped = value.replace(/<!--[\s\S]*?-->/gu, "");
+  const unterminated = stripped.indexOf("<!--");
+  return unterminated === -1 ? stripped : stripped.slice(0, unterminated);
+}
+
 function stripDetailHtmlComments(detail) {
   const bodyStart = markdownBodyStart(detail);
-  if (bodyStart === 0) return stripMarkdownHtmlComments(detail);
-  return (
-    stripMarkdownHtmlComments(detail.slice(0, bodyStart)) +
-    stripMarkdownHtmlComments(detail.slice(bodyStart))
-  );
+  const prefix = detail.slice(0, bodyStart);
+  const body = detail.slice(bodyStart);
+  const strippedPrefix = stripMarkdownHtmlComments(prefix);
+  const strippedBody = stripMarkdownHtmlComments(body);
+  // Markdown-aware fidelity holds only while the parse is certain. Otherwise the detail
+  // loses every comment, hidden or not, and is reported for reconciliation: an omitted
+  // detail sends the root agent to `get_pr`, where it reads the feedback in full.
+  if (strippedPrefix.ambiguous || strippedBody.ambiguous) {
+    return { value: dropEveryHtmlComment(prefix) + dropEveryHtmlComment(body), reconcile: true };
+  }
+  return { value: strippedPrefix.text + strippedBody.text, reconcile: false };
 }
 
 function compactDetail(detail) {
-  const value = stripDetailHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""))
+  const stripped = stripDetailHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""));
+  const value = stripped.value
     .replace(/\s+/gu, " ")
     .replace(CONTROL_CHARACTERS_RE, "")
     .trim();
   return {
     value: truncate(value, MAX_DETAIL_LENGTH),
     truncated: value.length > MAX_DETAIL_LENGTH,
+    reconcile: stripped.reconcile,
   };
 }
 
@@ -821,7 +1034,9 @@ export function formatMonitorEvent(event) {
   if (details.length === 0) return null;
 
   const actionable = [];
-  let omitted = compactedDetails.filter((detail) => detail.truncated).length;
+  // A reconciled detail lost comment text it could not classify, so it counts as omitted:
+  // the overflow marker is what tells the root agent to call `get_pr` for the full body.
+  let omitted = compactedDetails.filter((detail) => detail.truncated || detail.reconcile).length;
   for (const detail of details) {
     const match = OVERFLOW_DETAIL_RE.exec(detail);
     const count = match ? Number(match[1]) : Number.NaN;

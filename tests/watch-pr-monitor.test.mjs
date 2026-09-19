@@ -381,6 +381,84 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1040 @reviewer: paragraph <pre>x</pre>",
     ].join("\n"),
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-block-scope", "watching", {
+      details: [
+        "comment #1041 @reviewer:\n<!foo>\n    <!-- hidden -->",
+        "comment #1042 @reviewer:\n<!FOO>\n    <!-- visible code -->",
+        "comment #1043 @reviewer:\n> <pre>x\n    <!-- visible code -->",
+        "comment #1044 @reviewer:\n- <pre>x\nparagraph\n\n    <!-- visible code -->",
+        "comment #1045 @reviewer:\n> <pre>x\n>     <!-- hidden -->",
+      ],
+    })),
+    [
+      "comment #1041 @reviewer: <!foo>",
+      "comment #1042 @reviewer: <!FOO> <!-- visible code -->",
+      "comment #1043 @reviewer: > <pre>x <!-- visible code -->",
+      "comment #1044 @reviewer: - <pre>x paragraph <!-- visible code -->",
+      "comment #1045 @reviewer: > <pre>x >",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-blank-closing-blocks", "watching", {
+      details: [
+        "comment #1046 @reviewer:\n<div>\n# heading\n    <!-- hidden -->",
+        "comment #1047 @reviewer:\n</pre>\n# heading\n    <!-- hidden -->",
+        "comment #1048 @reviewer:\n1. <pre>x\n> >     <!-- visible code -->",
+        "comment #1049 @reviewer:\n- <pre>x\n  >     <!-- hidden -->",
+      ],
+    })),
+    [
+      "comment #1046 @reviewer: <div> # heading",
+      "comment #1047 @reviewer: </pre> # heading",
+      "comment #1048 @reviewer: 1. <pre>x > > <!-- visible code -->",
+      "comment #1049 @reviewer: - <pre>x >",
+    ].join("\n"),
+  );
+});
+
+test("drops every comment and reports a detail whose block structure is undecidable", () => {
+  const reconciled = formatMonitorEvent(monitorEvent("event-ambiguous", "watching", {
+    details: [
+      // A quote left and re-entered around a lazily continued paragraph: the indented line
+      // is either that paragraph or code inside the quote.
+      "comment #1050 @reviewer:\n> text\n]]>\n>     <!-- hidden -->",
+      // A type 7 opener under an open paragraph, which CommonMark forbids from starting a
+      // block there and cmark-gfm honours inconsistently across container boundaries.
+      "comment #1051 @reviewer:\ntext\n</pre>\n    <!-- hidden -->",
+      // An unterminated comment in an undecidable detail loses its tail as well.
+      "comment #1052 @reviewer:\n> text\n]]>\n>     <!-- hidden",
+    ],
+  }));
+
+  assert.doesNotMatch(reconciled, /<!--|hidden/u);
+  assert.equal(
+    reconciled,
+    [
+      "comment #1050 @reviewer: > text ]]> >",
+      "comment #1051 @reviewer: text </pre>",
+      "comment #1052 @reviewer: > text ]]> >",
+      "+3 more changes",
+    ].join("\n"),
+  );
+
+  // Neighbouring shapes the scanner can still decide keep full fidelity and no marker.
+  const decided = formatMonitorEvent(monitorEvent("event-decidable", "watching", {
+    details: [
+      "comment #1053 @reviewer:\ntext\n\n</pre>\n    <!-- hidden -->",
+      "comment #1054 @reviewer:\n> text\n\n    <!-- visible code -->",
+      "comment #1055 @reviewer:\n- item\n\n      <!-- visible code -->",
+    ],
+  }));
+
+  assert.equal(
+    decided,
+    [
+      "comment #1053 @reviewer: text </pre>",
+      "comment #1054 @reviewer: > text <!-- visible code -->",
+      "comment #1055 @reviewer: - item <!-- visible code -->",
+    ].join("\n"),
+  );
 });
 
 test("prints each actionable category on its own line", () => {
