@@ -240,6 +240,12 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1002 @reviewer: \\`fake \\` Keep",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-code-span-block-boundary", "watching", {
+      details: ["comment #1002 @reviewer:\n> `fake\n# heading <!-- hidden instruction -->\n`close"],
+    })),
+    "comment #1002 @reviewer: > `fake # heading `close",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
       details: [
         "comment #1003 @reviewer:\n- item\n\n    <!-- hidden -->Keep",

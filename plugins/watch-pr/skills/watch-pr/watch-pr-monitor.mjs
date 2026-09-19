@@ -679,10 +679,34 @@ function blankLineFollows(value, newlineIndex) {
   return value[cursor] === "\n";
 }
 
-function hasClosingInlineDelimiter(value, index, runLength) {
+function hasClosingInlineDelimiter(value, index, runLength, openingLineStart) {
+  const openingDepth = containerDepth(value, openingLineStart, lineEnd(value, openingLineStart));
+  const openingQuoteDepth = containerQuoteDepth(
+    value,
+    openingLineStart,
+    lineEnd(value, openingLineStart),
+  );
   let cursor = index;
   while (cursor < value.length) {
-    if (value[cursor] === "\n" && blankLineFollows(value, cursor)) return false;
+    if (value[cursor] === "\n") {
+      if (blankLineFollows(value, cursor)) return false;
+      const nextLineStart = cursor + 1;
+      const nextLineEnd = lineEnd(value, nextLineStart);
+      if (startsNonParagraphBlock(value, nextLineStart, nextLineEnd)) return false;
+      const nextListIndent = establishedListContentIndent(value, nextLineStart, nextLineEnd);
+      if (nextListIndent !== null && interruptsParagraph(value, nextLineStart, nextLineEnd)) {
+        return false;
+      }
+      const nextDepth = containerDepth(value, nextLineStart, nextLineEnd);
+      const nextQuoteDepth = containerQuoteDepth(value, nextLineStart, nextLineEnd);
+      if (
+        nextDepth > 0 &&
+        (nextDepth !== openingDepth || nextQuoteDepth !== openingQuoteDepth) &&
+        interruptsParagraph(value, nextLineStart, nextLineEnd)
+      ) {
+        return false;
+      }
+    }
     if (value[cursor] !== "`") {
       cursor += 1;
       continue;
@@ -856,7 +880,7 @@ function stripMarkdownHtmlComments(value) {
       } else if (
         !escapedDelimiter &&
         character === "`" &&
-        hasClosingInlineDelimiter(value, cursor + runLength, runLength)
+        hasClosingInlineDelimiter(value, cursor + runLength, runLength, lineStart)
       ) {
         inlineLength = runLength;
       }
