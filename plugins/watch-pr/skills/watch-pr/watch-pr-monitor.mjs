@@ -351,11 +351,21 @@ function opensFence(value, cursor) {
   return runLength >= 3 && validFenceOpener(value, cursor, runLength, delimiter);
 }
 
+// CommonMark HTML block type 2: `<!--` at block content start opens a leaf block that may
+// interrupt a paragraph and that ends with the line containing `-->`, so the line after it
+// carries no open paragraph. An inline `<!--` later in a line stays paragraph content.
+function opensHtmlCommentBlock(value, lineStart, lineEnd) {
+  if (isIndentedCodeLine(value, lineStart)) return false;
+  const cursor = blockContentStart(value, lineStart, lineEnd);
+  return cursor + 4 <= lineEnd && value.startsWith("<!--", cursor);
+}
+
 function isParagraphContentLine(value, lineStart, lineEnd) {
   if (isBlankMarkdownLine(value, lineStart, lineEnd)) return false;
   if (isIndentedCodeLine(value, lineStart)) return false;
   const cursor = blockContentStart(value, lineStart, lineEnd);
   if (opensFence(value, cursor)) return false;
+  if (opensHtmlCommentBlock(value, lineStart, lineEnd)) return false;
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
   return !ATX_HEADING_RE.test(line) &&
     !THEMATIC_BREAK_RE.test(line) &&
@@ -383,6 +393,7 @@ function startsNonParagraphBlock(value, lineStart, lineEnd) {
   if (isBlankMarkdownLine(value, lineStart, lineEnd)) return true;
   const cursor = blockContentStart(value, lineStart, lineEnd);
   if (opensFence(value, cursor)) return true;
+  if (opensHtmlCommentBlock(value, lineStart, lineEnd)) return true;
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
   if (ATX_HEADING_RE.test(line) || THEMATIC_BREAK_RE.test(line)) return true;
   return SETEXT_UNDERLINE_RE.test(line) && followsParagraphContent(value, lineStart);
@@ -455,9 +466,13 @@ function startsIndentedCodeLine(
   previousLineEnd,
   previousLineWasIndentedCode,
   activeListIndent,
+  previousLineEndedHtmlBlock,
 ) {
   if (!isIndentedCodeLine(value, lineStart, activeListIndent)) return false;
   if (previousLineWasIndentedCode) return true;
+  // A multi-line comment block closes on a line whose remaining text carries no opener, so
+  // the scanner reports that end explicitly; line-local predicates cover the single-line form.
+  if (previousLineEndedHtmlBlock) return true;
   if (startsNonParagraphBlock(value, previousLineStart, previousLineEnd)) return true;
   // The guards above leave an open paragraph on the previous line, so a deeper container
   // only begins an indented code block when it may interrupt that paragraph.
@@ -530,6 +545,9 @@ function stripMarkdownHtmlComments(value) {
   let fenceListDepth = 0;
   let fenceContainerIndent = 0;
   let inlineLength = 0;
+  // Set while scanning a line that closes a multi-line HTML comment block, consumed by the
+  // newline handler below: after that line the block is finished and no paragraph is open.
+  let htmlBlockEndsLine = false;
 
   while (cursor < value.length) {
     const character = value[cursor];
@@ -574,7 +592,9 @@ function stripMarkdownHtmlComments(value) {
           cursor - 1,
           indentedCodeLine,
           activeListIndent,
+          htmlBlockEndsLine,
         );
+        htmlBlockEndsLine = false;
         if (
           fenceDelimiter &&
           !continuesFenceContainer(
@@ -623,7 +643,9 @@ function stripMarkdownHtmlComments(value) {
           cursor - 1,
           indentedCodeLine,
           activeListIndent,
+          htmlBlockEndsLine,
         );
+        htmlBlockEndsLine = false;
         lineStart = nextLineStart;
       }
       continue;
@@ -662,6 +684,7 @@ function stripMarkdownHtmlComments(value) {
       !isEscaped(value, cursor) &&
       !indentedCodeLine
     ) {
+      const blockLevel = cursor === blockContentStart(value, lineStart, lineEnd(value, lineStart));
       const commentEnd = value.indexOf("-->", cursor + 4);
       if (commentEnd === -1) {
         cursor = value.length;
@@ -672,6 +695,7 @@ function stripMarkdownHtmlComments(value) {
         lineStart = nextCursor;
         indentedCodeLine = false;
       }
+      if (blockLevel) htmlBlockEndsLine = true;
       cursor = nextCursor;
       continue;
     }
@@ -694,7 +718,9 @@ function stripMarkdownHtmlComments(value) {
         cursor - 1,
         indentedCodeLine,
         activeListIndent,
+        htmlBlockEndsLine,
       );
+      htmlBlockEndsLine = false;
       lineStart = nextLineStart;
     }
   }

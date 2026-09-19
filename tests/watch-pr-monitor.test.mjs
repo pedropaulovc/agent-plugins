@@ -341,6 +341,22 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1028 @reviewer: paragraph - Keep",
     ].join("\n"),
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-comment-block", "watching", {
+      details: [
+        "comment #1029 @reviewer:\n<!-- hidden block -->\n    <!-- visible code -->",
+        "comment #1030 @reviewer:\n<!-- hidden\nblock -->\n    <!-- visible code -->",
+        "comment #1031 @reviewer:\n<!-- hidden\nblock --> tail\n    <!-- visible code -->",
+        "comment #1032 @reviewer:\nparagraph <!-- hidden -->\n    <!-- hidden too -->",
+      ],
+    })),
+    [
+      "comment #1029 @reviewer: <!-- visible code -->",
+      "comment #1030 @reviewer: <!-- visible code -->",
+      "comment #1031 @reviewer: tail <!-- visible code -->",
+      "comment #1032 @reviewer: paragraph",
+    ].join("\n"),
+  );
 });
 
 test("prints each actionable category on its own line", () => {
