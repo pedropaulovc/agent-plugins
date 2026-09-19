@@ -931,6 +931,7 @@ function stripMarkdownHtmlComments(value) {
       const escapedDelimiter = isEscaped(value, cursor);
       if (
         !escapedDelimiter &&
+        !htmlBlockEndsLine &&
         runLength >= 3 &&
         isFencePosition(value, lineStart, cursor) &&
         validFenceOpener(value, cursor, runLength, character)
@@ -947,8 +948,12 @@ function stripMarkdownHtmlComments(value) {
           visualColumn(value, lineStart, cursor),
           activeListIndent,
         );
-        fenceIndentLimit = Math.max(3, fenceContainerIndent);
+        // A closer may sit three visual columns into an enclosing list item's content.
+        fenceIndentLimit = fenceListDepth > 0
+          ? fenceContainerIndent + 3
+          : 3;
       } else if (
+        !htmlBlockEndsLine &&
         !escapedDelimiter &&
         character === "`" &&
         hasClosingInlineDelimiter(
@@ -971,7 +976,11 @@ function stripMarkdownHtmlComments(value) {
       !isEscaped(value, cursor) &&
       !indentedCodeLine
     ) {
-      const blockLevel = cursor === blockContentStart(value, lineStart, lineEnd(value, lineStart));
+      const blockLevel = cursor === blockContentStart(value, lineStart, lineEnd(value, lineStart)) ||
+        (
+          activeListIndent > 0 &&
+          leadingIndentColumn(value, lineStart) === activeListIndent
+        );
       let commentEnd = value.indexOf("-->", cursor + 4);
       let crossedContainer = false;
       if (blockLevel) {

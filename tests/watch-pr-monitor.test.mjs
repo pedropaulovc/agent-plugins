@@ -210,6 +210,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1052 @reviewer: - ```html code ``` Keep\n+1 more changes",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-relative-fence-close", "watching", {
+      details: [
+        "comment #1054 @reviewer:\n- ```html\n  code\n     ```\n  <!-- hidden instruction -->Keep",
+      ],
+    })),
+    "comment #1054 @reviewer: - ```html code ``` Keep",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-inherited-list-fence", "watching", {
       details: [
         "comment #992 @reviewer:\n- item\n\n  ```html\nroot\n<!-- hidden instruction -->",
@@ -230,6 +238,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       details: ["comment #994 @reviewer: <!-- first\n    -->visible <!-- hidden -->Keep"],
     })),
     "comment #994 @reviewer: visible Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-comment-closing-context", "watching", {
+      details: [
+        "comment #1053 @reviewer:\n<!-- hidden\n--> ```\n<!-- hidden instruction -->\n``` ",
+      ],
+    })),
+    "comment #1053 @reviewer: ``` ```",
   );
   assert.equal(
     formatMonitorEvent(monitorEvent("event-unterminated-comment", "watching", {
@@ -304,6 +320,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       ],
     })),
     "comment #1002 @reviewer: - item <pre> root <!-- visible code -->",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-html-comment", "watching", {
+      details: [
+        "comment #1055 @reviewer:\n-   item\n\n    <!-- hidden\n# heading\n    <!-- visible -->",
+      ],
+    })),
+    "comment #1055 @reviewer: - item # heading <!-- visible -->",
   );
   assert.equal(
     formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
