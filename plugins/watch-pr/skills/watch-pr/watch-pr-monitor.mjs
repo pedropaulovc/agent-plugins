@@ -713,24 +713,27 @@ function hasClosingInlineDelimiter(
       if (blankLineFollows(value, cursor)) return false;
       const nextLineStart = cursor + 1;
       const nextLineEnd = lineEnd(value, nextLineStart);
-      if (
-        !continuesOpeningContainer(
-          value,
-          nextLineStart,
-          openingQuoteDepth,
-          openingListDepth,
-          openingListIndent,
-        )
-      ) {
-        return false;
-      }
+      const nextDepth = containerDepth(value, nextLineStart, nextLineEnd);
+      const nextQuoteDepth = containerQuoteDepth(value, nextLineStart, nextLineEnd);
+      const continuesContainer = continuesOpeningContainer(
+        value,
+        nextLineStart,
+        openingQuoteDepth,
+        openingListDepth,
+        openingListIndent,
+      );
+      const continuesLazyParagraph = !continuesContainer &&
+        openingQuoteDepth > 0 &&
+        openingListDepth === 0 &&
+        isParagraphContentLine(value, nextLineStart, nextLineEnd) &&
+        nextDepth <= openingDepth &&
+        nextQuoteDepth <= openingQuoteDepth;
+      if (!continuesContainer && !continuesLazyParagraph) return false;
       if (startsNonParagraphBlock(value, nextLineStart, nextLineEnd)) return false;
       const nextListIndent = establishedListContentIndent(value, nextLineStart, nextLineEnd);
       if (nextListIndent !== null && interruptsParagraph(value, nextLineStart, nextLineEnd)) {
         return false;
       }
-      const nextDepth = containerDepth(value, nextLineStart, nextLineEnd);
-      const nextQuoteDepth = containerQuoteDepth(value, nextLineStart, nextLineEnd);
       if (
         nextDepth > 0 &&
         (nextDepth !== openingDepth || nextQuoteDepth !== openingQuoteDepth) &&
@@ -1014,11 +1017,23 @@ function stripMarkdownHtmlComments(value) {
         continue;
       }
       const nextCursor = commentEnd + 3;
+      const closesOuterHtmlBlock = Boolean(
+        openHtmlBlock?.kind.close &&
+        openHtmlBlock.kind.close.test(value.slice(cursor, nextCursor))
+      );
       if (value.lastIndexOf("\n", nextCursor - 1) >= cursor) {
         lineStart = nextCursor;
         indentedCodeLine = false;
       }
-      // A comment nested in an already open raw block does not end that block.
+      if (closesOuterHtmlBlock) {
+        openHtmlBlock = null;
+        htmlQuoteDepth = 0;
+        htmlListDepth = 0;
+        htmlContainerIndent = 0;
+        htmlBlockEndsLine = true;
+      }
+      // A comment nested in an already open raw block normally does not end that block;
+      // a matching closer carried inside the skipped span is handled above.
       if (blockLevel && !openHtmlBlock) htmlBlockEndsLine = true;
       cursor = nextCursor;
       continue;

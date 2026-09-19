@@ -314,6 +314,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1002 @reviewer: - item `fake root `close",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-blockquote-lazy-code-span", "watching", {
+      details: [
+        "comment #1059 @reviewer:\n> `foo\nbar <!-- visible -->\n` baz",
+      ],
+    })),
+    "comment #1059 @reviewer: > `foo bar <!-- visible --> ` baz",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-inherited-list-html", "watching", {
       details: [
         "comment #1002 @reviewer:\n- item\n\n  <pre>\nroot\n\n    <!-- visible code -->",
@@ -492,6 +500,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       ],
     })),
     "comment #1057 @reviewer: <pre> </script> ``` Keep ``` </pre>",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-nested-raw-comment-closer", "watching", {
+      details: [
+        "comment #1060 @reviewer:\n<pre>\n<!-- x\n</pre> -->\n    <!-- visible -->",
+      ],
+    })),
+    "comment #1060 @reviewer: <pre> <!-- visible -->",
   );
   assert.equal(
     formatMonitorEvent(monitorEvent("event-html-type7-attribute-grammar", "watching", {
