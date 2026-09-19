@@ -136,8 +136,61 @@ function delimiterRunLength(value, index, delimiter) {
   return end - index;
 }
 
+function consumeContainerIndent(value, cursor, limit) {
+  let spaces = 0;
+  while (cursor < limit && spaces < 3 && value[cursor] === " ") {
+    cursor += 1;
+    spaces += 1;
+  }
+  return cursor;
+}
+
+function listMarkerEnd(value, cursor, limit) {
+  if (
+    (value[cursor] === "-" || value[cursor] === "+" || value[cursor] === "*") &&
+    (value[cursor + 1] === " " || value[cursor + 1] === "\t")
+  ) {
+    return cursor + 2;
+  }
+  let marker = cursor;
+  while (
+    marker < limit &&
+    marker - cursor < 9 &&
+    value[marker] >= "0" &&
+    value[marker] <= "9"
+  ) marker += 1;
+  if (
+    marker === cursor ||
+    (value[marker] !== "." && value[marker] !== ")") ||
+    (value[marker + 1] !== " " && value[marker + 1] !== "\t")
+  ) {
+    return null;
+  }
+  return marker + 2;
+}
+
 function isFencePosition(value, lineStart, index) {
-  if (index - lineStart > 3) return false;
+  let cursor = lineStart;
+  while (cursor < index) {
+    cursor = consumeContainerIndent(value, cursor, index);
+    if (value[cursor] === ">") {
+      cursor += 1;
+      if (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
+      continue;
+    }
+    const markerEnd = listMarkerEnd(value, cursor, index);
+    if (markerEnd !== null) {
+      cursor = markerEnd;
+      continue;
+    }
+    break;
+  }
+  cursor = consumeContainerIndent(value, cursor, index);
+  return cursor === index;
+}
+
+function isWhitespaceIndentWithin(value, lineStart, index, maximumIndent) {
+  if (index - lineStart > maximumIndent) return false;
   for (let cursor = lineStart; cursor < index; cursor += 1) {
     if (value[cursor] !== " ") return false;
   }
@@ -216,6 +269,7 @@ function stripMarkdownHtmlComments(value) {
   let indentedCodeLine = isIndentedCodeLine(value, lineStart);
   let fenceDelimiter;
   let fenceLength = 0;
+  let fenceIndentLimit = 3;
   let inlineLength = 0;
 
   while (cursor < value.length) {
@@ -225,13 +279,18 @@ function stripMarkdownHtmlComments(value) {
         const runLength = delimiterRunLength(value, cursor, fenceDelimiter);
         result += value.slice(cursor, cursor + runLength);
         cursor += runLength;
+        const runStart = cursor - runLength;
         if (
           runLength >= fenceLength &&
-          isFencePosition(value, lineStart, cursor - runLength) &&
-          closesFence(value, cursor - runLength, runLength)
+          (
+            isFencePosition(value, lineStart, runStart) ||
+            isWhitespaceIndentWithin(value, lineStart, runStart, fenceIndentLimit)
+          ) &&
+          closesFence(value, runStart, runLength)
         ) {
           fenceDelimiter = undefined;
           fenceLength = 0;
+          fenceIndentLimit = 3;
         }
         continue;
       }
@@ -270,6 +329,7 @@ function stripMarkdownHtmlComments(value) {
       ) {
         fenceDelimiter = character;
         fenceLength = runLength;
+        fenceIndentLimit = Math.max(3, cursor - lineStart);
       } else if (
         character === "`" &&
         hasClosingInlineDelimiter(value, cursor + runLength, runLength)

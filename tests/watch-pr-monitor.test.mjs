@@ -168,6 +168,22 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     })),
     "comment #990 @reviewer: ```a`b Keep",
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-blockquote-fence", "watching", {
+      details: [
+        "comment #991 @reviewer:\n> ~~~html\n> <!-- blockquote source -->\n> ~~~\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #991 @reviewer: > ~~~html > <!-- blockquote source --> > ~~~ Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-fence", "watching", {
+      details: [
+        "comment #992 @reviewer:\n10. ```html\n    <!-- list source -->\n    ```\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #992 @reviewer: 10. ```html <!-- list source --> ``` Keep",
+  );
 });
 
 test("sanitizes control characters and bounds actionable wake lines", () => {
