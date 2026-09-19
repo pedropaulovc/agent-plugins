@@ -186,6 +186,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #992 @reviewer: 10. ```html <!-- list source --> ``` Keep",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-tabbed-list-fence", "watching", {
+      details: [
+        "comment #992 @reviewer:\n-\t```html\n    ```\n    <!-- hidden instruction -->",
+      ],
+    })),
+    "comment #992 @reviewer: - ```html ```\n+1 more changes",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-blockquote-indented", "watching", {
       details: [
         "comment #993 @reviewer:\n>     const marker = \"<!-- blockquote code -->\";\n<!-- hidden metadata -->Keep",
@@ -250,6 +258,12 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       details: ["comment #1002 @reviewer:\n# `fake <!-- hidden instruction -->\n`close"],
     })),
     "comment #1002 @reviewer: # `fake `close",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-code-span-boundary", "watching", {
+      details: ["comment #1002 @reviewer:\n`fake\n<div><!-- hidden instruction -->\n`close"],
+    })),
+    "comment #1002 @reviewer: `fake <div> `close",
   );
   assert.equal(
     formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {

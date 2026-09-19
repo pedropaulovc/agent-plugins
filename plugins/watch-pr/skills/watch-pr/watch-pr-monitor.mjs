@@ -462,7 +462,10 @@ function startsNonParagraphBlock(value, lineStart, lineEnd) {
   if (isBlankMarkdownLine(value, lineStart, lineEnd)) return true;
   const cursor = blockContentStart(value, lineStart, lineEnd);
   if (opensFence(value, cursor)) return true;
-  if (completesHtmlBlock(value, lineStart, lineEnd)) return true;
+  const htmlBlock = htmlBlockKindAt(value, lineStart, lineEnd);
+  if ((htmlBlock && htmlBlock.kind.interrupts !== false) || completesHtmlBlock(value, lineStart, lineEnd)) {
+    return true;
+  }
   const line = value.slice(cursor, lineEnd).replace(/\r$/u, "");
   if (ATX_HEADING_RE.test(line) || THEMATIC_BREAK_RE.test(line)) return true;
   return SETEXT_UNDERLINE_RE.test(line) && followsParagraphContent(value, lineStart);
@@ -879,7 +882,7 @@ function stripMarkdownHtmlComments(value) {
         fenceQuoteDepth = containerQuoteDepth(value, lineStart, cursor);
         fenceListDepth = openingDepth - fenceQuoteDepth;
         fenceContainerIndent = visualColumn(value, lineStart, cursor);
-        fenceIndentLimit = Math.max(3, cursor - lineStart);
+        fenceIndentLimit = Math.max(3, fenceContainerIndent);
       } else if (
         !escapedDelimiter &&
         character === "`" &&
