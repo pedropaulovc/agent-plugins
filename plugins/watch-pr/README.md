@@ -45,12 +45,14 @@ Exactly one watcher runs per PR and root session:
 - Claude Code uses one persistent `Monitor`.
 - Codex and other agent harnesses use one long-lived watcher subagent.
 - Oh My Pi uses one `hub(op: "start")` process with `monitorUrl` as the script's only
-  argument and `^watch-pr: ready$` as its readiness condition.
+  argument and `^watch-pr: ready(?:\r?\n|$)` as its newline-safe readiness condition.
 
 All harnesses retain the same watcher through intermediate events. Cancellation stops
 that watcher before `unwatch_pr`. An HTTP 401, 403, or 404 after readiness means the
-12-hour URL expired or was revoked; call `open_pr_monitor` once and replace the stopped
-watcher. Other permanent failures stop the watch without falling back to polling.
+12-hour URL expired or was revoked. Call `open_pr_monitor` once, put the stopped
+watcher's reported last event ID in the replacement URL's `cursor` query parameter,
+and start one replacement watcher; events during renewal are replayed. Other permanent
+failures stop the watch without falling back to polling.
 
 Claude Code and Codex load the remote server from the inline plugin manifest. The
 OpenCode adapter registers the same endpoint and `/watch-pr` command. Aggregate

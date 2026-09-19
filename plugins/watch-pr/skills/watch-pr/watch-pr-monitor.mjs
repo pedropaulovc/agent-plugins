@@ -9,6 +9,10 @@ const READY_LINE = "watch-pr: ready";
 const USAGE = "usage: node watch-pr-monitor.mjs <monitor-url>";
 
 class PermanentMonitorError extends Error { }
+const MAX_DETAIL_LENGTH = 1_000;
+const MAX_UPDATE_LINE_LENGTH = 4_096;
+const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
+const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
 
 function permanent(message) {
   return new PermanentMonitorError(message);
@@ -117,6 +121,22 @@ function parseMonitorEvent(frame) {
   return { event, id };
 }
 
+function truncate(value, maximumLength) {
+  if (value.length <= maximumLength) return value;
+  return `${value.slice(0, maximumLength - 1)}…`;
+}
+
+function compactDetail(detail) {
+  return truncate(
+    detail
+      .replace(ANSI_ESCAPE_SEQUENCE_RE, "")
+      .replace(/\s+/gu, " ")
+      .replace(CONTROL_CHARACTERS_RE, "")
+      .trim(),
+    MAX_DETAIL_LENGTH,
+  );
+}
+
 export function formatMonitorEvent(event) {
   if (!Number.isInteger(event.pullRequestNumber) || event.pullRequestNumber <= 0) {
     throw permanent("received an invalid pull request number");
@@ -129,16 +149,23 @@ export function formatMonitorEvent(event) {
   if (!Array.isArray(event.details) || event.details.some((detail) => typeof detail !== "string")) {
     throw permanent("received invalid monitor event details");
   }
-  const details = [...new Set(event.details.map((detail) => detail.replace(/\s+/g, " ").trim()))]
-    .filter(Boolean);
+  const details = [...new Set(event.details.map(compactDetail))].filter(Boolean);
   if (details.length === 0) return null;
-  return `PR ${event.pullRequestNumber} updated: ${details.join(" | ")}`;
+  return truncate(
+    `PR ${event.pullRequestNumber} updated: ${details.join(" | ")}`,
+    MAX_UPDATE_LINE_LENGTH,
+  );
 }
 
-function validateResponse(response) {
+function validateResponse(response, { readyEmitted, cursor }) {
   if ([401, 403, 404].includes(response.status)) {
+    if (!readyEmitted) {
+      throw permanent(
+        `monitor URL was rejected with HTTP ${response.status} before readiness; return to the root session and call unwatch_pr`,
+      );
+    }
     throw permanent(
-      `monitor URL was rejected with HTTP ${response.status}; return to the root session and call open_pr_monitor again`,
+      `monitor URL was rejected with HTTP ${response.status} after readiness; last event id ${JSON.stringify(cursor ?? "")}; return to the root session, call open_pr_monitor once, and resume from that event id`,
     );
   }
   if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
@@ -177,7 +204,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
   }
 
   const effectiveSignal = signal ?? new AbortController().signal;
-  let cursor;
+  let cursor = parsedUrl.searchParams.get("cursor") || undefined;
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   let readyEmitted = false;
@@ -204,7 +231,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
 
     let receivedEvent = false;
     try {
-      if (!validateResponse(response)) {
+      if (!validateResponse(response, { readyEmitted, cursor })) {
         await response.body?.cancel();
       } else {
         if (!readyEmitted) {

@@ -115,7 +115,7 @@ test("prints actionable details inline without a follow-up snapshot fetch", asyn
   const watcher = startWatcher(url);
 
   try {
-    await waitFor(() => watcher.stdout().includes("event") || watcher.stdout().includes(comment), "the comment event");
+    await waitFor(() => watcher.stdout().includes(comment), "the comment event");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
       `PR 42 updated: ${comment}`,
@@ -129,16 +129,17 @@ test("prints actionable details inline without a follow-up snapshot fetch", asyn
   }
 });
 
-test("combines multiple actionable details into one bounded wake line", () => {
-  assert.equal(
-    formatMonitorEvent(monitorEvent("event-checks", "watching", {
-      details: [
-        "check CI: fail https://github.com/owner/repository/actions/runs/1",
-        "checks: all terminal (pass: 7, fail: 1, skipping: 0, cancel: 0)",
-      ],
-    })),
-    "PR 42 updated: check CI: fail https://github.com/owner/repository/actions/runs/1 | checks: all terminal (pass: 7, fail: 1, skipping: 0, cancel: 0)",
-  );
+test("sanitizes control characters and bounds actionable wake lines", () => {
+  const line = formatMonitorEvent(monitorEvent("event-checks", "watching", {
+    details: Array.from(
+      { length: 6 },
+      (_, index) => `detail ${index} \u001b[2K${"x".repeat(2_000)}`,
+    ),
+  }));
+
+  assert.equal(line.length, 4_096);
+  assert.doesNotMatch(line, /\u001b/u);
+  assert.match(line, /…$/u);
 });
 
 test("suppresses non-actionable feed churn", async () => {
@@ -192,7 +193,7 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
   try {
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
     assert.equal(requestHeaders.length, 2);
-    assert.equal(requestHeaders[0]["last-event-id"], undefined);
+    assert.equal(requestHeaders[0]["last-event-id"], "initial-cursor");
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
@@ -241,13 +242,45 @@ for (const status of [401, 403, 404]) {
       assert.deepEqual(await watcher.exited, { code: 1, signal: null });
       assert.equal(watcher.stdout(), "");
       assert.match(watcher.stderr(), new RegExp(`HTTP ${status}`));
-      assert.match(watcher.stderr(), /open_pr_monitor again/);
+      assert.match(watcher.stderr(), /before readiness/);
+      assert.match(watcher.stderr(), /unwatch_pr/);
     } finally {
       if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
       await closeServer(server);
     }
   });
 }
+
+test("reports the last event id when a ready capability expires", async () => {
+  let connection = 0;
+  const { server, url } = await startServer((_request, response) => {
+    connection += 1;
+    if (connection === 1) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      sendEvent(response, monitorEvent("event-before-expiry", "watching", {
+        details: ["checks: rerun started (pending: CI)"],
+      }));
+      response.end();
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+    assert.deepEqual(watcher.stdout().trim().split("\n"), [
+      "watch-pr: ready",
+      "PR 42 updated: checks: rerun started (pending: CI)",
+    ]);
+    assert.match(watcher.stderr(), /after readiness/);
+    assert.match(watcher.stderr(), /last event id "event-before-expiry"/);
+    assert.match(watcher.stderr(), /open_pr_monitor once/);
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
 
 test("rejects non-HTTP monitor URLs", async () => {
   const watcher = startWatcher("file://localhost/monitor/transcript-safe-capability");

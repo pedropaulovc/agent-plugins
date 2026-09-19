@@ -64,8 +64,9 @@ same watcher emits the readiness record.
 
 3. From the root session, call `open_pr_monitor` with the same arguments. Parse its JSON
    result and retain `monitorUrl`. The URL is a read-only capability scoped to this OAuth
-   session and PR. It expires 12 hours after minting and carries no GitHub credential.
-   It is safe to include in harness calls, process arguments, transcripts, and logs.
+   session and PR. It expires 12 hours after `open_pr_monitor` returns it and carries no
+   GitHub credential. It is safe to include in harness calls, process arguments,
+   transcripts, and logs.
 
    If `terminalState` is already `merged` or `closed`, do not launch a watcher. Call
    `get_pr`, perform the matching terminal action below, and clean up with `unwatch_pr`.
@@ -137,7 +138,7 @@ hub(
   application: "node",
   args: ["<absolute skill directory>/watch-pr-monitor.mjs", "<monitorUrl>"],
   ready: {
-    log: "^watch-pr: ready$",
+    log: "^watch-pr: ready(?:\\r?\\n|$)",
     timeout: 60
   },
   progress: "wake"
@@ -163,15 +164,22 @@ notifications, or repeated watcher launches.
 | Line | Action |
 |---|---|
 | `head: <ref>@<sha>` | Inspect the new commit and restarted checks before acting on earlier results. |
+| `base: <old> -> <new>` | Re-evaluate the branch and merge target before pushing or merging. |
 | `rebase: BEHIND` | Rebase the head branch onto the PR's base branch and push. |
 | `rebase: DIRTY` | Rebase, resolve every conflict, and force-push the feature branch with `--force-with-lease`. |
+| `rebase: <other-state>` | Record that the prior behind/conflict condition cleared; continue with checks and review. |
+| `PR state: <OPEN\|CLOSED> [DRAFT]` | Record the lifecycle or draft transition; a `DRAFT` suffix still blocks review. |
 | `checks: rerun started (pending: ...)` | Informational; wait for the rollup or an immediate failure. |
+| `checks: pending (...)` | Reconciliation state: named checks are still running. |
 | `check <name>: fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
 | `check <name>: cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
 | `checks: all terminal (...)` | Confirm every required check passed; investigate nonzero fail or cancel counts. |
 | `comment #<id> @<author> <url>: <body>` | Read the body inline, decide whether it requires action, then reply at the URL when needed. |
 | `review #<id> @<author> <state> <url>: <body>` | Handle the verdict and body directly; do not fetch the complete PR merely to locate it. |
-| `feedback [<thread>] #<comment-id> <file>:<lines> @<author> <url>: <body>` | Inspect the named code, fix or reply, and use the IDs when replying or resolving the thread. |
+| `feedback [<thread>] #<comment-id> <file>:<lines> @<author> <url>: <body>` | Inspect the named code, fix or reply, and use the IDs when replying or resolving the thread. `[-]` means GitHub did not return a thread ID. |
+| `thread <id>: reopened\|resolved` | Re-opened feedback requires action; record resolved feedback without another snapshot fetch. |
+| `comment\|review\|feedback ... deleted` | Record that the referenced feedback was removed; do not act on its stale text. |
+| `+<n> more changes` | The event exceeded its safety bound; call `get_pr` once to reconcile the omitted details. |
 | `PR <n> finished: MERGED` | Call `get_pr`, call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. The watcher exits on its own. |
 | `PR <n> finished: CLOSED` | Call `get_pr`, call `unwatch_pr`, and report that the PR closed without merging. The watcher exits on its own. |
 
@@ -199,7 +207,9 @@ Claude Monitor, interrupt and close the Codex/generic subagent, or call
 has ended, then call `unwatch_pr`.
 
 A permanent watcher error is not an invitation to poll. Stop or close its harness
-container. For HTTP 401, 403, or 404 after a previously ready connection, call
-`open_pr_monitor` once to replace an expired or revoked 12-hour URL, then start one
-replacement watcher. For other permanent errors, call `unwatch_pr` when possible and
-report the error instead of launching a replacement.
+container. For HTTP 401, 403, or 404 after a previously ready connection, the error
+includes the last event ID. Call `open_pr_monitor` once, replace its URL's `cursor`
+query parameter with that ID (or remove `cursor` when the ID is empty), then start one
+replacement watcher. This replays changes that landed during renewal. For a rejection
+before readiness or another permanent error, call `unwatch_pr` when possible and report
+the error instead of launching a replacement.
