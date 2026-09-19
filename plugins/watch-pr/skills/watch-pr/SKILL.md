@@ -64,9 +64,9 @@ same watcher emits the readiness record.
 
 3. From the root session, call `open_pr_monitor` with the same arguments. Parse its JSON
    result and retain `monitorUrl`. The URL is a read-only capability scoped to this OAuth
-   session and PR. It expires 12 hours after `open_pr_monitor` returns it and carries no
-   GitHub credential. It is safe to include in harness calls, process arguments,
-   transcripts, and logs.
+   session and PR. It expires 12 hours after first creation; repeated calls reuse the
+   same URL and original deadline until expiry. It carries no GitHub credential and is
+   safe to include in harness calls, process arguments, transcripts, and logs.
 
    If `terminalState` is already `merged` or `closed`, do not launch a watcher. Call
    `get_pr`, perform the matching terminal action below, and clean up with `unwatch_pr`.
