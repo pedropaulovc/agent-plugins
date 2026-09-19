@@ -13,6 +13,7 @@ const MAX_DETAIL_LENGTH = 1_000;
 const MAX_UPDATE_LINE_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
 const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
+const HTML_COMMENT_RE = /<!--[\s\S]*?-->/gu;
 const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
 
 function permanent(message) {
@@ -133,6 +134,7 @@ function truncate(value, maximumLength) {
 function compactDetail(detail) {
   const value = detail
     .replace(ANSI_ESCAPE_SEQUENCE_RE, "")
+    .replace(HTML_COMMENT_RE, "")
     .replace(/\s+/gu, " ")
     .replace(CONTROL_CHARACTERS_RE, "")
     .trim();

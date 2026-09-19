@@ -104,12 +104,13 @@ test("prints readiness for a successful idle feed and keeps the direct URL proce
 
 test("prints actionable details inline without a follow-up snapshot fetch", async () => {
   const comment = "comment #987 @reviewer https://github.com/owner/repository/pull/42#issuecomment-987: Please cover the retry race before merging.";
+  const rawComment = comment.replace(": Please", ": <!-- hidden\nmetadata -->Please");
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     sendEvent(response, monitorEvent("event-comment", "watching", {
       githubEvent: "issue_comment",
       changes: ["comments"],
-      details: [comment],
+      details: [rawComment],
     }));
   });
   const watcher = startWatcher(url);
