@@ -130,6 +130,23 @@ test("prints actionable details inline without a follow-up snapshot fetch", asyn
   }
 });
 
+test("strips Markdown HTML comments without deleting comment literals in code", () => {
+  const detail = [
+    "comment #987 @reviewer: <!-- hidden metadata -->Keep",
+    "`const marker = \"<!-- more -->\"`.",
+    "```html",
+    "<!-- fenced example -->",
+    "```",
+  ].join("\n");
+
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-markdown-comment", "watching", {
+      details: [detail],
+    })),
+    "comment #987 @reviewer: Keep `const marker = \"<!-- more -->\"`. ```html <!-- fenced example --> ```",
+  );
+});
+
 test("sanitizes control characters and bounds actionable wake lines", () => {
   const line = formatMonitorEvent(monitorEvent("event-checks", "watching", {
     details: Array.from(

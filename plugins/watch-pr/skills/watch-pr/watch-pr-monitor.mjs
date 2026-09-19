@@ -13,7 +13,6 @@ const MAX_DETAIL_LENGTH = 1_000;
 const MAX_UPDATE_LINE_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
 const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\][^\u0007]*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
-const HTML_COMMENT_RE = /<!--[\s\S]*?-->/gu;
 const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
 
 function permanent(message) {
@@ -131,10 +130,115 @@ function truncate(value, maximumLength) {
   return `${prefix}…`;
 }
 
+function delimiterRunLength(value, index, delimiter) {
+  let end = index;
+  while (value[end] === delimiter) end += 1;
+  return end - index;
+}
+
+function isFencePosition(value, index) {
+  const lineStart = value.lastIndexOf("\n", index - 1) + 1;
+  if (index - lineStart > 3) return false;
+  for (let cursor = lineStart; cursor < index; cursor += 1) {
+    if (value[cursor] !== " ") return false;
+  }
+  return true;
+}
+
+function closesFence(value, index, runLength) {
+  let cursor = index + runLength;
+  while (value[cursor] === " " || value[cursor] === "\t") cursor += 1;
+  return cursor === value.length || value[cursor] === "\n";
+}
+
+function hasClosingInlineDelimiter(value, index, runLength) {
+  let cursor = index;
+  while ((cursor = value.indexOf("`", cursor)) !== -1) {
+    const candidateLength = delimiterRunLength(value, cursor, "`");
+    if (candidateLength === runLength) return true;
+    cursor += candidateLength;
+  }
+  return false;
+}
+
+function stripMarkdownHtmlComments(value) {
+  let result = "";
+  let cursor = 0;
+  let fenceDelimiter;
+  let fenceLength = 0;
+  let inlineLength = 0;
+
+  while (cursor < value.length) {
+    const character = value[cursor];
+    if (fenceDelimiter) {
+      const runLength = delimiterRunLength(value, cursor, fenceDelimiter);
+      if (
+        character === fenceDelimiter &&
+        runLength >= fenceLength &&
+        isFencePosition(value, cursor) &&
+        closesFence(value, cursor, runLength)
+      ) {
+        result += value.slice(cursor, cursor + runLength);
+        cursor += runLength;
+        fenceDelimiter = undefined;
+        fenceLength = 0;
+        continue;
+      }
+      result += character;
+      cursor += 1;
+      continue;
+    }
+
+    if (inlineLength > 0) {
+      if (character !== "`") {
+        result += character;
+        cursor += 1;
+        continue;
+      }
+      const runLength = delimiterRunLength(value, cursor, "`");
+      result += value.slice(cursor, cursor + runLength);
+      cursor += runLength;
+      if (runLength === inlineLength) inlineLength = 0;
+      continue;
+    }
+
+    if ((character === "`" || character === "~") && isFencePosition(value, cursor)) {
+      const runLength = delimiterRunLength(value, cursor, character);
+      if (runLength >= 3) {
+        result += value.slice(cursor, cursor + runLength);
+        cursor += runLength;
+        fenceDelimiter = character;
+        fenceLength = runLength;
+        continue;
+      }
+    }
+
+    if (character === "`") {
+      const runLength = delimiterRunLength(value, cursor, "`");
+      if (hasClosingInlineDelimiter(value, cursor + runLength, runLength)) {
+        inlineLength = runLength;
+      }
+      result += value.slice(cursor, cursor + runLength);
+      cursor += runLength;
+      continue;
+    }
+
+    if (value.startsWith("<!--", cursor)) {
+      const commentEnd = value.indexOf("-->", cursor + 4);
+      if (commentEnd !== -1) {
+        cursor = commentEnd + 3;
+        continue;
+      }
+    }
+
+    result += character;
+    cursor += 1;
+  }
+  return result;
+}
+
 function compactDetail(detail) {
-  const value = detail
-    .replace(ANSI_ESCAPE_SEQUENCE_RE, "")
-    .replace(HTML_COMMENT_RE, "")
+  const value = stripMarkdownHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""))
     .replace(/\s+/gu, " ")
     .replace(CONTROL_CHARACTERS_RE, "")
     .trim();
