@@ -22,7 +22,7 @@ const THEMATIC_BREAK_RE = /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})
 const DETAIL_BODY_PREFIX_RES = [
   /^comment #\d+ @[^\s:]+(?: \S+)?:\s/u,
   /^review #\d+ @[^\s:]+ [^\s:]+(?: \S+)?:\s/u,
-  /^feedback \[[^\]\s]*\] #\d+(?: [^\s@]\S*)? @[^\s:]+(?: \S+)?:\s/u,
+  /^feedback \[[^\]\s]*\] #\d+(?: .*?)? @[^\s:]+(?: \S+)?:\s/u,
 ];
 
 function permanent(message) {

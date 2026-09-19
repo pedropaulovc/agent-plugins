@@ -287,6 +287,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
         "comment #1015 @reviewer:     <!-- visible example -->",
         "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1:     <!-- visible example -->",
         "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer:     <!-- visible example -->",
+        "feedback [PRRT_2] #1018 docs/my file.md:12 @reviewer:     <!-- visible example -->",
         "comment #1018 @reviewer: paragraph\n    <!-- hidden -->Keep",
       ],
     })),
@@ -294,6 +295,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1015 @reviewer: <!-- visible example -->",
       "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1: <!-- visible example -->",
       "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer: <!-- visible example -->",
+      "feedback [PRRT_2] #1018 docs/my file.md:12 @reviewer: <!-- visible example -->",
       "comment #1018 @reviewer: paragraph Keep",
     ].join("\n"),
   );
