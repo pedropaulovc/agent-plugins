@@ -422,6 +422,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
         "comment #1038 @reviewer:\n<div>\ntext\n\n    <!-- visible code -->",
         "comment #1039 @reviewer:\n<pre>\n\n    <!-- hidden -->\n</pre>",
         "comment #1040 @reviewer:\nparagraph <pre>x</pre>\n    <!-- hidden -->",
+        "comment #1050 @reviewer:\n<pre>\n```\n<!-- hidden instruction -->\n```\n</pre>",
       ],
     })),
     [
@@ -433,6 +434,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1038 @reviewer: <div> text <!-- visible code -->",
       "comment #1039 @reviewer: <pre> </pre>",
       "comment #1040 @reviewer: paragraph <pre>x</pre>",
+      "comment #1050 @reviewer: <pre> ``` ``` </pre>",
     ].join("\n"),
   );
   assert.equal(

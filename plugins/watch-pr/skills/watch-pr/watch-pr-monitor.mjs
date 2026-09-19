@@ -888,7 +888,7 @@ function stripMarkdownHtmlComments(value) {
       continue;
     }
 
-    if (character === "`" || character === "~") {
+    if (!openHtmlBlock && (character === "`" || character === "~")) {
       const runLength = delimiterRunLength(value, cursor, character);
       const escapedDelimiter = isEscaped(value, cursor);
       if (
