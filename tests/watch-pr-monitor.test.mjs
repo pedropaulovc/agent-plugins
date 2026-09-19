@@ -231,6 +231,24 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     })),
     "comment #1001 @reviewer: # Heading const marker = \"<!-- visible -->\"; Keep",
   );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-escaped-backticks", "watching", {
+      details: ["comment #1002 @reviewer: \\`fake <!-- hidden -->\\` Keep"],
+    })),
+    "comment #1002 @reviewer: \\`fake \\` Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
+      details: [
+        "comment #1003 @reviewer:\n- item\n\n    <!-- hidden -->Keep",
+        "comment #1004 @reviewer:\n- item\n\n      const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1003 @reviewer: - item Keep",
+      "comment #1004 @reviewer: - item const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
 });
 
 test("prints each actionable category on its own line", () => {

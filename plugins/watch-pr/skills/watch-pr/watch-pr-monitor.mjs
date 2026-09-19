@@ -223,7 +223,7 @@ function isEscaped(value, index) {
   return backslashes % 2 === 1;
 }
 
-function isIndentedCodeLine(value, lineStart) {
+function isIndentedCodeLine(value, lineStart, activeListIndent = 0) {
   let indentation = 0;
   const contentStart = containerContentStart(value, lineStart, value.length);
   for (let cursor = contentStart; cursor < value.length; cursor += 1) {
@@ -237,7 +237,9 @@ function isIndentedCodeLine(value, lineStart) {
     }
     break;
   }
-  return indentation >= 4;
+  const explicitListIndent = listContentIndent(value, lineStart, value.length);
+  const baseIndent = explicitListIndent ?? (activeListIndent || contentStart - lineStart);
+  return contentStart - lineStart + indentation >= baseIndent + 4;
 }
 
 function containerDepth(value, lineStart, limit) {
@@ -279,8 +281,24 @@ function containerQuoteDepth(value, lineStart, limit) {
 
 function containerExtent(value, lineStart) {
   let cursor = containerContentStart(value, lineStart, value.length);
-  while (value[cursor] === " ") cursor += 1;
-  return cursor - lineStart;
+  let column = cursor - lineStart;
+  while (value[cursor] === " " || value[cursor] === "\t") {
+    if (value[cursor] === " ") column += 1;
+    else column += 4 - (column % 4);
+    cursor += 1;
+  }
+  return column;
+}
+
+function listContentIndent(value, lineStart, limit) {
+  const depth = containerDepth(value, lineStart, limit);
+  if (depth === containerQuoteDepth(value, lineStart, limit)) return null;
+  return containerContentStart(value, lineStart, limit) - lineStart;
+}
+
+function lineEnd(value, lineStart) {
+  const newline = value.indexOf("\n", lineStart);
+  return newline === -1 ? value.length : newline;
 }
 
 function isBlankMarkdownLine(value, lineStart, lineEnd) {
@@ -303,14 +321,31 @@ function startsNonParagraphBlock(value, lineStart, lineEnd) {
   return /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/u.test(line);
 }
 
+function listIndentForNextLine(
+  value,
+  previousLineStart,
+  previousLineEnd,
+  nextLineStart,
+  activeListIndent,
+) {
+  const indent = listContentIndent(value, previousLineStart, previousLineEnd) ?? activeListIndent;
+  const nextLineEnd = lineEnd(value, nextLineStart);
+  const nextExplicitIndent = listContentIndent(value, nextLineStart, nextLineEnd);
+  if (nextExplicitIndent !== null) return nextExplicitIndent;
+  if (isBlankMarkdownLine(value, nextLineStart, nextLineEnd)) return indent;
+  if (indent > 0 && containerExtent(value, nextLineStart) >= indent) return indent;
+  return 0;
+}
+
 function startsIndentedCodeLine(
   value,
   lineStart,
   previousLineStart,
   previousLineEnd,
   previousLineWasIndentedCode,
+  activeListIndent,
 ) {
-  if (!isIndentedCodeLine(value, lineStart)) return false;
+  if (!isIndentedCodeLine(value, lineStart, activeListIndent)) return false;
   if (previousLineWasIndentedCode) return true;
   if (startsNonParagraphBlock(value, previousLineStart, previousLineEnd)) return true;
   return (
@@ -369,7 +404,8 @@ function stripMarkdownHtmlComments(value) {
   let result = "";
   let cursor = 0;
   let lineStart = 0;
-  let indentedCodeLine = isIndentedCodeLine(value, lineStart);
+  let activeListIndent = listContentIndent(value, lineStart, lineEnd(value, lineStart)) ?? 0;
+  let indentedCodeLine = isIndentedCodeLine(value, lineStart, activeListIndent);
   let fenceDelimiter;
   let fenceLength = 0;
   let fenceIndentLimit = 3;
@@ -407,12 +443,20 @@ function stripMarkdownHtmlComments(value) {
       cursor += 1;
       if (character === "\n") {
         const nextLineStart = cursor;
+        activeListIndent = listIndentForNextLine(
+          value,
+          lineStart,
+          cursor - 1,
+          nextLineStart,
+          activeListIndent,
+        );
         indentedCodeLine = startsIndentedCodeLine(
           value,
           nextLineStart,
           lineStart,
           cursor - 1,
           indentedCodeLine,
+          activeListIndent,
         );
         if (
           fenceDelimiter &&
@@ -448,12 +492,20 @@ function stripMarkdownHtmlComments(value) {
       cursor += 1;
       if (character === "\n") {
         const nextLineStart = cursor;
+        activeListIndent = listIndentForNextLine(
+          value,
+          lineStart,
+          cursor - 1,
+          nextLineStart,
+          activeListIndent,
+        );
         indentedCodeLine = startsIndentedCodeLine(
           value,
           nextLineStart,
           lineStart,
           cursor - 1,
           indentedCodeLine,
+          activeListIndent,
         );
         lineStart = nextLineStart;
       }
@@ -462,7 +514,9 @@ function stripMarkdownHtmlComments(value) {
 
     if (character === "`" || character === "~") {
       const runLength = delimiterRunLength(value, cursor, character);
+      const escapedDelimiter = isEscaped(value, cursor);
       if (
+        !escapedDelimiter &&
         runLength >= 3 &&
         isFencePosition(value, lineStart, cursor) &&
         validFenceOpener(value, cursor, runLength, character)
@@ -475,6 +529,7 @@ function stripMarkdownHtmlComments(value) {
         fenceContainerIndent = cursor - lineStart;
         fenceIndentLimit = Math.max(3, cursor - lineStart);
       } else if (
+        !escapedDelimiter &&
         character === "`" &&
         hasClosingInlineDelimiter(value, cursor + runLength, runLength)
       ) {
@@ -508,12 +563,20 @@ function stripMarkdownHtmlComments(value) {
     cursor += 1;
     if (character === "\n") {
       const nextLineStart = cursor;
+      activeListIndent = listIndentForNextLine(
+        value,
+        lineStart,
+        cursor - 1,
+        nextLineStart,
+        activeListIndent,
+      );
       indentedCodeLine = startsIndentedCodeLine(
         value,
         nextLineStart,
         lineStart,
         cursor - 1,
         indentedCodeLine,
+        activeListIndent,
       );
       lineStart = nextLineStart;
     }
