@@ -379,7 +379,7 @@ const HTML_BLOCK_TAG_NAMES =
   "noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|" +
   "thead|title|tr|track|ul";
 const HTML_TYPE_7_OPEN_RE =
-  /^(?:<[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[^\s"'=<>`]+(?:[ \t]*=[ \t]*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s"'=<>`]+))?)*[ \t]*\/?>|<\/[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*\r?$/u;
+  /^(?:<[A-Za-z][A-Za-z0-9-]*(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s"'=<>`]+))?)*[ \t]*\/?>|<\/[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*\r?$/u;
 const HTML_BLOCK_KINDS = [
   { open: /^<script(?:[ \t\r>]|$)/iu, close: /<\/script>/iu },
   { open: /^<pre(?:[ \t\r>]|$)/iu, close: /<\/pre>/iu },

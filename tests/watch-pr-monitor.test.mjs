@@ -502,6 +502,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1058 @reviewer: <x => ``` <!-- hidden -->Keep ```",
   );
   assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-type7-attribute-name", "watching", {
+      details: [
+        "comment #1 @a:\n<x @>\n```html\n<!-- visible example -->\n```",
+      ],
+    })),
+    "comment #1 @a: <x @> ```html <!-- visible example --> ```",
+  );
+  assert.equal(
     formatMonitorEvent(monitorEvent("event-html-block-scope", "watching", {
       details: [
         "comment #1041 @reviewer:\n<!foo>\n    <!-- hidden -->",
