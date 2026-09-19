@@ -216,11 +216,13 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       details: [
         "comment #999 @reviewer:\n> ```html\n> code\n<!-- hidden -->\n```\nKeep",
         "comment #1000 @reviewer:\n10. ```html\n    code\n<!-- hidden -->\n```\nKeep",
+        "comment #1009 @reviewer:\n10. ```html\n    before\n\n    <!-- visible -->\n    ```\n<!-- hidden -->Keep",
       ],
     })),
     [
       "comment #999 @reviewer: > ```html > code ``` Keep",
       "comment #1000 @reviewer: 10. ```html code ``` Keep",
+      "comment #1009 @reviewer: 10. ```html before <!-- visible --> ``` Keep",
     ].join("\n"),
   );
   assert.equal(
@@ -244,6 +246,8 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
         "comment #1004 @reviewer:\n- item\n\n      const marker = \"<!-- visible -->\";",
         "comment #1005 @reviewer:\n-   item\n\n      <!-- hidden -->Keep",
         "comment #1006 @reviewer:\n-   item\n\n        const marker = \"<!-- visible -->\";",
+        "comment #1007 @reviewer:\n-\titem\n\n      <!-- hidden -->Keep",
+        "comment #1008 @reviewer:\n-\titem\n\n        const marker = \"<!-- visible -->\";",
       ],
     })),
     [
@@ -251,6 +255,8 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       "comment #1004 @reviewer: - item const marker = \"<!-- visible -->\";",
       "comment #1005 @reviewer: - item Keep",
       "comment #1006 @reviewer: - item const marker = \"<!-- visible -->\";",
+      "comment #1007 @reviewer: - item Keep",
+      "comment #1008 @reviewer: - item const marker = \"<!-- visible -->\";",
     ].join("\n"),
   );
 });

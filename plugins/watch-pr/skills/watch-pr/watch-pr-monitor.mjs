@@ -230,23 +230,33 @@ function isEscaped(value, index) {
   return backslashes % 2 === 1;
 }
 
+function visualColumn(value, start, end) {
+  let column = 0;
+  for (let cursor = start; cursor < end; cursor += 1) {
+    if (value[cursor] === "\t") column += 4 - (column % 4);
+    else column += 1;
+  }
+  return column;
+}
+
 function isIndentedCodeLine(value, lineStart, activeListIndent = 0) {
-  let indentation = 0;
   const contentStart = containerContentStart(value, lineStart, value.length);
+  let column = visualColumn(value, lineStart, contentStart);
   for (let cursor = contentStart; cursor < value.length; cursor += 1) {
     if (value[cursor] === " ") {
-      indentation += 1;
+      column += 1;
       continue;
     }
     if (value[cursor] === "\t") {
-      indentation += 4 - (indentation % 4);
+      column += 4 - (column % 4);
       continue;
     }
     break;
   }
   const explicitListIndent = listContentIndent(value, lineStart, value.length);
-  const baseIndent = explicitListIndent ?? (activeListIndent || contentStart - lineStart);
-  return contentStart - lineStart + indentation >= baseIndent + 4;
+  const baseIndent = explicitListIndent ??
+    (activeListIndent || visualColumn(value, lineStart, contentStart));
+  return column >= baseIndent + 4;
 }
 
 function containerDepth(value, lineStart, limit) {
@@ -288,7 +298,7 @@ function containerQuoteDepth(value, lineStart, limit) {
 
 function containerExtent(value, lineStart) {
   let cursor = containerContentStart(value, lineStart, value.length);
-  let column = cursor - lineStart;
+  let column = visualColumn(value, lineStart, cursor);
   while (value[cursor] === " " || value[cursor] === "\t") {
     if (value[cursor] === " ") column += 1;
     else column += 4 - (column % 4);
@@ -300,7 +310,7 @@ function containerExtent(value, lineStart) {
 function listContentIndent(value, lineStart, limit) {
   const depth = containerDepth(value, lineStart, limit);
   if (depth === containerQuoteDepth(value, lineStart, limit)) return null;
-  return containerContentStart(value, lineStart, limit) - lineStart;
+  return visualColumn(value, lineStart, containerContentStart(value, lineStart, limit));
 }
 
 function lineEnd(value, lineStart) {
@@ -371,6 +381,7 @@ function continuesFenceContainer(
   const nextQuoteDepth = containerQuoteDepth(value, lineStart, value.length);
   if (nextQuoteDepth < quoteDepth) return false;
   if (listDepth === 0) return true;
+  if (isBlankMarkdownLine(value, lineStart, lineEnd(value, lineStart))) return true;
   const depth = containerDepth(value, lineStart, value.length);
   if (depth - nextQuoteDepth >= listDepth) return true;
   return containerExtent(value, lineStart) >= containerIndent;
@@ -533,7 +544,7 @@ function stripMarkdownHtmlComments(value) {
         const openingDepth = containerDepth(value, lineStart, cursor);
         fenceQuoteDepth = containerQuoteDepth(value, lineStart, cursor);
         fenceListDepth = openingDepth - fenceQuoteDepth;
-        fenceContainerIndent = cursor - lineStart;
+        fenceContainerIndent = visualColumn(value, lineStart, cursor);
         fenceIndentLimit = Math.max(3, cursor - lineStart);
       } else if (
         !escapedDelimiter &&
