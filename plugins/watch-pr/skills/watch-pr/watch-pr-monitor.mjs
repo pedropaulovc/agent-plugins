@@ -151,6 +151,31 @@ function closesFence(value, index, runLength) {
   return cursor === value.length || value[cursor] === "\n";
 }
 
+function isEscaped(value, index) {
+  let backslashes = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    backslashes += 1;
+  }
+  return backslashes % 2 === 1;
+}
+
+function isIndentedCodeLine(value, index) {
+  const lineStart = value.lastIndexOf("\n", index - 1) + 1;
+  let indentation = 0;
+  for (let cursor = lineStart; cursor < index; cursor += 1) {
+    if (value[cursor] === " ") {
+      indentation += 1;
+      continue;
+    }
+    if (value[cursor] === "\t") {
+      indentation += 4 - (indentation % 4);
+      continue;
+    }
+    break;
+  }
+  return indentation >= 4;
+}
+
 function hasClosingInlineDelimiter(value, index, runLength) {
   let cursor = index;
   while ((cursor = value.indexOf("`", cursor)) !== -1) {
@@ -223,7 +248,11 @@ function stripMarkdownHtmlComments(value) {
       continue;
     }
 
-    if (value.startsWith("<!--", cursor)) {
+    if (
+      value.startsWith("<!--", cursor) &&
+      !isEscaped(value, cursor) &&
+      !isIndentedCodeLine(value, cursor)
+    ) {
       const commentEnd = value.indexOf("-->", cursor + 4);
       if (commentEnd !== -1) {
         cursor = commentEnd + 3;

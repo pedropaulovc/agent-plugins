@@ -130,10 +130,12 @@ test("prints actionable details inline without a follow-up snapshot fetch", asyn
   }
 });
 
-test("strips Markdown HTML comments without deleting comment literals in code", () => {
+test("strips Markdown HTML comments without deleting literal code forms", () => {
   const detail = [
     "comment #987 @reviewer: <!-- hidden metadata -->Keep",
     "`const marker = \"<!-- more -->\"`.",
+    "    const indented = \"<!-- indented -->\";",
+    "Escaped \\<!-- escaped -->.",
     "```html",
     "<!-- fenced example -->",
     "```",
@@ -143,7 +145,7 @@ test("strips Markdown HTML comments without deleting comment literals in code", 
     formatMonitorEvent(monitorEvent("event-markdown-comment", "watching", {
       details: [detail],
     })),
-    "comment #987 @reviewer: Keep `const marker = \"<!-- more -->\"`. ```html <!-- fenced example --> ```",
+    "comment #987 @reviewer: Keep `const marker = \"<!-- more -->\"`. const indented = \"<!-- indented -->\"; Escaped \\<!-- escaped -->. ```html <!-- fenced example --> ```",
   );
 });
 
