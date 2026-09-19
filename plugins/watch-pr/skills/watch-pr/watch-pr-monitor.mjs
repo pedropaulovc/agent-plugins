@@ -145,12 +145,19 @@ function consumeContainerIndent(value, cursor, limit) {
   return cursor;
 }
 
+function listPaddingEnd(value, start, limit) {
+  if (value[start] === "\t") return start + 1;
+  let end = start;
+  while (end < limit && end - start < 5 && value[end] === " ") end += 1;
+  return end - start <= 4 ? end : start + 1;
+}
+
 function listMarkerEnd(value, cursor, limit) {
   if (
     (value[cursor] === "-" || value[cursor] === "+" || value[cursor] === "*") &&
     (value[cursor + 1] === " " || value[cursor + 1] === "\t")
   ) {
-    return cursor + 2;
+    return listPaddingEnd(value, cursor + 1, limit);
   }
   let marker = cursor;
   while (
@@ -166,7 +173,7 @@ function listMarkerEnd(value, cursor, limit) {
   ) {
     return null;
   }
-  return marker + 2;
+  return listPaddingEnd(value, marker + 1, limit);
 }
 
 function containerContentStart(value, lineStart, limit) {

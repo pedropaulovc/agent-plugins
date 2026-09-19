@@ -242,11 +242,15 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
       details: [
         "comment #1003 @reviewer:\n- item\n\n    <!-- hidden -->Keep",
         "comment #1004 @reviewer:\n- item\n\n      const marker = \"<!-- visible -->\";",
+        "comment #1005 @reviewer:\n-   item\n\n      <!-- hidden -->Keep",
+        "comment #1006 @reviewer:\n-   item\n\n        const marker = \"<!-- visible -->\";",
       ],
     })),
     [
       "comment #1003 @reviewer: - item Keep",
       "comment #1004 @reviewer: - item const marker = \"<!-- visible -->\";",
+      "comment #1005 @reviewer: - item Keep",
+      "comment #1006 @reviewer: - item const marker = \"<!-- visible -->\";",
     ].join("\n"),
   );
 });
