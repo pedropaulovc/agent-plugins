@@ -14,15 +14,22 @@ const MAX_UPDATE_OUTPUT_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
 const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
 const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
+const BODY_CONTINUATION_PREFIX = "│ ";
+const MAX_OVERFLOW_DETAIL_LENGTH = `+${Number.MAX_SAFE_INTEGER} more changes`.length;
 const ATX_HEADING_RE = /^#{1,6}(?:[ \t]|$)/u;
 const SETEXT_UNDERLINE_RE = /^(?:=+|-+)[ \t]*$/u;
 const THEMATIC_BREAK_RE = /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/u;
 // Deterministic backend record prefixes (`comment`/`review`/`feedback`) that precede a
 // Markdown body: the body always follows the `:` that closes the structured header.
 const DETAIL_BODY_PREFIX_RES = [
-  /^comment #\d+ @[^\s:]+(?: \S+)?:\s/u,
-  /^review #\d+ @[^\s:]+ [^\s:]+(?: \S+)?:\s/u,
-  /^feedback \[[^\]\s]*\] #\d+(?: .+:\d+(?:-\d+)?)? @[^\s:]+(?: https:\/\/github\.com\/\S+)?:\s/u,
+  /^comment #\d+ @[^\s:]+(?: https:\/\/github\.com\/\S+)?:[ \t]?/u,
+  /^review #\d+ @[^\s:]+ [^\s:]+(?: https:\/\/github\.com\/\S+)?:[ \t]?/u,
+  /^feedback \[[^\]\s]*\] #\d+(?: .+?:\d+(?:-\d+)?)? @[^\s:]+(?: https:\/\/github\.com\/\S+)?:[ \t]?/u,
+];
+const DETAIL_URL_RES = [
+  /^(comment #\d+ @[^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
+  /^(review #\d+ @[^\s:]+ [^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
+  /^(feedback \[[^\]\s]*\] #\d+(?: .+?:\d+(?:-\d+)?)? @[^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
 ];
 
 function permanent(message) {
@@ -1162,9 +1169,38 @@ function stripDetailHtmlComments(detail) {
   return { value: strippedPrefix.text + strippedBody.text, reconcile: false };
 }
 
+function removeDetailUrl(value) {
+  for (const pattern of DETAIL_URL_RES) {
+    if (pattern.test(value)) return value.replace(pattern, "$1");
+  }
+  return value;
+}
+
+function removeUnsafeControlCharacters(value) {
+  return value.replace(
+    CONTROL_CHARACTERS_RE,
+    (character) => character === "\n" || character === "\t" ? character : "",
+  );
+}
+
 function compactDetail(detail) {
-  const stripped = stripDetailHtmlComments(detail.replace(ANSI_ESCAPE_SEQUENCE_RE, ""));
-  const value = stripped.value
+  const withoutAnsi = detail
+    .replace(ANSI_ESCAPE_SEQUENCE_RE, "")
+    .replace(/\r\n?|\u0085|\u2028|\u2029/gu, "\n");
+  const preserveBody = markdownBodyStart(withoutAnsi) > 0;
+  const stripped = stripDetailHtmlComments(withoutAnsi);
+  const withoutUrl = removeDetailUrl(stripped.value);
+  if (preserveBody) {
+    const safeValue = removeUnsafeControlCharacters(withoutUrl).trim();
+    return {
+      value: safeValue.replace(/\n/gu, `\n${BODY_CONTINUATION_PREFIX}`),
+      truncated: false,
+      reconcile: stripped.reconcile,
+      preserveBody: true,
+    };
+  }
+
+  const value = withoutUrl
     .replace(/\s+/gu, " ")
     .replace(CONTROL_CHARACTERS_RE, "")
     .trim();
@@ -1172,6 +1208,7 @@ function compactDetail(detail) {
     value: truncate(value, MAX_DETAIL_LENGTH),
     truncated: value.length > MAX_DETAIL_LENGTH,
     reconcile: stripped.reconcile,
+    preserveBody: false,
   };
 }
 
@@ -1188,7 +1225,12 @@ export function formatMonitorEvent(event) {
     throw permanent("received invalid monitor event details");
   }
   const compactedDetails = event.details.map(compactDetail);
-  const details = [...new Set(compactedDetails.map((detail) => detail.value))].filter(Boolean);
+  const seenDetails = new Set();
+  const details = compactedDetails.filter((detail) => {
+    if (!detail.value || seenDetails.has(detail.value)) return false;
+    seenDetails.add(detail.value);
+    return true;
+  });
   if (details.length === 0) return null;
 
   const actionable = [];
@@ -1196,7 +1238,7 @@ export function formatMonitorEvent(event) {
   // the overflow marker is what tells the root agent to call `get_pr` for the full body.
   let omitted = compactedDetails.filter((detail) => detail.truncated || detail.reconcile).length;
   for (const detail of details) {
-    const match = OVERFLOW_DETAIL_RE.exec(detail);
+    const match = OVERFLOW_DETAIL_RE.exec(detail.value);
     const count = match ? Number(match[1]) : Number.NaN;
     if (!Number.isSafeInteger(count) || count < 0) {
       actionable.push(detail);
@@ -1206,17 +1248,27 @@ export function formatMonitorEvent(event) {
   }
 
   const included = [];
+  const boundedBudget = MAX_UPDATE_OUTPUT_LENGTH - MAX_OVERFLOW_DETAIL_LENGTH - 1;
+  let boundedLength = 0;
+  let skipped = 0;
   for (const detail of actionable) {
-    const omittedAfterDetail = omitted + actionable.length - included.length - 1;
-    const parts = [...included, detail];
-    if (omittedAfterDetail > 0) parts.push(`+${omittedAfterDetail} more changes`);
-    if (parts.join("\n").length > MAX_UPDATE_OUTPUT_LENGTH) break;
+    if (detail.preserveBody) {
+      included.push(detail);
+      continue;
+    }
+    const nextLength = boundedLength + (boundedLength === 0 ? 0 : 1) + detail.value.length;
+    if (nextLength > boundedBudget) {
+      skipped += 1;
+      continue;
+    }
     included.push(detail);
+    boundedLength = nextLength;
   }
-  omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + actionable.length - included.length);
-  if (omitted > 0) included.push(`+${omitted} more changes`);
-  if (included.length === 0) return null;
-  return included.join("\n");
+  omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + skipped);
+  const output = included.map((detail) => detail.value);
+  if (omitted > 0) output.push(`+${omitted} more changes`);
+  if (output.length === 0) return null;
+  return output.join("\n");
 }
 
 function validateResponse(response, { readyEmitted, cursor }) {

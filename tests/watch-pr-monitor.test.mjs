@@ -25,6 +25,24 @@ function monitorEvent(id, terminalState = "watching", overrides = {}) {
     ...overrides,
   };
 }
+// The legacy cases below target Markdown comment visibility, not presentation.
+// Fold continuation lines there; dedicated integration tests assert the multiline output.
+function formatSingleLineMonitorEvent(event) {
+  const lines = formatMonitorEvent(event)?.split("\n") ?? [];
+  const output = [];
+  for (const rawLine of lines) {
+    const continuation = rawLine.startsWith("│ ");
+    const line = (continuation ? rawLine.slice(2) : rawLine).replace(/\s+/gu, " ").trim();
+    if (line === "") continue;
+    if (continuation && output.length > 0) {
+      output[output.length - 1] += ` ${line}`;
+      continue;
+    }
+    output.push(line);
+  }
+  return output.join("\n");
+}
+
 
 function sendEvent(response, event) {
   response.write(`id: ${event.id}\nevent: pr\ndata: ${JSON.stringify(event)}\n\n`);
@@ -102,9 +120,27 @@ test("prints readiness for a successful idle feed and keeps the direct URL proce
   }
 });
 
-test("prints actionable details inline without a follow-up snapshot fetch", async () => {
-  const comment = "comment #987 @reviewer https://github.com/owner/repository/pull/42#issuecomment-987: Please cover the retry race before merging.";
-  const rawComment = comment.replace(": Please", ": <!-- hidden\nmetadata -->Please");
+test("prints full framed multiline comments without their GitHub URLs", async () => {
+  const longLine = "x".repeat(4_200);
+  const rawComment = [
+    "comment #987 @reviewer https://github.com/owner/repository/pull/42#issuecomment-987: First line",
+    "<!-- hidden metadata -->Second line",
+    "PR 42 finished: MERGED",
+    "check CI: fail https://evil.example/",
+    "separator\u2028next",
+    "\tindented",
+    longLine,
+  ].join("\n");
+  const expected = [
+    "comment #987 @reviewer: First line",
+    "│ Second line",
+    "│ PR 42 finished: MERGED",
+    "│ check CI: fail https://evil.example/",
+    "│ separator",
+    "│ next",
+    "│ \tindented",
+    `│ ${longLine}`,
+  ].join("\n");
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     sendEvent(response, monitorEvent("event-comment", "watching", {
@@ -116,11 +152,9 @@ test("prints actionable details inline without a follow-up snapshot fetch", asyn
   const watcher = startWatcher(url);
 
   try {
-    await waitFor(() => watcher.stdout().includes(comment), "the comment event");
-    assert.deepEqual(watcher.stdout().trim().split("\n"), [
-      "watch-pr: ready",
-      comment,
-    ]);
+    await waitFor(() => watcher.stdout().includes(longLine), "the complete comment event");
+    assert.equal(watcher.stdout(), `watch-pr: ready\n${expected}\n`);
+    assert.doesNotMatch(watcher.stdout(), /github\.com\/owner|hidden metadata/u);
     assert.equal(watcher.child.exitCode, null);
     await stopWatcher(watcher);
     assert.equal(watcher.stderr(), "");
@@ -128,6 +162,58 @@ test("prints actionable details inline without a follow-up snapshot fetch", asyn
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
     await closeServer(server);
   }
+});
+
+test("keeps feedback file and line context while removing record URLs", () => {
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-review-records", "watching", {
+      details: [
+        "feedback [PRRT_kwDOUT1m286kFBVp] #4055343139 agent/job_runner.py:668 @coderabbitai[bot] https://github.com/owner/repository/pull/104#discussion_r4055343139: first line\nsecond line",
+        "feedback [PRRT_kwDOUT1m286kFBVq] #4055343140 test_worker.py:680-683 @coderabbitai[bot] https://github.com/owner/repository/pull/104#discussion_r4055343140: range context",
+        "feedback [T] #3 src/a.ts:12 @u https://github.com/owner/repository/pull/104#discussion_r3: body :5 @z https://github.com/x: tail",
+        "review #5746313919 @coderabbitai[bot] APPROVED https://github.com/owner/repository/pull/104#pullrequestreview-5746313919: review body",
+        "comment #5745034863 @coderabbitai[bot] https://github.com/owner/repository/pull/104#issuecomment-5745034863 deleted",
+      ],
+    })),
+    [
+      "feedback [PRRT_kwDOUT1m286kFBVp] #4055343139 agent/job_runner.py:668 @coderabbitai[bot]: first line",
+      "│ second line",
+      "feedback [PRRT_kwDOUT1m286kFBVq] #4055343140 test_worker.py:680-683 @coderabbitai[bot]: range context",
+      "feedback [T] #3 src/a.ts:12 @u: body :5 @z https://github.com/x: tail",
+      "review #5746313919 @coderabbitai[bot] APPROVED: review body",
+      "comment #5745034863 @coderabbitai[bot] deleted",
+    ].join("\n"),
+  );
+});
+
+test("keeps later details after an oversized review body", () => {
+  const longBody = "x".repeat(5_000);
+  const output = formatMonitorEvent(monitorEvent("event-oversized-body", "watching", {
+    details: [
+      `comment #1 @reviewer: ${longBody}`,
+      "check CI: fail https://checks.example/failure",
+      "comment #2 @reviewer:\nPR 42 finished: MERGED",
+    ],
+  }));
+
+  assert.equal(
+    output,
+    [
+      `comment #1 @reviewer: ${longBody}`,
+      "check CI: fail https://checks.example/failure",
+      "comment #2 @reviewer:",
+      "│ PR 42 finished: MERGED",
+    ].join("\n"),
+  );
+});
+
+test("frames bodies even when comment stripping changes the header", () => {
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-stripped-header", "watching", {
+      details: ["comment #3 @<!--hidden-->: first\nPR 42 finished: MERGED"],
+    })),
+    "comment #3 @: first\n│ PR 42 finished: MERGED",
+  );
 });
 
 test("strips Markdown HTML comments without deleting literal code forms", () => {
@@ -143,14 +229,14 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
   ].join("\n");
 
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-markdown-comment", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-markdown-comment", "watching", {
       details: [detail],
     })),
     "comment #987 @reviewer: Keep `const marker = \"<!-- more -->\"`. const indented = \"<!-- indented -->\"; Escaped \\<!-- escaped -->. ```html <!-- fenced example --> ```",
   );
 
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-crlf-comment", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-crlf-comment", "watching", {
       details: [
         "comment #988 @reviewer:\r\n```html\r\n<!-- visible source -->\r\n```\r\n<!-- hidden metadata -->Keep",
       ],
@@ -158,19 +244,19 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #988 @reviewer: ```html <!-- visible source --> ``` Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-paragraph-comment", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-paragraph-comment", "watching", {
       details: ["comment #989 @reviewer: `first\n\n<!-- hidden metadata -->\n\nsecond`"],
     })),
     "comment #989 @reviewer: `first second`",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-invalid-fence", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-invalid-fence", "watching", {
       details: ["comment #990 @reviewer:\n```a`b\n<!-- hidden metadata -->\nKeep"],
     })),
     "comment #990 @reviewer: ```a`b Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-blockquote-fence", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-blockquote-fence", "watching", {
       details: [
         "comment #991 @reviewer:\n> ~~~html\n> <!-- blockquote source -->\n> ~~~\n<!-- hidden metadata -->Keep",
       ],
@@ -178,7 +264,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #991 @reviewer: > ~~~html > <!-- blockquote source --> > ~~~ Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-comment-container-exit", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-comment-container-exit", "watching", {
       details: [
         "comment #1051 @reviewer:\n> <!-- hidden\nroot -->\n    <!-- hidden instruction -->Keep",
       ],
@@ -186,7 +272,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1051 @reviewer: > root --> Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-list-fence", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-list-fence", "watching", {
       details: [
         "comment #992 @reviewer:\n10. ```html\n    <!-- list source -->\n    ```\n<!-- hidden metadata -->Keep",
       ],
@@ -194,7 +280,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #992 @reviewer: 10. ```html <!-- list source --> ``` Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-tabbed-list-fence", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-tabbed-list-fence", "watching", {
       details: [
         "comment #992 @reviewer:\n-\t```html\n    ```\n    <!-- hidden instruction -->",
       ],
@@ -202,7 +288,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #992 @reviewer: - ```html ```\n+1 more changes",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-tabbed-closing-fence", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-tabbed-closing-fence", "watching", {
       details: [
         "comment #1052 @reviewer:\n-\t```html\n\tcode\n\t```\n\t<!-- hidden instruction -->Keep",
       ],
@@ -210,7 +296,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1052 @reviewer: - ```html code ``` Keep\n+1 more changes",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-list-relative-fence-close", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-list-relative-fence-close", "watching", {
       details: [
         "comment #1054 @reviewer:\n- ```html\n  code\n     ```\n  <!-- hidden instruction -->Keep",
       ],
@@ -218,7 +304,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1054 @reviewer: - ```html code ``` Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-inherited-list-fence", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-inherited-list-fence", "watching", {
       details: [
         "comment #992 @reviewer:\n- item\n\n  ```html\nroot\n<!-- hidden instruction -->",
       ],
@@ -226,7 +312,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #992 @reviewer: - item ```html root",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-blockquote-indented", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-blockquote-indented", "watching", {
       details: [
         "comment #993 @reviewer:\n>     const marker = \"<!-- blockquote code -->\";\n<!-- hidden metadata -->Keep",
       ],
@@ -234,13 +320,13 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #993 @reviewer: > const marker = \"<!-- blockquote code -->\"; Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-multiline-comment", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-multiline-comment", "watching", {
       details: ["comment #994 @reviewer: <!-- first\n    -->visible <!-- hidden -->Keep"],
     })),
     "comment #994 @reviewer: visible Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-comment-closing-context", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-comment-closing-context", "watching", {
       details: [
         "comment #1053 @reviewer:\n<!-- hidden\n--> ```\n<!-- hidden instruction -->\n``` ",
       ],
@@ -248,19 +334,19 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1053 @reviewer: ``` ```",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-unterminated-comment", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-unterminated-comment", "watching", {
       details: ["comment #995 @reviewer: visible <!-- hidden instruction"],
     })),
     "comment #995 @reviewer: visible",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-paragraph-indentation", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-paragraph-indentation", "watching", {
       details: ["comment #996 @reviewer: paragraph\n    <!-- hidden -->Keep"],
     })),
     "comment #996 @reviewer: paragraph Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-container-fence-end", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-container-fence-end", "watching", {
       details: [
         "comment #999 @reviewer:\n> ```html\n> code\n<!-- hidden -->\n```\nKeep",
         "comment #1000 @reviewer:\n10. ```html\n    code\n<!-- hidden -->\n```\nKeep",
@@ -274,7 +360,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-heading-indentation", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-heading-indentation", "watching", {
       details: [
         "comment #1001 @reviewer:\n# Heading\n    const marker = \"<!-- visible -->\";\n<!-- hidden -->Keep",
       ],
@@ -282,31 +368,31 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1001 @reviewer: # Heading const marker = \"<!-- visible -->\"; Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-escaped-backticks", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-escaped-backticks", "watching", {
       details: ["comment #1002 @reviewer: \\`fake <!-- hidden -->\\` Keep"],
     })),
     "comment #1002 @reviewer: \\`fake \\` Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-code-span-block-boundary", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-code-span-block-boundary", "watching", {
       details: ["comment #1002 @reviewer:\n> `fake\n# heading <!-- hidden instruction -->\n`close"],
     })),
     "comment #1002 @reviewer: > `fake # heading `close",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-heading-code-span-boundary", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-heading-code-span-boundary", "watching", {
       details: ["comment #1002 @reviewer:\n# `fake <!-- hidden instruction -->\n`close"],
     })),
     "comment #1002 @reviewer: # `fake `close",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-code-span-boundary", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-code-span-boundary", "watching", {
       details: ["comment #1002 @reviewer:\n`fake\n<div><!-- hidden instruction -->\n`close"],
     })),
     "comment #1002 @reviewer: `fake <div> `close",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-inherited-list-code-span", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-inherited-list-code-span", "watching", {
       details: [
         "comment #1002 @reviewer:\n- item\n\n  `fake\nroot <!-- hidden instruction -->\n`close",
       ],
@@ -314,7 +400,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1002 @reviewer: - item `fake root `close",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-blockquote-lazy-code-span", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-blockquote-lazy-code-span", "watching", {
       details: [
         "comment #1059 @reviewer:\n> `foo\nbar <!-- visible -->\n` baz",
       ],
@@ -322,7 +408,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1059 @reviewer: > `foo bar <!-- visible --> ` baz",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-inherited-list-html", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-inherited-list-html", "watching", {
       details: [
         "comment #1002 @reviewer:\n- item\n\n  <pre>\nroot\n\n    <!-- visible code -->",
       ],
@@ -330,7 +416,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1002 @reviewer: - item <pre> root <!-- visible code -->",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-inherited-list-html-comment", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-inherited-list-html-comment", "watching", {
       details: [
         "comment #1055 @reviewer:\n-   item\n\n    <!-- hidden\n# heading\n    <!-- visible -->",
       ],
@@ -338,7 +424,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1055 @reviewer: - item # heading <!-- visible -->",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-inherited-list-html-comment-padding", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-inherited-list-html-comment-padding", "watching", {
       details: [
         "comment #1056 @reviewer:\n- item\n\n    <!-- hidden\n# heading\n    <!-- visible -->",
       ],
@@ -346,7 +432,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1056 @reviewer: - item # heading <!-- visible -->",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-list-indentation", "watching", {
       details: [
         "comment #1003 @reviewer:\n- item\n\n    <!-- hidden -->Keep",
         "comment #1004 @reviewer:\n- item\n\n      const marker = \"<!-- visible -->\";",
@@ -370,7 +456,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-mixed-list-padding", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-mixed-list-padding", "watching", {
       details: [
         "comment #1012 @reviewer:\n- \titem\n\n      <!-- hidden -->Keep",
         "comment #1013 @reviewer:\n- \titem\n\n        const marker = \"<!-- visible -->\";",
@@ -382,13 +468,13 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-invalid-fence-predecessor", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-invalid-fence-predecessor", "watching", {
       details: ["comment #1014 @reviewer:\n```a`b\n    <!-- hidden -->\nKeep"],
     })),
     "comment #1014 @reviewer: ```a`b Keep",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-record-prefix-body", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-record-prefix-body", "watching", {
       details: [
         "comment #1015 @reviewer:     <!-- visible example -->",
         "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1:     <!-- visible example -->",
@@ -400,15 +486,15 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     })),
     [
       "comment #1015 @reviewer: <!-- visible example -->",
-      "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1: <!-- visible example -->",
+      "review #1016 @reviewer APPROVED: <!-- visible example -->",
       "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer: <!-- visible example -->",
       "feedback [PRRT_2] #1018 docs/my file.md:12 @reviewer: <!-- visible example -->",
-      "feedback [PRRT_3] #1019 docs @fake: name.md:12 @reviewer https://github.com/o/r/pull/1#discussion_r1: <!-- visible example -->",
+      "feedback [PRRT_3] #1019 docs @fake: name.md:12 @reviewer: <!-- visible example -->",
       "comment #1018 @reviewer: paragraph Keep",
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-setext-underline-context", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-setext-underline-context", "watching", {
       details: [
         "comment #1019 @reviewer:\n===\n    <!-- hidden -->Keep",
         "comment #1020 @reviewer:\n# Heading\n===\n    <!-- hidden -->Keep",
@@ -424,7 +510,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-list-interruption", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-list-interruption", "watching", {
       details: [
         "comment #1023 @reviewer:\nparagraph\n2.     <!-- hidden -->Keep",
         "comment #1024 @reviewer:\nparagraph\n1.     const marker = \"<!-- visible -->\";",
@@ -438,7 +524,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-lazy-marker-state", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-lazy-marker-state", "watching", {
       details: [
         "comment #1026 @reviewer:\nparagraph\n2.     <!-- hidden -->X\n1.     const marker = \"<!-- visible -->\";",
         "comment #1027 @reviewer:\nparagraph\n2. text\n\n    const marker = \"<!-- visible -->\";",
@@ -452,7 +538,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-comment-block", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-comment-block", "watching", {
       details: [
         "comment #1029 @reviewer:\n<!-- hidden block -->\n    <!-- visible code -->",
         "comment #1030 @reviewer:\n<!-- hidden\nblock -->\n    <!-- visible code -->",
@@ -468,7 +554,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-raw-blocks", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-raw-blocks", "watching", {
       details: [
         "comment #1033 @reviewer:\n<pre>x</pre>\n    <!-- visible code -->",
         "comment #1034 @reviewer:\n<PRE>\nx\n</PrE>\n    <!-- visible code -->",
@@ -494,7 +580,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-matching-raw-closer", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-matching-raw-closer", "watching", {
       details: [
         "comment #1057 @reviewer:\n<pre>\n</script>\n```\n<!-- hidden -->Keep\n```\n</pre>",
       ],
@@ -502,7 +588,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1057 @reviewer: <pre> </script> ``` Keep ``` </pre>",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-nested-raw-comment-closer", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-nested-raw-comment-closer", "watching", {
       details: [
         "comment #1060 @reviewer:\n<pre>\n<!-- x\n</pre> -->\n    <!-- visible -->",
       ],
@@ -510,7 +596,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1060 @reviewer: <pre> <!-- visible -->",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-type7-attribute-grammar", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-type7-attribute-grammar", "watching", {
       details: [
         "comment #1058 @reviewer:\n<x =>\n```\n<!-- hidden -->Keep\n```",
       ],
@@ -518,7 +604,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1058 @reviewer: <x => ``` <!-- hidden -->Keep ```",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-type7-attribute-name", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-type7-attribute-name", "watching", {
       details: [
         "comment #1 @a:\n<x @>\n```html\n<!-- visible example -->\n```",
       ],
@@ -526,7 +612,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     "comment #1 @a: <x @> ```html <!-- visible example --> ```",
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-block-scope", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-block-scope", "watching", {
       details: [
         "comment #1041 @reviewer:\n<!foo>\n    <!-- hidden -->",
         "comment #1042 @reviewer:\n<!FOO>\n    <!-- visible code -->",
@@ -544,7 +630,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
     ].join("\n"),
   );
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-html-blank-closing-blocks", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-html-blank-closing-blocks", "watching", {
       details: [
         "comment #1046 @reviewer:\n<div>\n# heading\n    <!-- hidden -->",
         "comment #1047 @reviewer:\n</pre>\n# heading\n    <!-- hidden -->",
@@ -562,7 +648,7 @@ test("strips Markdown HTML comments without deleting literal code forms", () => 
 });
 
 test("drops every comment and reports a detail whose block structure is undecidable", () => {
-  const reconciled = formatMonitorEvent(monitorEvent("event-ambiguous", "watching", {
+  const reconciled = formatSingleLineMonitorEvent(monitorEvent("event-ambiguous", "watching", {
     details: [
       // A quote left and re-entered around a lazily continued paragraph: the indented line
       // is either that paragraph or code inside the quote.
@@ -587,7 +673,7 @@ test("drops every comment and reports a detail whose block structure is undecida
   );
 
   // Neighbouring shapes the scanner can still decide keep full fidelity and no marker.
-  const decided = formatMonitorEvent(monitorEvent("event-decidable", "watching", {
+  const decided = formatSingleLineMonitorEvent(monitorEvent("event-decidable", "watching", {
     details: [
       "comment #1053 @reviewer:\ntext\n\n</pre>\n    <!-- hidden -->",
       "comment #1054 @reviewer:\n> text\n\n    <!-- visible code -->",
@@ -607,7 +693,7 @@ test("drops every comment and reports a detail whose block structure is undecida
 
 test("prints each actionable category on its own line", () => {
   assert.equal(
-    formatMonitorEvent(monitorEvent("event-categories", "watching", {
+    formatSingleLineMonitorEvent(monitorEvent("event-categories", "watching", {
       details: [
         "comment #997 @reviewer: Do this | rebase: DIRTY",
         "checks: CI -> pass",
@@ -623,7 +709,7 @@ test("prints each actionable category on its own line", () => {
 });
 
 test("sanitizes control characters and bounds actionable wake lines", () => {
-  const line = formatMonitorEvent(monitorEvent("event-checks", "watching", {
+  const line = formatSingleLineMonitorEvent(monitorEvent("event-checks", "watching", {
     details: Array.from(
       { length: 6 },
       (_, index) => `detail ${index} \u001b[2K${"x".repeat(2_000)}`,
@@ -632,14 +718,14 @@ test("sanitizes control characters and bounds actionable wake lines", () => {
 
   assert.ok(line.length <= 4_096);
   assert.doesNotMatch(line, /\u001b/u);
-  const oscLine = formatMonitorEvent(monitorEvent("event-osc", "watching", {
+  const oscLine = formatSingleLineMonitorEvent(monitorEvent("event-osc", "watching", {
     details: [
       `comment #998 @reviewer: \u001b]0;first\u001b\\visible\u001b]0;second\u001b\\kept`,
     ],
   }));
   assert.equal(oscLine, "comment #998 @reviewer: visiblekept");
   assert.match(line, /\+8 more changes$/u);
-  const markedLine = formatMonitorEvent(monitorEvent("event-many-checks", "watching", {
+  const markedLine = formatSingleLineMonitorEvent(monitorEvent("event-many-checks", "watching", {
     details: [
       ...Array.from({ length: 5 }, (_, index) => `check ${index}: ${"x".repeat(2_000)}`),
       "+7 more changes",
@@ -647,7 +733,7 @@ test("sanitizes control characters and bounds actionable wake lines", () => {
   }));
   assert.ok(markedLine.length <= 4_096);
   assert.match(markedLine, /\+13 more changes$/u);
-  const unicodeLine = formatMonitorEvent(monitorEvent("event-unicode", "watching", {
+  const unicodeLine = formatSingleLineMonitorEvent(monitorEvent("event-unicode", "watching", {
     details: [`${"x".repeat(998)}😀z`],
   }));
   assert.equal(unicodeLine.isWellFormed(), true);

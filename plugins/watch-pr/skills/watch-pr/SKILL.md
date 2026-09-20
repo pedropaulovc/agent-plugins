@@ -79,12 +79,15 @@ same watcher emits the readiness record.
    node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"
    ```
 
-5. Classify each stdout line before acting:
+5. Classify each stdout record before acting:
    - The exact first line `watch-pr: ready` is startup readiness. It is not a PR event.
-   - Every other nonterminal stdout line contains actionable event details inline. One
-     watcher is scoped to one PR, so these lines omit a redundant PR/update prefix. Check
-     failures include their URL; comments, reviews, and feedback include the changed body
-     and GitHub URL. Act from this line without calling `get_pr`.
+   - Every other nonterminal output begins with actionable event details. One watcher is
+     scoped to one PR, so the output omits a redundant PR/update prefix. Comment, review,
+     and feedback bodies retain their original Markdown lines; every continuation line
+     starts with `│ ` and therefore cannot be mistaken for a watcher record. Check failures
+     include their URL; comment and review headers include their IDs, while feedback also
+     includes the file and start/end lines. Their redundant GitHub URLs are omitted.
+     Act from this output without calling `get_pr`.
    - Routine check transitions and no-op webhook deliveries emit nothing. A check rerun
      produces one start line, immediate named failures or cancellations, and one terminal
      rollup after every pending check settles.
@@ -102,9 +105,10 @@ same watcher emits the readiness record.
 
 Create one persistent `Monitor` running the watcher command with `monitorUrl` as its
 sole argument. Keep that Monitor active after intermediate updates. Treat
-`watch-pr: ready` only as successful startup; each later nonterminal detail line or
+`watch-pr: ready` only as successful startup; each later nonterminal output block or
 `PR <n> finished: ...` line wakes the root session. Record the Monitor identifier for
-explicit cancellation. Do not run the command in an ordinary background shell, create
+explicit cancellation.
+Do not run the command in an ordinary background shell, create
 a scheduled task, or replace the Monitor after an intermediate event.
 
 ### Codex
@@ -115,9 +119,11 @@ path and `monitorUrl`, and instruct it exactly as follows:
 ```text
 Run `node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"` in the
 foreground. Report the exact line `watch-pr: ready` to the root as startup readiness,
-then continue reading the same process. For each nonterminal line after readiness,
-immediately send the exact line to the root session through the parent-message channel,
-continue reading the same process. For `PR <n> finished: MERGED` or
+then continue reading the same process. For each nonterminal output line after readiness,
+immediately send the exact line to the root session through the parent-message channel.
+Lines beginning with `│ ` continue the preceding comment, review, or feedback body and
+are never standalone watcher records. Continue reading the same process. For
+`PR <n> finished: MERGED` or
 `PR <n> finished: CLOSED`, return the exact line to the root as the terminal result and
 exit. If the process writes stderr or exits nonzero, send the error to the root and
 exit. Do not call MCP or GitHub tools, inspect or modify files, rebase, push, reply,
@@ -175,12 +181,12 @@ notifications, or repeated watcher launches.
 | `check <name>: fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
 | `check <name>: cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
 | `checks: all terminal (...)` | Confirm every required check passed; investigate nonzero fail or cancel counts. |
-| `comment #<id> @<author> <url>: <body>` | Read the body inline, decide whether it requires action, then reply at the URL when needed. |
-| `review #<id> @<author> <state> <url>: <body>` | Handle the verdict and body directly; do not fetch the complete PR merely to locate it. |
-| `feedback [<thread>] #<comment-id> <file>:<lines> @<author> <url>: <body>` | Inspect the named code, fix or reply, and use the IDs when replying or resolving the thread. `[-]` means GitHub did not return a thread ID. |
+| `comment #<id> @<author>: <body>` | Read the full body inline, including any `│ ` continuation lines; decide whether it requires action, then use the comment ID to reply when needed. |
+| `review #<id> @<author> <state>: <body>` | Handle the verdict and full body directly, including any `│ ` continuation lines; use the review ID when a reply is needed. |
+| `feedback [<thread>] #<comment-id> <file>:<start>[-<end>] @<author>: <body>` | Inspect the named code and all `│ ` continuation lines, then fix or reply using the IDs. `[-]` means GitHub did not return a thread ID. |
 | `thread <id>: reopened\|resolved` | Re-opened feedback requires action; record resolved feedback without another snapshot fetch. |
 | `comment\|review\|feedback ... deleted` | Record that the referenced feedback was removed; do not act on its stale text. |
-| `+<n> more changes` | The event exceeded its safety bound; call `get_pr` once to reconcile the omitted details. |
+| `+<n> more changes` | Non-body details exceeded the safety bound or a body required snapshot reconciliation; call `get_pr` once for the omitted details. |
 | `PR <n> finished: MERGED` | Call `get_pr`, call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. The watcher exits on its own. |
 | `PR <n> finished: CLOSED` | Call `get_pr`, call `unwatch_pr`, and report that the PR closed without merging. The watcher exits on its own. |
 
@@ -193,8 +199,8 @@ For each inline `comment`, `review`, or `feedback` detail:
 2. Make and verify pertinent code changes. Keep unresolved design disagreements open;
    resolve settled threads after replying.
 3. Push the fix. This restarts checks and produces later feed events.
-4. Reply through `gh` using the comment, review, thread, and URL identifiers already in
-   the event line. Use the repository's comments skill when available; otherwise use
+4. Reply through `gh` using the comment, review, and thread identifiers already in the
+   event output. Use the repository's comments skill when available; otherwise use
    GitHub's REST reply endpoint and GraphQL `resolveReviewThread` mutation directly.
 
 Continue until the watcher reports merge or closure. Passing checks is intermediate;
