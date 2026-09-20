@@ -36,7 +36,7 @@
 ### Alt text
 
 - `alt-text` favors the information a post would lose without the image over exhaustive visual description.
-- The platform limits published in `README.md` are a subset. Keep them in sync with `plugins/alt-text/skills/alt-text/SKILL.md`, which owns the full list and default length.
+- The platform limits and writing rules published in `README.md` are a subset. Keep them in sync with `plugins/alt-text/skills/alt-text/SKILL.md`, which owns the full list and default length.
 
 ### OMP persistence
 
