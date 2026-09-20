@@ -19,7 +19,7 @@ Every plugin except `no-fetch` is available from the Codex marketplace:
 codex plugin marketplace add pedropaulovc/agent-plugins
 ```
 
-Enable plugins from the `/plugins` browser. `no-fetch` is Claude-only. To disable Codex web search, set `web_search = "disabled"` in `~/.codex/config.toml`.
+Enable plugins from the `/plugins` browser. `no-fetch` is Claude-only because Codex routes web access through a hosted `web_search` tool that hooks cannot intercept. Disable that tool by setting `web_search = "disabled"` in `~/.codex/config.toml`.
 
 Slash commands appear as skills in Codex. Invoke them with `$<skill>` or from `/skills`.
 
@@ -42,11 +42,11 @@ Restart OpenCode after changing the config. The package registers the bundled sk
 
 ### [mediocrity-detector](plugins/mediocrity-detector)
 
-Stops an agent when its final response uses hedging and asks it to state each assumption for review.
+Blocks an agent from ending its turn when the turn contains hedging and asks it to state each assumption so you can make the call.
 
 ### [unrelated-issue-detector](plugins/unrelated-issue-detector)
 
-Stops an agent when it dismisses a finding as unrelated or pre-existing and asks for evidence.
+Blocks an agent from ending its turn when it dismisses a finding as unrelated or pre-existing and asks for evidence.
 
 ### [developing-solidworks](plugins/developing-solidworks)
 
@@ -70,11 +70,11 @@ These plugins are useful across projects.
 |---|---|---|
 | [superpowers](plugins/superpowers) | Skills | Skills for TDD, debugging, and collaboration, vendored from [obra/superpowers](https://github.com/obra/superpowers) |
 | [windows-bash-guard](plugins/windows-bash-guard) | Hook | Fixes Windows and Bash path pitfalls such as backslash paths and `/dev/stdin` before execution |
-| [memory-to-repo](plugins/memory-to-repo) | Hook + Skills | Redirects machine-local auto-memory CRUD operations to the repository's `./memory/` directory so memory is git-tracked and shareable |
+| [memory-to-repo](plugins/memory-to-repo) | Hook + Skills | Blocks auto-memory CRUD in the machine-local directory and redirects it to the repository's `./memory/` directory so memory is git-tracked and shareable |
 
 ### Plugins for specific tools and workflows
 
-These plugins target specific tools, workflows, or niche use cases.
+These plugins target specific tools, workflows, or the author's setup. Some require configuration that is not part of this repository.
 
 | Plugin | Type | What it does |
 |---|---|---|
@@ -88,13 +88,13 @@ These plugins target specific tools, workflows, or niche use cases.
 | [developing-solidworks](plugins/developing-solidworks) | Skill + Command | Guides C# development against the SolidWorks .NET COM API |
 | [developing-solidworks-mcp](plugins/developing-solidworks-mcp) | MCP Server + Skill | Searches SolidWorks XMLDoc and retrieves type, enum, example, and guide records |
 | [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Provides gstack's no-code entrepreneurship skills for idea validation, market research, and strategy |
-| [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects requests to the Firecrawl and Browserbase MCPs |
+| [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects requests to separately configured Firecrawl and Browserbase MCP servers |
 | [worktree-reset](plugins/worktree-reset) | Skill | `/reset` runs harness-aware teardown, resets the current worktree to `origin/main`, and syncs Node, Go, and Python dependencies |
 | [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Adds `--headed` to `playwright-cli open` and recommends a standard viewport |
 | [alt-text](plugins/alt-text) | Skill | Writes alt text for images that are about to be posted on social media |
 | [pedro-microblog](plugins/pedro-microblog) | Skill | Applies Pedro's observed microblog voice across X, Threads, Mastodon, and Bluesky |
 | [cloudflare-temp-accounts](plugins/cloudflare-temp-accounts) | Skill | Provisions and claims Cloudflare temporary accounts and isolates Wrangler authentication profiles |
-| [onepassword](plugins/onepassword) | Skill | Establishes an interactive 1Password CLI (`op`) session when service-account authentication fails |
+| [onepassword](plugins/onepassword) | Skill | Establishes an interactive 1Password CLI (`op`) session in a tmux pane when service-account authentication fails |
 
 ## License
 

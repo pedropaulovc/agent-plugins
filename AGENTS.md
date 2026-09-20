@@ -19,7 +19,6 @@
 - Keep `README.md` focused on installation, user-visible behavior, and the plugin inventory.
 - Put maintainer-only design constraints and implementation details in this file or the affected plugin's documentation.
 - Keep the brief descriptions in the "All plugins" table consistent with the detailed behavior below.
-- `no-fetch` is absent from the Codex marketplace because Codex exposes web access through a hosted `web_search` tool that hooks cannot intercept.
 
 ## Plugin implementation notes
 
@@ -30,18 +29,14 @@
 
 ### SolidWorks
 
-- `developing-solidworks` is the direct SolidWorks .NET COM API workflow skill in this collection.
+- `developing-solidworks` is the only skill that drives the SolidWorks .NET COM API directly. `developing-solidworks-mcp` covers the same API through structured documentation lookup, which explains the mutually exclusive installation guidance in `README.md`.
 - Many SolidWorks methods accept 10 to 30 positional `bool`, `int`, or `double` arguments. The skill requires named arguments because a changed Boolean can silently alter behavior.
 - Preserve its documentation-first workflow, offline API references, COM interop patterns, and guidance for known failures such as `FeatureCut4` returning null, failed extrusions, and faulty geometry detection.
-- `/download-solidworks-docs` downloads the offline API documentation into the skill directory.
-- `developing-solidworks-mcp` provides structured XMLDoc search, catalog browsing, and type, enum, example, and guide retrieval. Users should install it instead of `developing-solidworks` when they need structured lookup. The two plugins should not be installed together.
 
 ### Alt text
 
 - `alt-text` favors the information a post would lose without the image over exhaustive visual description.
-- Preserve its platform limits: Bluesky 2,000 characters, Mastodon 1,500, X 1,000, and LinkedIn 120.
-- Transcribe visible text such as memes, post screenshots, and chart labels. Lead with the takeaway for charts.
-- Do not infer identity from appearance or add editorial judgments such as "beautiful" or "stunning."
+- Platform limits and writing rules are published in `README.md`; changes to the skill must keep them in sync.
 
 ### OMP persistence
 
