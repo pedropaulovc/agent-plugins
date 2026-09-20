@@ -1,30 +1,31 @@
 # agent-plugins
 
-A Claude Code, OpenAI Codex, and OpenCode collection of hooks, skills, and commands focused on engineering rigor, GitHub workflow, Windows quirks, and one very specific CAD niche.
+A collection of Claude Code, OpenAI Codex, and OpenCode plugins for engineering work, GitHub workflows, Windows tooling, and SolidWorks development.
 
-## Install
+## Installation
 
-**Claude Code:**
+### Claude Code
 
 ```bash
 /plugin marketplace add pedropaulovc/agent-plugins
 /plugin install <plugin-name>@agent-plugins
 ```
 
-**OpenAI Codex CLI:** every plugin except `no-fetch` ships a `.codex-plugin/plugin.json`
-and is listed in `.agents/plugins/marketplace.json`, so Codex loads them from the same repo:
+### OpenAI Codex CLI
+
+Every plugin except `no-fetch` is available from the Codex marketplace:
 
 ```bash
 codex plugin marketplace add pedropaulovc/agent-plugins
 ```
 
-Then enable plugins from the `/plugins` browser. `no-fetch` is Claude-only — Codex's
-web access is a hosted `web_search` tool that hooks can't intercept (disable it with
-`web_search = "disabled"` in `~/.codex/config.toml` instead). Slash-commands become
-skills under Codex (invoke with `$<skill>` or `/skills`).
+Enable plugins from the `/plugins` browser. `no-fetch` is Claude-only. To disable Codex web search, set `web_search = "disabled"` in `~/.codex/config.toml`.
 
-**OpenCode:** install the whole collection by adding its Git package to the `plugin`
-array in `opencode.json`:
+Slash commands appear as skills in Codex. Invoke them with `$<skill>` or from `/skills`.
+
+### OpenCode
+
+Install the collection by adding its Git package to the `plugin` array in `opencode.json`:
 
 ```json
 {
@@ -35,68 +36,65 @@ array in `opencode.json`:
 }
 ```
 
-Restart OpenCode after changing the config. The package registers all bundled skills,
-commands, and lifecycle/tool hooks. See [the OpenCode guide](docs/opencode.md) for
-selective local installs, platform support, and the hook mapping.
+Restart OpenCode after changing the config. The package registers the bundled skills, commands, lifecycle hooks, and tool hooks. The [OpenCode guide](docs/opencode.md) covers selective local installs, platform support, and hook mappings.
 
-## Featured
+## Selected plugins
 
 ### [mediocrity-detector](plugins/mediocrity-detector)
 
-Rust `Stop` hook that detects hedging language in the current turn, blocks the stop, and prompts the agent to report each assumption explicitly so you can make the judgement call.
+Stops an agent when its final response uses hedging and asks it to state each assumption for review.
 
 ### [unrelated-issue-detector](plugins/unrelated-issue-detector)
 
-Rust `Stop` hook that detects when the agent dismisses findings as unrelated or pre-existing, blocks the stop, and asks for evidence on each dismissal.
+Stops an agent when it dismisses a finding as unrelated or pre-existing and asks for evidence.
 
 ### [developing-solidworks](plugins/developing-solidworks)
 
-The only skill in this collection targeting the SolidWorks .NET COM API. Anti-hallucination guardrails tuned for the low-level surface: many SolidWorks methods take 10–30 positional `bool`/`int`/`double` parameters where a flipped bool silently changes behaviour, so the skill forces named arguments and grounded references to the offline API docs over guesswork. Also: documentation-first workflow, COM-interop code-quality patterns, real-bug learnings (`FeatureCut4` returning null, extrusion failures, faulty-geometry detection), and a `/download-solidworks-docs` command that pulls the offline API doc bundle into the skill folder.
-
+Guides C# development against the SolidWorks .NET COM API using offline documentation and API-specific safeguards. Run `/download-solidworks-docs` to download the API documentation into the skill directory.
 
 ### [developing-solidworks-mcp](plugins/developing-solidworks-mcp)
 
-Standalone MCP server for grounded SolidWorks XMLDoc search, catalog browsing, and complete type, enum, example, and guide retrieval. Use it instead of `developing-solidworks` when structured documentation lookup is needed; do not install both.
+Provides structured SolidWorks XMLDoc search, catalog browsing, and type, enum, example, and guide retrieval. Install this or `developing-solidworks`, not both.
 
 ### [alt-text](plugins/alt-text)
 
-Skill for writing social-media alt text that a screen reader user would actually want to hear. Pushes back on the default AI failure mode — exhaustive, forensic descriptions that read like a deposition — and instead frames every image around "what would the post lose if the image disappeared?". Bakes in platform-specific length budgets (Bluesky 2k, Mastodon 1.5k, X 1k, LinkedIn 120), forces transcription of any visible text (memes, tweet screenshots, chart labels), leads with the takeaway for charts, and avoids the common pitfalls of assigning identity from appearance and editorializing ("beautiful", "stunning").
+Writes accessibility-focused social-media alt text. It transcribes visible text, leads charts with the takeaway, avoids inferring identity from appearance, and omits editorial judgments such as "beautiful" or "stunning." Limits are 2,000 characters on Bluesky, 1,500 on Mastodon, 1,000 on X, and 120 on LinkedIn.
 
 ## All plugins
 
-### General-purpose
+### General purpose
 
-Broadly useful regardless of what you're working on.
-
-| Plugin | Type | What it does |
-|---|---|---|
-| [superpowers](plugins/superpowers) | Skills | Core skills library — TDD, debugging, collaboration patterns (vendored from [obra/superpowers](https://github.com/obra/superpowers)) |
-| [windows-bash-guard](plugins/windows-bash-guard) | Hook | Auto-fixes Windows+bash path pitfalls (backslash paths, `/dev/stdin`) before execution |
-| [memory-to-repo](plugins/memory-to-repo) | Hook + Skills | Blocks CRUD on the machine-local auto-memory dir and redirects to the repo's `./memory/` folder so memory is git-tracked and shareable |
-
-### Personalized
-
-Tuned to my own setup, tooling, workflow preferences, or niche — unlikely to appeal to a broad audience.
+These plugins are useful across projects.
 
 | Plugin | Type | What it does |
 |---|---|---|
-| [mediocrity-detector](plugins/mediocrity-detector) | Hook | Detects hedging on `Stop` and pushes back |
-| [unrelated-issue-detector](plugins/unrelated-issue-detector) | Hook | Demands evidence for each "unrelated/pre-existing" dismissal |
-| [gh-issue](plugins/gh-issue) | Skill | Turns terse bug reports into well-structured GitHub issues via `gh` |
-| [pr-comments](plugins/pr-comments) | Skill | Fetches unresolved PR comments formatted for LLM review and reply |
-| [watch-pr](plugins/watch-pr) | MCP Server + Skill + Watcher | `/watch-pr` — keeps one long-lived same-session watcher on durable GitHub PR events and acts on CI, rebases, reviews, feedback, and merge or closure |
-| [omp-persist-system-prompt](plugins/omp-persist-system-prompt) | OMP Extension | Stores each distinct effective system prompt plus provider tool context as hidden custom session metadata for transcript indexing |
-| [command-chain-separator](plugins/command-chain-separator) | Hook | Injects a visible separator between Bash commands joined by `&&` or `;` so per-command output is easy to read |
-| [developing-solidworks](plugins/developing-solidworks) | Skill + Command | C#/SolidWorks .NET COM API workflow with anti-hallucination guardrails |
-| [developing-solidworks-mcp](plugins/developing-solidworks-mcp) | MCP Server + Skill | Grounded SolidWorks XMLDoc search, catalog browsing, and complete record retrieval |
-| [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Entrepreneurship subset of gstack: idea validation, market research, strategy (no code) |
-| [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects to my Firecrawl + Browserbase MCPs |
-| [worktree-reset](plugins/worktree-reset) | Skill | `/reset` — harness-aware teardown, then resets the current worktree to `origin/main` and syncs Node, Go, and Python dependencies |
-| [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Auto-injects `--headed` into `playwright-cli open` invocations and recommends a standard viewport |
-| [alt-text](plugins/alt-text) | Skill | Writes accessibility-focused alt text for images about to be posted on social media |
-| [pedro-microblog](plugins/pedro-microblog) | Skill | A cooked guide to Pedro's observed microblog voice across X, Threads, Mastodon, and Bluesky |
-| [cloudflare-temp-accounts](plugins/cloudflare-temp-accounts) | Skill | Provisions and claims Cloudflare temporary accounts, then isolates Wrangler auth profiles |
-| [onepassword](plugins/onepassword) | Skill | Establishes a 1Password CLI (`op`) session interactively via tmux when service-account auth fails |
+| [superpowers](plugins/superpowers) | Skills | Skills for TDD, debugging, and collaboration, vendored from [obra/superpowers](https://github.com/obra/superpowers) |
+| [windows-bash-guard](plugins/windows-bash-guard) | Hook | Fixes Windows and Bash path pitfalls such as backslash paths and `/dev/stdin` before execution |
+| [memory-to-repo](plugins/memory-to-repo) | Hook + Skills | Redirects machine-local auto-memory CRUD operations to the repository's `./memory/` directory so memory is git-tracked and shareable |
+
+### Plugins for specific tools and workflows
+
+These plugins target specific tools, workflows, or niche use cases.
+
+| Plugin | Type | What it does |
+|---|---|---|
+| [mediocrity-detector](plugins/mediocrity-detector) | Hook | Detects hedging on `Stop` and asks the agent to state its assumptions |
+| [unrelated-issue-detector](plugins/unrelated-issue-detector) | Hook | Requires evidence when an agent dismisses a finding as unrelated or pre-existing |
+| [gh-issue](plugins/gh-issue) | Skill | Turns terse bug reports into structured GitHub issues through `gh` |
+| [pr-comments](plugins/pr-comments) | Skill | Fetches unresolved PR comments for review and reply |
+| [watch-pr](plugins/watch-pr) | MCP Server + Skill + Watcher | `/watch-pr` keeps one long-lived, same-session watcher on durable GitHub PR events and acts on CI, rebases, reviews, feedback, and merge or closure |
+| [omp-persist-system-prompt](plugins/omp-persist-system-prompt) | OMP Extension | Makes effective system prompts and provider tool context available for transcript indexing |
+| [command-chain-separator](plugins/command-chain-separator) | Hook | Adds a visible separator between Bash commands joined by `&&` or `;` so each command's output is easy to read |
+| [developing-solidworks](plugins/developing-solidworks) | Skill + Command | Guides C# development against the SolidWorks .NET COM API |
+| [developing-solidworks-mcp](plugins/developing-solidworks-mcp) | MCP Server + Skill | Searches SolidWorks XMLDoc and retrieves type, enum, example, and guide records |
+| [gstack-entrepreneur](plugins/gstack-entrepreneur) | Skills | Provides gstack's no-code entrepreneurship skills for idea validation, market research, and strategy |
+| [no-fetch](plugins/no-fetch) | Hook | Blocks `WebFetch` and redirects requests to the Firecrawl and Browserbase MCPs |
+| [worktree-reset](plugins/worktree-reset) | Skill | `/reset` runs harness-aware teardown, resets the current worktree to `origin/main`, and syncs Node, Go, and Python dependencies |
+| [playwright-cli-headed](plugins/playwright-cli-headed) | Hook | Adds `--headed` to `playwright-cli open` and recommends a standard viewport |
+| [alt-text](plugins/alt-text) | Skill | Writes alt text for images that are about to be posted on social media |
+| [pedro-microblog](plugins/pedro-microblog) | Skill | Applies Pedro's observed microblog voice across X, Threads, Mastodon, and Bluesky |
+| [cloudflare-temp-accounts](plugins/cloudflare-temp-accounts) | Skill | Provisions and claims Cloudflare temporary accounts and isolates Wrangler authentication profiles |
+| [onepassword](plugins/onepassword) | Skill | Establishes an interactive 1Password CLI (`op`) session when service-account authentication fails |
 
 ## License
 
