@@ -58,7 +58,7 @@ Provides structured SolidWorks XMLDoc search, catalog browsing, and type, enum, 
 
 ### [alt-text](plugins/alt-text)
 
-Writes accessibility-focused social-media alt text. It transcribes visible text, leads charts with the takeaway, avoids inferring identity from appearance, and omits editorial judgments such as "beautiful" or "stunning." Limits are 2,000 characters on Bluesky, 1,500 on Mastodon, 1,000 on X, and 120 on LinkedIn.
+Writes accessibility-focused social-media alt text. It transcribes visible text such as memes, tweet screenshots, and chart labels, leads charts with the takeaway, avoids inferring identity from appearance, and omits editorial judgments such as "beautiful" or "stunning." Limits are 2,000 characters on Bluesky, 1,500 on Mastodon, 1,000 on X, and 120 on LinkedIn.
 
 ## All plugins
 
