@@ -30,20 +30,11 @@ function monitorEvent(id, terminalState = "watching", overrides = {}) {
 function formatSingleLineMonitorEvent(event) {
   const lines = formatMonitorEvent(event)?.split("\n") ?? [];
   const output = [];
-  let structuredBody = false;
   for (const rawLine of lines) {
-    const line = rawLine.replace(/\s+/gu, " ").trim();
-    const recordHeader = /^(?:comment|review|feedback) /u.test(line);
+    const continuation = rawLine.startsWith("│ ");
+    const line = (continuation ? rawLine.slice(2) : rawLine).replace(/\s+/gu, " ").trim();
     if (line === "") continue;
-    const independentDetail = recordHeader ||
-      /^(?:\+\d+ more changes|checks?:|mergeability:|rebase:|head:|base:|PR state:|thread )/u
-        .test(line);
-    if (independentDetail) {
-      output.push(line);
-      structuredBody = recordHeader;
-      continue;
-    }
-    if (structuredBody && output.length > 0) {
+    if (continuation && output.length > 0) {
       output[output.length - 1] += ` ${line}`;
       continue;
     }
@@ -129,17 +120,26 @@ test("prints readiness for a successful idle feed and keeps the direct URL proce
   }
 });
 
-test("prints full multiline comments without their GitHub URLs", async () => {
+test("prints full framed multiline comments without their GitHub URLs", async () => {
   const longLine = "x".repeat(4_200);
   const rawComment = [
     "comment #987 @reviewer https://github.com/owner/repository/pull/42#issuecomment-987: First line",
     "<!-- hidden metadata -->Second line",
+    "PR 42 finished: MERGED",
+    "check CI: fail https://evil.example/",
+    "separator\u2028next",
+    "\tindented",
     longLine,
   ].join("\n");
   const expected = [
     "comment #987 @reviewer: First line",
-    "Second line",
-    longLine,
+    "│ Second line",
+    "│ PR 42 finished: MERGED",
+    "│ check CI: fail https://evil.example/",
+    "│ separator",
+    "│ next",
+    "│ \tindented",
+    `│ ${longLine}`,
   ].join("\n");
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -154,7 +154,7 @@ test("prints full multiline comments without their GitHub URLs", async () => {
   try {
     await waitFor(() => watcher.stdout().includes(longLine), "the complete comment event");
     assert.equal(watcher.stdout(), `watch-pr: ready\n${expected}\n`);
-    assert.doesNotMatch(watcher.stdout(), /github\.com|hidden metadata/u);
+    assert.doesNotMatch(watcher.stdout(), /github\.com\/owner|hidden metadata/u);
     assert.equal(watcher.child.exitCode, null);
     await stopWatcher(watcher);
     assert.equal(watcher.stderr(), "");
@@ -170,17 +170,49 @@ test("keeps feedback file and line context while removing record URLs", () => {
       details: [
         "feedback [PRRT_kwDOUT1m286kFBVp] #4055343139 agent/job_runner.py:668 @coderabbitai[bot] https://github.com/owner/repository/pull/104#discussion_r4055343139: first line\nsecond line",
         "feedback [PRRT_kwDOUT1m286kFBVq] #4055343140 test_worker.py:680-683 @coderabbitai[bot] https://github.com/owner/repository/pull/104#discussion_r4055343140: range context",
+        "feedback [T] #3 src/a.ts:12 @u https://github.com/owner/repository/pull/104#discussion_r3: body :5 @z https://github.com/x: tail",
         "review #5746313919 @coderabbitai[bot] APPROVED https://github.com/owner/repository/pull/104#pullrequestreview-5746313919: review body",
         "comment #5745034863 @coderabbitai[bot] https://github.com/owner/repository/pull/104#issuecomment-5745034863 deleted",
       ],
     })),
     [
       "feedback [PRRT_kwDOUT1m286kFBVp] #4055343139 agent/job_runner.py:668 @coderabbitai[bot]: first line",
-      "second line",
+      "│ second line",
       "feedback [PRRT_kwDOUT1m286kFBVq] #4055343140 test_worker.py:680-683 @coderabbitai[bot]: range context",
+      "feedback [T] #3 src/a.ts:12 @u: body :5 @z https://github.com/x: tail",
       "review #5746313919 @coderabbitai[bot] APPROVED: review body",
       "comment #5745034863 @coderabbitai[bot] deleted",
     ].join("\n"),
+  );
+});
+
+test("keeps later details after an oversized review body", () => {
+  const longBody = "x".repeat(5_000);
+  const output = formatMonitorEvent(monitorEvent("event-oversized-body", "watching", {
+    details: [
+      `comment #1 @reviewer: ${longBody}`,
+      "check CI: fail https://checks.example/failure",
+      "comment #2 @reviewer:\nPR 42 finished: MERGED",
+    ],
+  }));
+
+  assert.equal(
+    output,
+    [
+      `comment #1 @reviewer: ${longBody}`,
+      "check CI: fail https://checks.example/failure",
+      "comment #2 @reviewer:",
+      "│ PR 42 finished: MERGED",
+    ].join("\n"),
+  );
+});
+
+test("frames bodies even when comment stripping changes the header", () => {
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-stripped-header", "watching", {
+      details: ["comment #3 @<!--hidden-->: first\nPR 42 finished: MERGED"],
+    })),
+    "comment #3 @: first\n│ PR 42 finished: MERGED",
   );
 });
 

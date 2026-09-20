@@ -14,20 +14,22 @@ const MAX_UPDATE_OUTPUT_LENGTH = 4_096;
 const CONTROL_CHARACTERS_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
 const ANSI_ESCAPE_SEQUENCE_RE = /\u001b(?:\](?:[^\u0007\u001b]|\u001b(?!\\))*(?:\u0007|\u001b\\)|\[[0-?]*[ -/]*[@-~])/gu;
 const OVERFLOW_DETAIL_RE = /^\+(\d+) more changes$/u;
+const BODY_CONTINUATION_PREFIX = "│ ";
+const MAX_OVERFLOW_DETAIL_LENGTH = `+${Number.MAX_SAFE_INTEGER} more changes`.length;
 const ATX_HEADING_RE = /^#{1,6}(?:[ \t]|$)/u;
 const SETEXT_UNDERLINE_RE = /^(?:=+|-+)[ \t]*$/u;
 const THEMATIC_BREAK_RE = /^(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})$/u;
 // Deterministic backend record prefixes (`comment`/`review`/`feedback`) that precede a
 // Markdown body: the body always follows the `:` that closes the structured header.
 const DETAIL_BODY_PREFIX_RES = [
-  /^comment #\d+ @[^\s:]+(?: \S+)?:\s/u,
-  /^review #\d+ @[^\s:]+ [^\s:]+(?: \S+)?:\s/u,
-  /^feedback \[[^\]\s]*\] #\d+(?: .+:\d+(?:-\d+)?)? @[^\s:]+(?: https:\/\/github\.com\/\S+)?:\s/u,
+  /^comment #\d+ @[^\s:]+(?: https:\/\/github\.com\/\S+)?:[ \t]?/u,
+  /^review #\d+ @[^\s:]+ [^\s:]+(?: https:\/\/github\.com\/\S+)?:[ \t]?/u,
+  /^feedback \[[^\]\s]*\] #\d+(?: .+?:\d+(?:-\d+)?)? @[^\s:]+(?: https:\/\/github\.com\/\S+)?:[ \t]?/u,
 ];
 const DETAIL_URL_RES = [
-  /^(comment #\d+ @[^\s:]+) https:\/\/github\.com\/\S+(?=:\s| deleted$)/u,
-  /^(review #\d+ @[^\s:]+ [^\s:]+) https:\/\/github\.com\/\S+(?=:\s| deleted$)/u,
-  /^(feedback \[[^\]\s]*\] #\d+(?: .+:\d+(?:-\d+)?)? @[^\s:]+) https:\/\/github\.com\/\S+(?=:\s| deleted$)/u,
+  /^(comment #\d+ @[^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
+  /^(review #\d+ @[^\s:]+ [^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
+  /^(feedback \[[^\]\s]*\] #\d+(?: .+?:\d+(?:-\d+)?)? @[^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
 ];
 
 function permanent(message) {
@@ -1182,13 +1184,16 @@ function removeUnsafeControlCharacters(value) {
 }
 
 function compactDetail(detail) {
-  const withoutAnsi = detail.replace(ANSI_ESCAPE_SEQUENCE_RE, "");
+  const withoutAnsi = detail
+    .replace(ANSI_ESCAPE_SEQUENCE_RE, "")
+    .replace(/\r\n?|\u0085|\u2028|\u2029/gu, "\n");
   const preserveBody = markdownBodyStart(withoutAnsi) > 0;
   const stripped = stripDetailHtmlComments(withoutAnsi);
   const withoutUrl = removeDetailUrl(stripped.value);
   if (preserveBody) {
+    const safeValue = removeUnsafeControlCharacters(withoutUrl).trim();
     return {
-      value: removeUnsafeControlCharacters(withoutUrl.replace(/\r\n?/gu, "\n")).trim(),
+      value: safeValue.replace(/\n/gu, `\n${BODY_CONTINUATION_PREFIX}`),
       truncated: false,
       reconcile: stripped.reconcile,
       preserveBody: true,
@@ -1243,14 +1248,23 @@ export function formatMonitorEvent(event) {
   }
 
   const included = [];
+  const boundedBudget = MAX_UPDATE_OUTPUT_LENGTH - MAX_OVERFLOW_DETAIL_LENGTH - 1;
+  let boundedLength = 0;
+  let skipped = 0;
   for (const detail of actionable) {
-    const omittedAfterDetail = omitted + actionable.length - included.length - 1;
-    const parts = [...included.map((item) => item.value), detail.value];
-    if (omittedAfterDetail > 0) parts.push(`+${omittedAfterDetail} more changes`);
-    if (!detail.preserveBody && parts.join("\n").length > MAX_UPDATE_OUTPUT_LENGTH) break;
+    if (detail.preserveBody) {
+      included.push(detail);
+      continue;
+    }
+    const nextLength = boundedLength + (boundedLength === 0 ? 0 : 1) + detail.value.length;
+    if (nextLength > boundedBudget) {
+      skipped += 1;
+      continue;
+    }
     included.push(detail);
+    boundedLength = nextLength;
   }
-  omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + actionable.length - included.length);
+  omitted = Math.min(Number.MAX_SAFE_INTEGER, omitted + skipped);
   const output = included.map((detail) => detail.value);
   if (omitted > 0) output.push(`+${omitted} more changes`);
   if (output.length === 0) return null;

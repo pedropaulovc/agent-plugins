@@ -29,7 +29,8 @@ The watcher prints:
 2. `<details>` when an actionable change arrives. One watcher is scoped to one PR, so
    intermediate output omits a redundant PR/update prefix. Comment, review, and feedback
    headers keep their IDs, feedback keeps its file and line range, and redundant GitHub
-   URLs are omitted. Visible Markdown bodies retain their full length and line breaks;
+   URLs are omitted. Visible Markdown bodies retain their full length and line breaks.
+   Each continuation line starts with `│ ` so body text cannot imitate a watcher record;
    hidden HTML comments remain suppressed.
 3. `PR <n> finished: MERGED|CLOSED` before a terminal feed exits.
 
