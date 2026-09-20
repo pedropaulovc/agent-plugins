@@ -1,36 +1,15 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import {
-  chmodSync,
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { realpath } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { readMonitorUrlFile } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
+import { formatMonitorEvent } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
 
 const watcherPath = fileURLToPath(new URL(
   "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs",
   import.meta.url,
 ));
-
-const temporaryDirectory = mkdtempSync(join(tmpdir(), "watch-pr-monitor-test-"));
-let urlFileSequence = 0;
-
-test.after(() => {
-  rmSync(temporaryDirectory, { recursive: true, force: true });
-});
 
 function monitorEvent(id, terminalState = "watching", overrides = {}) {
   return {
@@ -39,8 +18,9 @@ function monitorEvent(id, terminalState = "watching", overrides = {}) {
     pullRequestNumber: 42,
     githubEvent: "pull_request",
     action: "synchronize",
-    receivedAt: "2026-09-10T12:00:00.000Z",
-    changes: ["head"],
+    receivedAt: "2026-09-19T12:00:00.000Z",
+    changes: ["checks"],
+    details: ["checks: rerun started (pending: CI, Lint)"],
     terminalState,
     ...overrides,
   };
@@ -57,18 +37,12 @@ async function startServer(handler) {
   const { port } = server.address();
   return {
     server,
-    url: `http://127.0.0.1:${port}/monitor/test-capability`,
+    url: `http://127.0.0.1:${port}/monitor/transcript-safe-capability`,
   };
 }
 
-function startWatcher(url, { createUrlFile = true, mode = 0o600 } = {}) {
-  const urlFile = join(temporaryDirectory, `${urlFileSequence += 1}.url`);
-  if (createUrlFile) {
-    writeFileSync(urlFile, url, { encoding: "utf8", mode });
-    chmodSync(urlFile, mode);
-  }
-
-  const child = spawn(process.execPath, [watcherPath, "--url-file", urlFile], {
+function startWatcher(url) {
+  const child = spawn(process.execPath, [watcherPath, url], {
     stdio: ["ignore", "pipe", "pipe"],
   });
   child.stdout.setEncoding("utf8");
@@ -81,59 +55,9 @@ function startWatcher(url, { createUrlFile = true, mode = 0o600 } = {}) {
   return {
     child,
     exited,
-    urlFile,
     stdout: () => stdout,
     stderr: () => stderr,
   };
-}
-
-function startStdinWatcher(url, { sendInput = true } = {}) {
-  const child = spawn(process.execPath, [watcherPath, "--from-stdin"], {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => { stdout += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
-  if (sendInput) child.stdin.end(`${url}\n`);
-  return {
-    child,
-    exited,
-    stdout: () => stdout,
-    stderr: () => stderr,
-  };
-}
-
-function startMint(
-  monitorUrl,
-  directory = process.platform === "win32" ? undefined : temporaryDirectory,
-  { sendInput = true } = {},
-) {
-  const args = [watcherPath, "mint"];
-  if (directory !== undefined) args.push(directory);
-  const child = spawn(process.execPath, args, {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => { stdout += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
-  if (sendInput) child.stdin.write(`${monitorUrl}\n`);
-  return {
-    child,
-    exited,
-    stdout: () => stdout,
-    stderr: () => stderr,
-  };
-}
-function capabilityNames(directory = tmpdir()) {
-  return new Set(readdirSync(directory).filter(name => name.startsWith("watch-pr-monitor-")));
 }
 
 async function waitFor(predicate, description) {
@@ -144,13 +68,6 @@ async function waitFor(predicate, description) {
   }
 }
 
-async function assertWatcherStoppedByTest(exited) {
-  const expected = process.platform === "win32"
-    ? { code: null, signal: "SIGTERM" }
-    : { code: 0, signal: null };
-  assert.deepEqual(await exited, expected);
-}
-
 async function closeServer(server) {
   server.closeAllConnections();
   await new Promise((resolve, reject) => {
@@ -158,169 +75,15 @@ async function closeServer(server) {
   });
 }
 
-test("mints an owner-only capability file from stdin and prints only its path", async () => {
-  const monitorUrl = "https://watch-pr.example/monitor/opaque-capability-105";
-  const mint = startMint(monitorUrl);
+async function stopWatcher(watcher) {
+  watcher.child.kill("SIGTERM");
+  const expected = process.platform === "win32"
+    ? { code: null, signal: "SIGTERM" }
+    : { code: 0, signal: null };
+  assert.deepEqual(await watcher.exited, expected);
+}
 
-  try {
-    assert.deepEqual(await mint.exited, { code: 0, signal: null });
-    const urlFile = mint.stdout().trim();
-    assert.equal(mint.stdout(), `${urlFile}\n`);
-    const expectedDirectory = process.platform === "win32" ? await realpath(tmpdir()) : temporaryDirectory;
-    const actualDirectory = process.platform === "win32" ? await realpath(dirname(urlFile)) : dirname(urlFile);
-    assert.equal(actualDirectory, expectedDirectory);
-    assert.equal(basename(urlFile).startsWith("watch-pr-monitor-"), true);
-    if (process.platform !== "win32") {
-      assert.equal(statSync(urlFile).mode & 0o777, 0o600);
-    }
-    assert.equal(readFileSync(urlFile, "utf8"), monitorUrl);
-    assert.equal(await readMonitorUrlFile(urlFile), monitorUrl);
-    assert.equal(existsSync(urlFile), false);
-    assert.equal(mint.stderr(), "");
-  } finally {
-    if (mint.child.exitCode === null) mint.child.kill("SIGKILL");
-  }
-});
-
-test("removes an unconsumed capability file when publishing the path fails", async () => {
-  const mintDirectory = process.platform === "win32"
-    ? undefined
-    : mkdtempSync(join(tmpdir(), "watch-pr-monitor-mint-"));
-  const before = process.platform === "win32" ? capabilityNames() : undefined;
-  const monitorUrl = "https://watch-pr.example/monitor/opaque-capability-105";
-  const childArgs = [
-    "--input-type=module",
-    "-e",
-    `import { mintFromStdin } from ${JSON.stringify(pathToFileURL(watcherPath).href)};
-process.stdout.write = (_chunk, encoding, callback) => {
-  const done = typeof encoding === "function" ? encoding : callback;
-  const error = new Error("stdout closed");
-  done?.(error);
-  process.stdout.emit("error", error);
-  return false;
-};
-try {
-  await mintFromStdin(process.argv[1]);
-} catch (error) {
-  process.stderr.write(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-}`,
-  ];
-  if (mintDirectory !== undefined) childArgs.push(mintDirectory);
-  const child = spawn(process.execPath, childArgs, {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => { stdout += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
-  child.stdin.write(`${monitorUrl}\n`);
-
-  try {
-    assert.deepEqual(await exited, { code: 1, signal: null });
-    assert.equal(stdout, "");
-    assert.match(stderr, /stdout closed/);
-    if (mintDirectory === undefined) {
-      assert.deepEqual(capabilityNames(), before);
-    } else {
-      assert.deepEqual(readdirSync(mintDirectory), []);
-    }
-  } finally {
-    if (child.exitCode === null) child.kill("SIGKILL");
-    if (mintDirectory !== undefined) rmSync(mintDirectory, { recursive: true, force: true });
-  }
-});
-
-test("removes the capability file when cancellation races publication", async () => {
-  const mintDirectory = process.platform === "win32"
-    ? undefined
-    : mkdtempSync(join(tmpdir(), "watch-pr-monitor-cancel-"));
-  const before = process.platform === "win32" ? capabilityNames() : undefined;
-  const monitorUrl = "https://watch-pr.example/monitor/opaque-capability-105";
-  const childArgs = [
-    "--input-type=module",
-    "-e",
-    `import { mintFromStdin } from ${JSON.stringify(pathToFileURL(watcherPath).href)};
-process.stdout.write = (_chunk, encoding, callback) => {
-  const done = typeof encoding === "function" ? encoding : callback;
-  process.emit("SIGTERM");
-  done?.();
-  return false;
-};
-try {
-  await mintFromStdin(process.argv[1]);
-} catch (error) {
-  process.stderr.write(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-}`,
-  ];
-  if (mintDirectory !== undefined) childArgs.push(mintDirectory);
-  const child = spawn(process.execPath, childArgs, {
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => { stdout += chunk; });
-  child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const exited = once(child, "exit").then(([code, signal]) => ({ code, signal }));
-  child.stdin.write(`${monitorUrl}\n`);
-
-  try {
-    assert.deepEqual(await exited, { code: 1, signal: null });
-    assert.equal(stdout, "");
-    assert.match(stderr, /monitor URL minting was cancelled/);
-    if (mintDirectory === undefined) {
-      assert.deepEqual(capabilityNames(), before);
-    } else {
-      assert.deepEqual(readdirSync(mintDirectory), []);
-    }
-  } finally {
-    if (child.exitCode === null) child.kill("SIGKILL");
-    if (mintDirectory !== undefined) rmSync(mintDirectory, { recursive: true, force: true });
-  }
-});
-
-test("rejects empty mint input without printing a capability path", async () => {
-  const mint = startMint("\n");
-
-  assert.deepEqual(await mint.exited, { code: 1, signal: null });
-  assert.equal(mint.stdout(), "");
-  assert.match(mint.stderr(), /monitor URL from stdin was empty/);
-});
-
-test("rejects a relative mint directory", async () => {
-  const mint = startMint("https://watch-pr.example/monitor/capability", ".");
-
-  assert.deepEqual(await mint.exited, { code: 1, signal: null });
-  assert.equal(mint.stdout(), "");
-  assert.match(mint.stderr(), /directory must be an absolute path/);
-});
-
-test("rejects a mint directory inside the repository", async () => {
-  const mint = startMint("https://watch-pr.example/monitor/capability", process.cwd());
-
-  assert.deepEqual(await mint.exited, { code: 1, signal: null });
-  assert.equal(mint.stdout(), "");
-  assert.match(
-    mint.stderr(),
-    process.platform === "win32" ? /custom monitor URL file directories are not supported/ : /outside the repository/,
-  );
-});
-
-test("rejects line breaks in a mint directory", async () => {
-  const mint = startMint("https://watch-pr.example/monitor/capability", `${temporaryDirectory}\nunsafe`);
-
-  assert.deepEqual(await mint.exited, { code: 1, signal: null });
-  assert.equal(mint.stdout(), "");
-  assert.match(mint.stderr(), /must not contain line breaks/);
-});
-
-test("prints readiness for a successful idle SSE response and stays alive", async () => {
+test("prints readiness for a successful idle feed and keeps the direct URL process alive", async () => {
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.flushHeaders();
@@ -331,10 +94,7 @@ test("prints readiness for a successful idle SSE response and stays alive", asyn
     await waitFor(() => watcher.stdout().includes("\n"), "the readiness record");
     assert.equal(watcher.child.exitCode, null);
     assert.equal(watcher.stdout(), "watch-pr: ready\n");
-    assert.equal(existsSync(watcher.urlFile), false);
-
-    watcher.child.kill("SIGTERM");
-    await assertWatcherStoppedByTest(watcher.exited);
+    await stopWatcher(watcher);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -342,75 +102,577 @@ test("prints readiness for a successful idle SSE response and stays alive", asyn
   }
 });
 
-test("reads a watcher URL directly from stdin without creating a capability file", async () => {
+test("prints actionable details inline without a follow-up snapshot fetch", async () => {
+  const comment = "comment #987 @reviewer https://github.com/owner/repository/pull/42#issuecomment-987: Please cover the retry race before merging.";
+  const rawComment = comment.replace(": Please", ": <!-- hidden\nmetadata -->Please");
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
-    response.flushHeaders();
-  });
-  const before = capabilityNames();
-  const watcher = startStdinWatcher(url, { sendInput: false });
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  watcher.child.stdin.end(`${url}\n`);
-  try {
-    await waitFor(() => watcher.stdout().includes("\n"), "the readiness record");
-    assert.equal(watcher.child.exitCode, null);
-    assert.equal(watcher.stdout(), "watch-pr: ready\n");
-    assert.deepEqual(capabilityNames(), before);
-
-    watcher.child.kill("SIGTERM");
-    await assertWatcherStoppedByTest(watcher.exited);
-    assert.equal(watcher.stderr(), "");
-  } finally {
-    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
-    await closeServer(server);
-  }
-});
-
-test("prints readiness before the first PR event", async () => {
-  const { server, url } = await startServer((_request, response) => {
-    response.writeHead(200, { "Content-Type": "text/event-stream" });
-    sendEvent(response, monitorEvent("event-1"));
-  });
-  const watcher = startWatcher(url);
-
-  try {
-    await waitFor(() => watcher.stdout().includes("PR 42 updated: head"), "the intermediate event");
-    assert.equal(watcher.child.exitCode, null);
-    const output = watcher.stdout().trim().split("\n");
-    assert.deepEqual(output, [
-      "watch-pr: ready",
-      "PR 42 updated: head",
-    ]);
-
-    watcher.child.kill("SIGTERM");
-    await assertWatcherStoppedByTest(watcher.exited);
-    assert.equal(watcher.stderr(), "");
-  } finally {
-    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
-    await closeServer(server);
-  }
-});
-
-test("falls back to the GitHub event when an update has no changed fields", async () => {
-  const { server, url } = await startServer((_request, response) => {
-    response.writeHead(200, { "Content-Type": "text/event-stream" });
-    sendEvent(response, monitorEvent("event-base-push", "watching", {
-      githubEvent: "push",
-      changes: [],
+    sendEvent(response, monitorEvent("event-comment", "watching", {
+      githubEvent: "issue_comment",
+      changes: ["comments"],
+      details: [rawComment],
     }));
   });
   const watcher = startWatcher(url);
 
   try {
-    await waitFor(() => watcher.stdout().includes("PR 42 updated: push"), "the push update");
-    assert.equal(watcher.child.exitCode, null);
+    await waitFor(() => watcher.stdout().includes(comment), "the comment event");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
-      "PR 42 updated: push",
+      comment,
     ]);
+    assert.equal(watcher.child.exitCode, null);
+    await stopWatcher(watcher);
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
 
-    watcher.child.kill("SIGTERM");
-    await assertWatcherStoppedByTest(watcher.exited);
+test("strips Markdown HTML comments without deleting literal code forms", () => {
+  const detail = [
+    "comment #987 @reviewer: <!-- hidden metadata -->Keep",
+    "`const marker = \"<!-- more -->\"`.",
+    "",
+    "    const indented = \"<!-- indented -->\";",
+    "Escaped \\<!-- escaped -->.",
+    "```html",
+    "<!-- fenced example -->",
+    "```",
+  ].join("\n");
+
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-markdown-comment", "watching", {
+      details: [detail],
+    })),
+    "comment #987 @reviewer: Keep `const marker = \"<!-- more -->\"`. const indented = \"<!-- indented -->\"; Escaped \\<!-- escaped -->. ```html <!-- fenced example --> ```",
+  );
+
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-crlf-comment", "watching", {
+      details: [
+        "comment #988 @reviewer:\r\n```html\r\n<!-- visible source -->\r\n```\r\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #988 @reviewer: ```html <!-- visible source --> ``` Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-paragraph-comment", "watching", {
+      details: ["comment #989 @reviewer: `first\n\n<!-- hidden metadata -->\n\nsecond`"],
+    })),
+    "comment #989 @reviewer: `first second`",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-invalid-fence", "watching", {
+      details: ["comment #990 @reviewer:\n```a`b\n<!-- hidden metadata -->\nKeep"],
+    })),
+    "comment #990 @reviewer: ```a`b Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-blockquote-fence", "watching", {
+      details: [
+        "comment #991 @reviewer:\n> ~~~html\n> <!-- blockquote source -->\n> ~~~\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #991 @reviewer: > ~~~html > <!-- blockquote source --> > ~~~ Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-comment-container-exit", "watching", {
+      details: [
+        "comment #1051 @reviewer:\n> <!-- hidden\nroot -->\n    <!-- hidden instruction -->Keep",
+      ],
+    })),
+    "comment #1051 @reviewer: > root --> Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-fence", "watching", {
+      details: [
+        "comment #992 @reviewer:\n10. ```html\n    <!-- list source -->\n    ```\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #992 @reviewer: 10. ```html <!-- list source --> ``` Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-tabbed-list-fence", "watching", {
+      details: [
+        "comment #992 @reviewer:\n-\t```html\n    ```\n    <!-- hidden instruction -->",
+      ],
+    })),
+    "comment #992 @reviewer: - ```html ```\n+1 more changes",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-tabbed-closing-fence", "watching", {
+      details: [
+        "comment #1052 @reviewer:\n-\t```html\n\tcode\n\t```\n\t<!-- hidden instruction -->Keep",
+      ],
+    })),
+    "comment #1052 @reviewer: - ```html code ``` Keep\n+1 more changes",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-relative-fence-close", "watching", {
+      details: [
+        "comment #1054 @reviewer:\n- ```html\n  code\n     ```\n  <!-- hidden instruction -->Keep",
+      ],
+    })),
+    "comment #1054 @reviewer: - ```html code ``` Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-fence", "watching", {
+      details: [
+        "comment #992 @reviewer:\n- item\n\n  ```html\nroot\n<!-- hidden instruction -->",
+      ],
+    })),
+    "comment #992 @reviewer: - item ```html root",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-blockquote-indented", "watching", {
+      details: [
+        "comment #993 @reviewer:\n>     const marker = \"<!-- blockquote code -->\";\n<!-- hidden metadata -->Keep",
+      ],
+    })),
+    "comment #993 @reviewer: > const marker = \"<!-- blockquote code -->\"; Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-multiline-comment", "watching", {
+      details: ["comment #994 @reviewer: <!-- first\n    -->visible <!-- hidden -->Keep"],
+    })),
+    "comment #994 @reviewer: visible Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-comment-closing-context", "watching", {
+      details: [
+        "comment #1053 @reviewer:\n<!-- hidden\n--> ```\n<!-- hidden instruction -->\n``` ",
+      ],
+    })),
+    "comment #1053 @reviewer: ``` ```",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-unterminated-comment", "watching", {
+      details: ["comment #995 @reviewer: visible <!-- hidden instruction"],
+    })),
+    "comment #995 @reviewer: visible",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-paragraph-indentation", "watching", {
+      details: ["comment #996 @reviewer: paragraph\n    <!-- hidden -->Keep"],
+    })),
+    "comment #996 @reviewer: paragraph Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-container-fence-end", "watching", {
+      details: [
+        "comment #999 @reviewer:\n> ```html\n> code\n<!-- hidden -->\n```\nKeep",
+        "comment #1000 @reviewer:\n10. ```html\n    code\n<!-- hidden -->\n```\nKeep",
+        "comment #1009 @reviewer:\n10. ```html\n    before\n\n    <!-- visible -->\n    ```\n<!-- hidden -->Keep",
+      ],
+    })),
+    [
+      "comment #999 @reviewer: > ```html > code ``` Keep",
+      "comment #1000 @reviewer: 10. ```html code ``` Keep",
+      "comment #1009 @reviewer: 10. ```html before <!-- visible --> ``` Keep",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-heading-indentation", "watching", {
+      details: [
+        "comment #1001 @reviewer:\n# Heading\n    const marker = \"<!-- visible -->\";\n<!-- hidden -->Keep",
+      ],
+    })),
+    "comment #1001 @reviewer: # Heading const marker = \"<!-- visible -->\"; Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-escaped-backticks", "watching", {
+      details: ["comment #1002 @reviewer: \\`fake <!-- hidden -->\\` Keep"],
+    })),
+    "comment #1002 @reviewer: \\`fake \\` Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-code-span-block-boundary", "watching", {
+      details: ["comment #1002 @reviewer:\n> `fake\n# heading <!-- hidden instruction -->\n`close"],
+    })),
+    "comment #1002 @reviewer: > `fake # heading `close",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-heading-code-span-boundary", "watching", {
+      details: ["comment #1002 @reviewer:\n# `fake <!-- hidden instruction -->\n`close"],
+    })),
+    "comment #1002 @reviewer: # `fake `close",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-code-span-boundary", "watching", {
+      details: ["comment #1002 @reviewer:\n`fake\n<div><!-- hidden instruction -->\n`close"],
+    })),
+    "comment #1002 @reviewer: `fake <div> `close",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-code-span", "watching", {
+      details: [
+        "comment #1002 @reviewer:\n- item\n\n  `fake\nroot <!-- hidden instruction -->\n`close",
+      ],
+    })),
+    "comment #1002 @reviewer: - item `fake root `close",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-blockquote-lazy-code-span", "watching", {
+      details: [
+        "comment #1059 @reviewer:\n> `foo\nbar <!-- visible -->\n` baz",
+      ],
+    })),
+    "comment #1059 @reviewer: > `foo bar <!-- visible --> ` baz",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-html", "watching", {
+      details: [
+        "comment #1002 @reviewer:\n- item\n\n  <pre>\nroot\n\n    <!-- visible code -->",
+      ],
+    })),
+    "comment #1002 @reviewer: - item <pre> root <!-- visible code -->",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-html-comment", "watching", {
+      details: [
+        "comment #1055 @reviewer:\n-   item\n\n    <!-- hidden\n# heading\n    <!-- visible -->",
+      ],
+    })),
+    "comment #1055 @reviewer: - item # heading <!-- visible -->",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-inherited-list-html-comment-padding", "watching", {
+      details: [
+        "comment #1056 @reviewer:\n- item\n\n    <!-- hidden\n# heading\n    <!-- visible -->",
+      ],
+    })),
+    "comment #1056 @reviewer: - item # heading <!-- visible -->",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-indentation", "watching", {
+      details: [
+        "comment #1003 @reviewer:\n- item\n\n    <!-- hidden -->Keep",
+        "comment #1004 @reviewer:\n- item\n\n      const marker = \"<!-- visible -->\";",
+        "comment #1005 @reviewer:\n-   item\n\n      <!-- hidden -->Keep",
+        "comment #1006 @reviewer:\n-   item\n\n        const marker = \"<!-- visible -->\";",
+        "comment #1007 @reviewer:\n-\titem\n\n      <!-- hidden -->Keep",
+        "comment #1008 @reviewer:\n-\titem\n\n        const marker = \"<!-- visible -->\";",
+        "comment #1010 @reviewer:\n-\n\n    <!-- hidden -->Keep",
+        "comment #1011 @reviewer:\n-\n\n      const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1003 @reviewer: - item Keep",
+      "comment #1004 @reviewer: - item const marker = \"<!-- visible -->\";",
+      "comment #1005 @reviewer: - item Keep",
+      "comment #1006 @reviewer: - item const marker = \"<!-- visible -->\";",
+      "comment #1007 @reviewer: - item Keep",
+      "comment #1008 @reviewer: - item const marker = \"<!-- visible -->\";",
+      "comment #1010 @reviewer: - Keep",
+      "comment #1011 @reviewer: - const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-mixed-list-padding", "watching", {
+      details: [
+        "comment #1012 @reviewer:\n- \titem\n\n      <!-- hidden -->Keep",
+        "comment #1013 @reviewer:\n- \titem\n\n        const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1012 @reviewer: - item Keep",
+      "comment #1013 @reviewer: - item const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-invalid-fence-predecessor", "watching", {
+      details: ["comment #1014 @reviewer:\n```a`b\n    <!-- hidden -->\nKeep"],
+    })),
+    "comment #1014 @reviewer: ```a`b Keep",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-record-prefix-body", "watching", {
+      details: [
+        "comment #1015 @reviewer:     <!-- visible example -->",
+        "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1:     <!-- visible example -->",
+        "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer:     <!-- visible example -->",
+        "feedback [PRRT_2] #1018 docs/my file.md:12 @reviewer:     <!-- visible example -->",
+        "feedback [PRRT_3] #1019 docs @fake: name.md:12 @reviewer https://github.com/o/r/pull/1#discussion_r1:     <!-- visible example -->",
+        "comment #1018 @reviewer: paragraph\n    <!-- hidden -->Keep",
+      ],
+    })),
+    [
+      "comment #1015 @reviewer: <!-- visible example -->",
+      "review #1016 @reviewer APPROVED https://github.com/o/r/pull/1#r1: <!-- visible example -->",
+      "feedback [PRRT_1] #1017 src/index.ts:12 @reviewer: <!-- visible example -->",
+      "feedback [PRRT_2] #1018 docs/my file.md:12 @reviewer: <!-- visible example -->",
+      "feedback [PRRT_3] #1019 docs @fake: name.md:12 @reviewer https://github.com/o/r/pull/1#discussion_r1: <!-- visible example -->",
+      "comment #1018 @reviewer: paragraph Keep",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-setext-underline-context", "watching", {
+      details: [
+        "comment #1019 @reviewer:\n===\n    <!-- hidden -->Keep",
+        "comment #1020 @reviewer:\n# Heading\n===\n    <!-- hidden -->Keep",
+        "comment #1021 @reviewer:\nTitle\n===\n    const marker = \"<!-- visible -->\";",
+        "comment #1022 @reviewer:\n---\n    const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1019 @reviewer: === Keep",
+      "comment #1020 @reviewer: # Heading === Keep",
+      "comment #1021 @reviewer: Title === const marker = \"<!-- visible -->\";",
+      "comment #1022 @reviewer: --- const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-list-interruption", "watching", {
+      details: [
+        "comment #1023 @reviewer:\nparagraph\n2.     <!-- hidden -->Keep",
+        "comment #1024 @reviewer:\nparagraph\n1.     const marker = \"<!-- visible -->\";",
+        "comment #1025 @reviewer:\nparagraph\n-     const marker = \"<!-- visible -->\";",
+      ],
+    })),
+    [
+      "comment #1023 @reviewer: paragraph 2. Keep",
+      "comment #1024 @reviewer: paragraph 1. const marker = \"<!-- visible -->\";",
+      "comment #1025 @reviewer: paragraph - const marker = \"<!-- visible -->\";",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-lazy-marker-state", "watching", {
+      details: [
+        "comment #1026 @reviewer:\nparagraph\n2.     <!-- hidden -->X\n1.     const marker = \"<!-- visible -->\";",
+        "comment #1027 @reviewer:\nparagraph\n2. text\n\n    const marker = \"<!-- visible -->\";",
+        "comment #1028 @reviewer:\nparagraph\n-\n      <!-- hidden -->Keep",
+      ],
+    })),
+    [
+      "comment #1026 @reviewer: paragraph 2. X 1. const marker = \"<!-- visible -->\";",
+      "comment #1027 @reviewer: paragraph 2. text const marker = \"<!-- visible -->\";",
+      "comment #1028 @reviewer: paragraph - Keep",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-comment-block", "watching", {
+      details: [
+        "comment #1029 @reviewer:\n<!-- hidden block -->\n    <!-- visible code -->",
+        "comment #1030 @reviewer:\n<!-- hidden\nblock -->\n    <!-- visible code -->",
+        "comment #1031 @reviewer:\n<!-- hidden\nblock --> tail\n    <!-- visible code -->",
+        "comment #1032 @reviewer:\nparagraph <!-- hidden -->\n    <!-- hidden too -->",
+      ],
+    })),
+    [
+      "comment #1029 @reviewer: <!-- visible code -->",
+      "comment #1030 @reviewer: <!-- visible code -->",
+      "comment #1031 @reviewer: tail <!-- visible code -->",
+      "comment #1032 @reviewer: paragraph",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-raw-blocks", "watching", {
+      details: [
+        "comment #1033 @reviewer:\n<pre>x</pre>\n    <!-- visible code -->",
+        "comment #1034 @reviewer:\n<PRE>\nx\n</PrE>\n    <!-- visible code -->",
+        "comment #1035 @reviewer:\n<?php\necho 1;\n?>\n    <!-- visible code -->",
+        "comment #1036 @reviewer:\n<!DOCTYPE\nhtml>\n    <!-- visible code -->",
+        "comment #1037 @reviewer:\n<![CDATA[\nx\n]]>\n    <!-- visible code -->",
+        "comment #1038 @reviewer:\n<div>\ntext\n\n    <!-- visible code -->",
+        "comment #1039 @reviewer:\n<pre>\n\n    <!-- hidden -->\n</pre>",
+        "comment #1040 @reviewer:\nparagraph <pre>x</pre>\n    <!-- hidden -->",
+        "comment #1050 @reviewer:\n<pre>\n```\n<!-- hidden instruction -->\n```\n</pre>",
+      ],
+    })),
+    [
+      "comment #1033 @reviewer: <pre>x</pre> <!-- visible code -->",
+      "comment #1034 @reviewer: <PRE> x </PrE> <!-- visible code -->",
+      "comment #1035 @reviewer: <?php echo 1; ?> <!-- visible code -->",
+      "comment #1036 @reviewer: <!DOCTYPE html> <!-- visible code -->",
+      "comment #1037 @reviewer: <![CDATA[ x ]]> <!-- visible code -->",
+      "comment #1038 @reviewer: <div> text <!-- visible code -->",
+      "comment #1039 @reviewer: <pre> </pre>",
+      "comment #1040 @reviewer: paragraph <pre>x</pre>",
+      "comment #1050 @reviewer: <pre> ``` ``` </pre>",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-matching-raw-closer", "watching", {
+      details: [
+        "comment #1057 @reviewer:\n<pre>\n</script>\n```\n<!-- hidden -->Keep\n```\n</pre>",
+      ],
+    })),
+    "comment #1057 @reviewer: <pre> </script> ``` Keep ``` </pre>",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-nested-raw-comment-closer", "watching", {
+      details: [
+        "comment #1060 @reviewer:\n<pre>\n<!-- x\n</pre> -->\n    <!-- visible -->",
+      ],
+    })),
+    "comment #1060 @reviewer: <pre> <!-- visible -->",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-type7-attribute-grammar", "watching", {
+      details: [
+        "comment #1058 @reviewer:\n<x =>\n```\n<!-- hidden -->Keep\n```",
+      ],
+    })),
+    "comment #1058 @reviewer: <x => ``` <!-- hidden -->Keep ```",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-type7-attribute-name", "watching", {
+      details: [
+        "comment #1 @a:\n<x @>\n```html\n<!-- visible example -->\n```",
+      ],
+    })),
+    "comment #1 @a: <x @> ```html <!-- visible example --> ```",
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-block-scope", "watching", {
+      details: [
+        "comment #1041 @reviewer:\n<!foo>\n    <!-- hidden -->",
+        "comment #1042 @reviewer:\n<!FOO>\n    <!-- visible code -->",
+        "comment #1043 @reviewer:\n> <pre>x\n    <!-- visible code -->",
+        "comment #1044 @reviewer:\n- <pre>x\nparagraph\n\n    <!-- visible code -->",
+        "comment #1045 @reviewer:\n> <pre>x\n>     <!-- hidden -->",
+      ],
+    })),
+    [
+      "comment #1041 @reviewer: <!foo>",
+      "comment #1042 @reviewer: <!FOO> <!-- visible code -->",
+      "comment #1043 @reviewer: > <pre>x <!-- visible code -->",
+      "comment #1044 @reviewer: - <pre>x paragraph <!-- visible code -->",
+      "comment #1045 @reviewer: > <pre>x >",
+    ].join("\n"),
+  );
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-html-blank-closing-blocks", "watching", {
+      details: [
+        "comment #1046 @reviewer:\n<div>\n# heading\n    <!-- hidden -->",
+        "comment #1047 @reviewer:\n</pre>\n# heading\n    <!-- hidden -->",
+        "comment #1048 @reviewer:\n1. <pre>x\n> >     <!-- visible code -->",
+        "comment #1049 @reviewer:\n- <pre>x\n  >     <!-- hidden -->",
+      ],
+    })),
+    [
+      "comment #1046 @reviewer: <div> # heading",
+      "comment #1047 @reviewer: </pre> # heading",
+      "comment #1048 @reviewer: 1. <pre>x > > <!-- visible code -->",
+      "comment #1049 @reviewer: - <pre>x >",
+    ].join("\n"),
+  );
+});
+
+test("drops every comment and reports a detail whose block structure is undecidable", () => {
+  const reconciled = formatMonitorEvent(monitorEvent("event-ambiguous", "watching", {
+    details: [
+      // A quote left and re-entered around a lazily continued paragraph: the indented line
+      // is either that paragraph or code inside the quote.
+      "comment #1050 @reviewer:\n> text\n]]>\n>     <!-- hidden -->",
+      // A type 7 opener under an open paragraph, which CommonMark forbids from starting a
+      // block there and cmark-gfm honours inconsistently across container boundaries.
+      "comment #1051 @reviewer:\ntext\n</pre>\n    <!-- hidden -->",
+      // An unterminated comment in an undecidable detail loses its tail as well.
+      "comment #1052 @reviewer:\n> text\n]]>\n>     <!-- hidden",
+    ],
+  }));
+
+  assert.doesNotMatch(reconciled, /<!--|hidden/u);
+  assert.equal(
+    reconciled,
+    [
+      "comment #1050 @reviewer: > text ]]> >",
+      "comment #1051 @reviewer: text </pre>",
+      "comment #1052 @reviewer: > text ]]> >",
+      "+3 more changes",
+    ].join("\n"),
+  );
+
+  // Neighbouring shapes the scanner can still decide keep full fidelity and no marker.
+  const decided = formatMonitorEvent(monitorEvent("event-decidable", "watching", {
+    details: [
+      "comment #1053 @reviewer:\ntext\n\n</pre>\n    <!-- hidden -->",
+      "comment #1054 @reviewer:\n> text\n\n    <!-- visible code -->",
+      "comment #1055 @reviewer:\n- item\n\n      <!-- visible code -->",
+    ],
+  }));
+
+  assert.equal(
+    decided,
+    [
+      "comment #1053 @reviewer: text </pre>",
+      "comment #1054 @reviewer: > text <!-- visible code -->",
+      "comment #1055 @reviewer: - item <!-- visible code -->",
+    ].join("\n"),
+  );
+});
+
+test("prints each actionable category on its own line", () => {
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-categories", "watching", {
+      details: [
+        "comment #997 @reviewer: Do this | rebase: DIRTY",
+        "checks: CI -> pass",
+        "mergeability: CLEAN",
+      ],
+    })),
+    [
+      "comment #997 @reviewer: Do this | rebase: DIRTY",
+      "checks: CI -> pass",
+      "mergeability: CLEAN",
+    ].join("\n"),
+  );
+});
+
+test("sanitizes control characters and bounds actionable wake lines", () => {
+  const line = formatMonitorEvent(monitorEvent("event-checks", "watching", {
+    details: Array.from(
+      { length: 6 },
+      (_, index) => `detail ${index} \u001b[2K${"x".repeat(2_000)}`,
+    ),
+  }));
+
+  assert.ok(line.length <= 4_096);
+  assert.doesNotMatch(line, /\u001b/u);
+  const oscLine = formatMonitorEvent(monitorEvent("event-osc", "watching", {
+    details: [
+      `comment #998 @reviewer: \u001b]0;first\u001b\\visible\u001b]0;second\u001b\\kept`,
+    ],
+  }));
+  assert.equal(oscLine, "comment #998 @reviewer: visiblekept");
+  assert.match(line, /\+8 more changes$/u);
+  const markedLine = formatMonitorEvent(monitorEvent("event-many-checks", "watching", {
+    details: [
+      ...Array.from({ length: 5 }, (_, index) => `check ${index}: ${"x".repeat(2_000)}`),
+      "+7 more changes",
+    ],
+  }));
+  assert.ok(markedLine.length <= 4_096);
+  assert.match(markedLine, /\+13 more changes$/u);
+  const unicodeLine = formatMonitorEvent(monitorEvent("event-unicode", "watching", {
+    details: [`${"x".repeat(998)}😀z`],
+  }));
+  assert.equal(unicodeLine.isWellFormed(), true);
+  assert.match(unicodeLine, /\+1 more changes$/u);
+});
+
+test("suppresses non-actionable feed churn", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    sendEvent(response, monitorEvent("event-noop", "watching", { changes: ["checks"], details: [] }));
+    setTimeout(() => {
+      sendEvent(response, monitorEvent("event-actionable", "watching", {
+        details: ["checks: all terminal (pass: 8, fail: 0, skipping: 0, cancel: 0)"],
+      }));
+    }, 25);
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    await waitFor(() => watcher.stdout().includes("all terminal"), "the terminal check summary");
+    assert.deepEqual(watcher.stdout().trim().split("\n"), [
+      "watch-pr: ready",
+      "checks: all terminal (pass: 8, fail: 0, skipping: 0, cancel: 0)",
+    ]);
+    await stopWatcher(watcher);
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -420,9 +682,11 @@ test("falls back to the GitHub event when an update has no changed fields", asyn
 
 test("reconnects with its cursor and does not print a replay twice", async () => {
   const requestHeaders = [];
+  const requestUrls = [];
   let connection = 0;
   const { server, url } = await startServer((request, response) => {
     requestHeaders.push(request.headers);
+    requestUrls.push(request.url);
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     connection += 1;
     if (connection === 1) {
@@ -434,7 +698,8 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
     sendEvent(response, monitorEvent("event-1"));
     sendEvent(response, monitorEvent("event-2", "closed", {
       action: "closed",
-      changes: ["state"],
+      changes: ["lifecycle"],
+      details: ["PR state: CLOSED"],
     }));
   });
   const watcher = startWatcher(`${url}?cursor=initial-cursor`);
@@ -442,12 +707,15 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
   try {
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
     assert.equal(requestHeaders.length, 2);
-    assert.equal(requestHeaders[0]["last-event-id"], undefined);
+    assert.deepEqual(requestUrls, [
+      "/monitor/transcript-safe-capability",
+      "/monitor/transcript-safe-capability",
+    ]);
+    assert.equal(requestHeaders[0]["last-event-id"], "initial-cursor");
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
-    const output = watcher.stdout().trim().split("\n");
-    assert.deepEqual(output, [
+    assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
-      "PR 42 updated: head",
+      "checks: rerun started (pending: CI, Lint)",
       "PR 42 finished: CLOSED",
     ]);
     assert.equal(watcher.stderr(), "");
@@ -457,50 +725,20 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
   }
 });
 
-test("keeps one watcher alive from an intermediate event through terminal state", async () => {
-  const { server, url } = await startServer((_request, response) => {
-    response.writeHead(200, { "Content-Type": "text/event-stream" });
-    sendEvent(response, monitorEvent("event-intermediate"));
-    setTimeout(() => {
-      sendEvent(response, monitorEvent("event-terminal", "closed", {
-        action: "closed",
-        changes: ["lifecycle"],
-      }));
-    }, 50);
-  });
-  const watcher = startWatcher(url);
-
-  try {
-    await waitFor(() => watcher.stdout().includes("PR 42 updated: head"), "the intermediate event");
-    assert.equal(watcher.child.exitCode, null);
-    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
-    const output = watcher.stdout().trim().split("\n");
-    assert.deepEqual(output, [
-      "watch-pr: ready",
-      "PR 42 updated: head",
-      "PR 42 finished: CLOSED",
-    ]);
-    assert.equal(watcher.stderr(), "");
-  } finally {
-    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
-    await closeServer(server);
-  }
-});
-
-test("prints a merged event and exits without waiting for the feed to close", async () => {
+test("prints terminal state and exits without waiting for the feed to close", async () => {
   const { server, url } = await startServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     sendEvent(response, monitorEvent("event-terminal", "merged", {
       action: "closed",
-      changes: ["merged", "state"],
+      changes: ["lifecycle"],
+      details: [],
     }));
   });
   const watcher = startWatcher(url);
 
   try {
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
-    const output = watcher.stdout().trim().split("\n");
-    assert.deepEqual(output, [
+    assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "watch-pr: ready",
       "PR 42 finished: MERGED",
     ]);
@@ -512,22 +750,18 @@ test("prints a merged event and exits without waiting for the feed to close", as
 });
 
 for (const status of [401, 403, 404]) {
-  test(`reports HTTP ${status} as a permanent authorization failure`, async () => {
-    let requests = 0;
+  test(`reports HTTP ${status} as a permanent capability failure`, async () => {
     const { server, url } = await startServer((_request, response) => {
-      requests += 1;
       response.writeHead(status).end();
     });
     const watcher = startWatcher(url);
 
     try {
-      const result = await watcher.exited;
-      assert.equal(result.code, 1);
-      assert.equal(result.signal, null);
-      assert.equal(requests, 1);
+      assert.deepEqual(await watcher.exited, { code: 1, signal: null });
       assert.equal(watcher.stdout(), "");
       assert.match(watcher.stderr(), new RegExp(`HTTP ${status}`));
-      assert.match(watcher.stderr(), /root session.*unwatch_pr/);
+      assert.match(watcher.stderr(), /before readiness/);
+      assert.match(watcher.stderr(), /unwatch_pr/);
     } finally {
       if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
       await closeServer(server);
@@ -535,81 +769,46 @@ for (const status of [401, 403, 404]) {
   });
 }
 
-test("does not print readiness for a permanently invalid SSE response", async () => {
-  let requests = 0;
+test("reports the last event id when a ready capability expires", async () => {
+  let connection = 0;
   const { server, url } = await startServer((_request, response) => {
-    requests += 1;
-    response.writeHead(200, { "Content-Type": "application/json" }).end("{}");
+    connection += 1;
+    if (connection === 1) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      sendEvent(response, monitorEvent("event-before-expiry", "watching", {
+        details: ["checks: rerun started (pending: CI)"],
+      }));
+      response.end();
+      return;
+    }
+    response.writeHead(404).end();
   });
   const watcher = startWatcher(url);
 
   try {
     assert.deepEqual(await watcher.exited, { code: 1, signal: null });
-    assert.equal(requests, 1);
-    assert.equal(watcher.stdout(), "");
-    assert.match(watcher.stderr(), /expected text\/event-stream/);
+    assert.deepEqual(watcher.stdout().trim().split("\n"), [
+      "watch-pr: ready",
+      "checks: rerun started (pending: CI)",
+    ]);
+    assert.match(watcher.stderr(), /after readiness/);
+    assert.match(watcher.stderr(), /last event id "event-before-expiry"/);
+    assert.match(watcher.stderr(), /open_pr_monitor once/);
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
     await closeServer(server);
   }
 });
 
-test("rejects a monitor URL file with group or other access", {
-  skip: process.platform === "win32",
-}, async () => {
-  const watcher = startWatcher("https://watch-pr.example/monitor/capability", {
-    mode: 0o644,
-  });
-
+test("rejects a malformed resume cursor before connecting", async () => {
+  const watcher = startWatcher("https://watch-pr.test/monitor/capability?cursor=bad%0Aid");
   assert.deepEqual(await watcher.exited, { code: 1, signal: null });
   assert.equal(watcher.stdout(), "");
-  assert.match(watcher.stderr(), /permissions.*group or other access/);
-  assert.equal(existsSync(watcher.urlFile), true);
+  assert.match(watcher.stderr(), /cursor is not a valid Last-Event-ID/);
 });
 
-test("reports a missing monitor URL file without exposing a capability", async () => {
-  const watcher = startWatcher("", { createUrlFile: false });
-
-  assert.deepEqual(await watcher.exited, { code: 1, signal: null });
-  assert.equal(watcher.stdout(), "");
-  assert.match(watcher.stderr(), /could not open the monitor URL file/);
-  assert.equal(existsSync(watcher.urlFile), false);
-});
-
-test("portable file opening rejects symlinks when O_NOFOLLOW is unavailable", async () => {
-  const target = join(temporaryDirectory, `${urlFileSequence += 1}.target`);
-  const link = join(temporaryDirectory, `${urlFileSequence += 1}.link`);
-  writeFileSync(target, "https://watch-pr.example/monitor/capability", {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  symlinkSync(target, link);
-
-  await assert.rejects(
-    readMonitorUrlFile(link, { noFollowFlag: null }),
-    /regular file, not a symbolic link/,
-  );
-  assert.equal(existsSync(target), true);
-  assert.equal(existsSync(link), true);
-});
-
-test("portable file opening verifies and consumes a regular capability file", async () => {
-  const urlFile = join(temporaryDirectory, `${urlFileSequence += 1}.portable`);
-  const monitorUrl = "https://watch-pr.example/monitor/capability";
-  writeFileSync(urlFile, monitorUrl, { encoding: "utf8", mode: 0o600 });
-
-  await assert.doesNotReject(async () => {
-    assert.equal(
-      await readMonitorUrlFile(urlFile, { noFollowFlag: null }),
-      monitorUrl,
-    );
-  });
-  assert.equal(existsSync(urlFile), false);
-});
-
-test("rejects non-HTTP URLs even when their hostname is loopback", async () => {
-  const watcher = startWatcher("file://localhost/monitor/test-capability");
-
+test("rejects non-HTTP monitor URLs", async () => {
+  const watcher = startWatcher("file://localhost/monitor/transcript-safe-capability");
   assert.deepEqual(await watcher.exited, { code: 1, signal: null });
   assert.equal(watcher.stdout(), "");
   assert.match(watcher.stderr(), /HTTPS or loopback HTTP/);
