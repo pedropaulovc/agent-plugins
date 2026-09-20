@@ -27,8 +27,10 @@ The watcher prints:
 1. `watch-pr: ready` after the first SSE response has been validated. Reconnects do not
    print readiness again.
 2. `<details>` when an actionable change arrives. One watcher is scoped to one PR, so
-   intermediate lines omit a redundant PR/update prefix. Details include check names and
-   URLs, changed comment or review bodies and IDs, and rebase state.
+   intermediate output omits a redundant PR/update prefix. Comment, review, and feedback
+   headers keep their IDs, feedback keeps its file and line range, and redundant GitHub
+   URLs are omitted. Visible Markdown bodies retain their full length and line breaks;
+   hidden HTML comments remain suppressed.
 3. `PR <n> finished: MERGED|CLOSED` before a terminal feed exits.
 
 Routine check completions and no-op webhook deliveries stay silent. A CI rerun emits
@@ -36,7 +38,7 @@ one start summary, immediate named failures or cancellations, and one terminal r
 after pending checks settle. Comment deltas carry the changed comment itself, so a root
 agent does not have to fetch and search a PR snapshot containing older comments.
 
-The root acts from each intermediate line without spending a turn on `get_pr`.
+The root acts from each intermediate output block without spending a turn on `get_pr`.
 `get_pr` remains the final reconciliation step for merge or closure and a fallback when
 an event explicitly lacks required context. The watcher never receives GitHub
 credentials and cannot edit, rebase, push, reply, or call MCP tools.
