@@ -22,17 +22,19 @@ Start the watcher by passing the URL directly:
 node watch-pr-monitor.mjs "<monitorUrl>"
 ```
 
-The watcher prints:
+The watcher prints only:
 
-1. `watch-pr: ready` after the first SSE response has been validated. Reconnects do not
-   print readiness again.
-2. `<details>` when an actionable change arrives. One watcher is scoped to one PR, so
+1. `<details>` when an actionable change arrives. One watcher is scoped to one PR, so
    intermediate output omits a redundant PR/update prefix. Comment, review, and feedback
    headers keep their IDs, feedback keeps its file and line range, and redundant GitHub
    URLs are omitted. Visible Markdown bodies retain their full length and line breaks.
    Each continuation line starts with `│ ` so body text cannot imitate a watcher record;
    hidden HTML comments remain suppressed.
-3. `PR <n> finished: MERGED|CLOSED` before a terminal feed exits.
+2. `PR <n> finished: MERGED|CLOSED` before a terminal feed exits.
+
+Startup and idle feeds are silent. Permanent connection failures go to stderr and
+terminate the process. Sustained transient failures emit one stderr warning per outage
+while retries continue, so silence alone does not prove that the feed is connected.
 
 Routine check completions and no-op webhook deliveries stay silent. A CI rerun emits one
 `checks: <name> -> <status>` record per affected check, each on its own physical line:
@@ -45,19 +47,20 @@ The root acts from each intermediate output block without spending a turn on `ge
 an event explicitly lacks required context. The watcher never receives GitHub
 credentials and cannot edit, rebase, push, reply, or call MCP tools.
 
-Exactly one watcher runs per PR and root session:
+Run at most one active watcher per PR and root session:
 
 - Claude Code uses one persistent `Monitor`.
 - Codex and other agent harnesses use one long-lived watcher subagent.
 - Oh My Pi uses one `hub(op: "start")` process with `monitorUrl` as the script's only
-  argument and `^watch-pr: ready(?:\r?\n|$)` as its newline-safe readiness condition.
+  argument. No readiness pattern is required because an idle watcher emits nothing.
 
-All harnesses retain the same watcher through intermediate events. Cancellation stops
-that watcher before `unwatch_pr`. An HTTP 401, 403, or 404 after readiness means the
-12-hour URL expired or was revoked. Call `open_pr_monitor` once, put the stopped
-watcher's reported last event ID in the replacement URL's `cursor` query parameter,
-and start one replacement watcher; events during renewal are replayed. Other permanent
-failures stop the watch without falling back to polling.
+Prefer retaining the same watcher through intermediate events. If it exits or can no
+longer continue, the root agent may rearm after confirming the old process is stopped.
+Local launch errors can reuse a still-valid URL. HTTP 401, 403, or 404 failures include
+the last event ID. Call `open_pr_monitor`, replace its returned URL's `cursor` query
+parameter with that ID, and start the replacement with the URL as its only argument.
+Remove `cursor` when the ID is empty, then reconcile the gap once with `get_pr`. Never
+run duplicate watchers or substitute recurring polling.
 
 Claude Code and Codex load the remote server from the inline plugin manifest. The
 OpenCode adapter registers the same endpoint and `/watch-pr` command. Aggregate

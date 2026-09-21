@@ -5,7 +5,6 @@ import { pathToFileURL } from "node:url";
 const INITIAL_RECONNECT_DELAY_MS = 250;
 const MAX_RECONNECT_DELAY_MS = 10_000;
 const VALID_TERMINAL_STATES = new Set(["watching", "merged", "closed"]);
-const READY_LINE = "watch-pr: ready";
 const USAGE = "usage: node watch-pr-monitor.mjs <monitor-url>";
 
 class PermanentMonitorError extends Error { }
@@ -1274,20 +1273,15 @@ export function formatMonitorEvent(event) {
   return output.join("\n");
 }
 
-function validateResponse(response, { readyEmitted, cursor }) {
+function validateResponse(response, cursor) {
   if ([401, 403, 404].includes(response.status)) {
-    if (!readyEmitted) {
-      throw permanent(
-        `monitor URL was rejected with HTTP ${response.status} before readiness; return to the root session and call unwatch_pr`,
-      );
-    }
     throw permanent(
-      `monitor URL was rejected with HTTP ${response.status} after readiness; last event id ${JSON.stringify(cursor ?? "")}; return to the root session, call open_pr_monitor once, and resume from that event id`,
+      `monitor URL was rejected with HTTP ${response.status}; last event id ${JSON.stringify(cursor ?? "")}; return to the root session to decide whether to refresh the capability, retry, or unwatch`,
     );
   }
   if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
     throw permanent(
-      `monitor request failed permanently with HTTP ${response.status}; return to the root session and call unwatch_pr`,
+      `monitor request failed permanently with HTTP ${response.status}; last event id ${JSON.stringify(cursor ?? "")}; return to the root session to decide whether to retry or unwatch`,
     );
   }
   if (response.status >= 300 && response.status < 400) {
@@ -1301,6 +1295,12 @@ function validateResponse(response, { readyEmitted, cursor }) {
   }
   if (!response.body) throw permanent("monitor endpoint returned no response body");
   return true;
+}
+
+function reportReconnectWarning(reason, cursor) {
+  process.stderr.write(
+    `watch-pr monitor: still reconnecting after ${reason}; last event id ${JSON.stringify(cursor ?? "")}\n`,
+  );
 }
 
 export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } = {}) {
@@ -1333,7 +1333,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
   parsedUrl.searchParams.delete("cursor");
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
-  let readyEmitted = false;
+  let reconnectWarningEmitted = false;
 
   while (!effectiveSignal.aborted) {
     let response;
@@ -1350,20 +1350,24 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
     } catch (error) {
       if (effectiveSignal.aborted) return;
       if (error instanceof PermanentMonitorError) throw error;
+      if (reconnectDelay === MAX_RECONNECT_DELAY_MS && !reconnectWarningEmitted) {
+        reportReconnectWarning("a network failure", cursor);
+        reconnectWarningEmitted = true;
+      }
       await abortableDelay(reconnectDelay, effectiveSignal);
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
       continue;
     }
 
     let receivedEvent = false;
+    let reconnectReason = `HTTP ${response.status}`;
     try {
-      if (!validateResponse(response, { readyEmitted, cursor })) {
+      if (!validateResponse(response, cursor)) {
         await response.body?.cancel();
       } else {
-        if (!readyEmitted) {
-          process.stdout.write(`${READY_LINE}\n`);
-          readyEmitted = true;
-        }
+        reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+        reconnectWarningEmitted = false;
+        reconnectReason = "a dropped event stream";
         for await (const frame of parseEventStream(response.body)) {
           const parsed = parseMonitorEvent(frame);
           cursor = parsed.id;
@@ -1384,6 +1388,10 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
     }
 
     if (effectiveSignal.aborted) return;
+    if (reconnectDelay === MAX_RECONNECT_DELAY_MS && !reconnectWarningEmitted) {
+      reportReconnectWarning(reconnectReason, cursor);
+      reconnectWarningEmitted = true;
+    }
     await abortableDelay(reconnectDelay, effectiveSignal);
     if (!receivedEvent) reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
   }
