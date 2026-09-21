@@ -806,6 +806,32 @@ test("retries transient HTTP failures without changing the resume cursor", async
     await closeServer(server);
   }
 });
+test("backs off across valid SSE disconnects that deliver no events", async () => {
+  const requestTimes = [];
+  const { server, url } = await startServer((_request, response) => {
+    requestTimes.push(Date.now());
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    if (requestTimes.length < 3) {
+      response.end();
+      return;
+    }
+    sendEvent(response, monitorEvent("event-after-empty-disconnects", "merged"));
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(requestTimes.length, 3);
+    assert.ok(requestTimes[1] - requestTimes[0] >= 200);
+    assert.ok(requestTimes[2] - requestTimes[1] >= 400);
+    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
 
 
 test("reconnects with its cursor and does not print a replay twice", async () => {

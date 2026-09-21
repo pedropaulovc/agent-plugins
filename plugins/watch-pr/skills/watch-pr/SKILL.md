@@ -126,8 +126,10 @@ stdout line, immediately send the exact line to the root session through the
 parent-message channel. Lines beginning with `│ ` continue the preceding comment,
 review, or feedback body and are never standalone watcher records. Continue reading
 the same process. For `PR <n> finished: MERGED` or `PR <n> finished: CLOSED`, return
-the exact line to the root as the terminal result and exit. If the process writes
-stderr or exits nonzero, send the error and last stdout event to the root and exit.
+the exact line to the root as the terminal result and exit. If stderr starts with
+`watch-pr monitor: still reconnecting`, send that nonfatal warning to the root and
+continue reading the same process. For any other stderr output or a nonzero exit, send
+the error and last stdout event to the root and exit.
 Do not call MCP or GitHub tools, inspect or modify files, rebase, push, reply, poll,
 restart, or launch another watcher; the root session decides recovery.
 ```

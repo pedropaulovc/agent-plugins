@@ -1365,14 +1365,13 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       if (!validateResponse(response, cursor)) {
         await response.body?.cancel();
       } else {
-        reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
-        reconnectWarningEmitted = false;
         reconnectReason = "a dropped event stream";
         for await (const frame of parseEventStream(response.body)) {
           const parsed = parseMonitorEvent(frame);
           cursor = parsed.id;
           receivedEvent = true;
           reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+          reconnectWarningEmitted = false;
           if (parsed.id === lastPrintedId) continue;
 
           const line = formatMonitorEvent(parsed.event);
