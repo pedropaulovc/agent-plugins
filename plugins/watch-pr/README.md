@@ -34,8 +34,9 @@ The watcher prints:
    hidden HTML comments remain suppressed.
 3. `PR <n> finished: MERGED|CLOSED` before a terminal feed exits.
 
-Routine check completions and no-op webhook deliveries stay silent. A CI rerun emits
-one start summary, immediate named failures or cancellations, and one terminal rollup
+Routine check completions and no-op webhook deliveries stay silent. A CI rerun emits one
+`checks: <name> -> <status>` record per affected check, each on its own physical line:
+start records, immediate named failures or cancellations, and terminal records
 after pending checks settle. Comment deltas carry the changed comment itself, so a root
 agent does not have to fetch and search a PR snapshot containing older comments.
 

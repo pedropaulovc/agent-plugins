@@ -89,8 +89,9 @@ same watcher emits the readiness record.
      includes the file and start/end lines. Their redundant GitHub URLs are omitted.
      Act from this output without calling `get_pr`.
    - Routine check transitions and no-op webhook deliveries emit nothing. A check rerun
-     produces one start line, immediate named failures or cancellations, and one terminal
-     rollup after every pending check settles.
+     produces one start record per pending check, immediate named failures or
+     cancellations, and a terminal record per check after every pending check settles.
+     Each check status is its own physical line.
    - `PR <n> finished: MERGED` or `PR <n> finished: CLOSED` is terminal. Call `get_pr`
      once to reconcile final state before the terminal action below.
 
@@ -176,11 +177,10 @@ notifications, or repeated watcher launches.
 | `rebase: DIRTY` | Rebase, resolve every conflict, and force-push the feature branch with `--force-with-lease`. |
 | `rebase: <other-state>` | Record that the prior behind/conflict condition cleared; continue with checks and review. |
 | `PR state: <OPEN\|CLOSED> [DRAFT]` | Record the lifecycle or draft transition; a `DRAFT` suffix still blocks review. |
-| `checks: rerun started (pending: ...)` | Informational; wait for the rollup or an immediate failure. |
-| `checks: pending (...)` | Reconciliation state: named checks are still running. |
-| `check <name>: fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
-| `check <name>: cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
-| `checks: all terminal (...)` | Confirm every required check passed; investigate nonzero fail or cancel counts. |
+| `checks: <name> -> pending` | Informational; wait for that check's result or an immediate failure. Every check arrives on its own line. |
+| `checks: <name> -> pass` \| `checks: <name> -> skipping` | Record the terminal result for that check; no action. |
+| `checks: <name> -> fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
+| `checks: <name> -> cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
 | `comment #<id> @<author>: <body>` | Read the full body inline, including any `│ ` continuation lines; decide whether it requires action, then use the comment ID to reply when needed. |
 | `review #<id> @<author> <state>: <body>` | Handle the verdict and full body directly, including any `│ ` continuation lines; use the review ID when a reply is needed. |
 | `feedback [<thread>] #<comment-id> <file>:<start>[-<end>] @<author>: <body>` | Inspect the named code and all `│ ` continuation lines, then fix or reply using the IDs. `[-]` means GitHub did not return a thread ID. |

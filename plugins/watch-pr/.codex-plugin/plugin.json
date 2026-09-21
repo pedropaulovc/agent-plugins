@@ -1,6 +1,6 @@
 {
   "name": "watch-pr",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Hosted MCP skill with a same-session watcher for GitHub PR CI, reviews, feedback, and terminal state.",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

@@ -31,6 +31,13 @@ const DETAIL_URL_RES = [
   /^(review #\d+ @[^\s:]+ [^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
   /^(feedback \[[^\]\s]*\] #\d+(?: .+?:\d+(?:-\d+)?)? @[^\s:]+) https:\/\/github\.com\/\S+(?=:| deleted$)/u,
 ];
+// Older persisted events comma-joined every changed check into a single `checks:` detail.
+// A monitor resumed from a cursor replays those, and each check still has to reach the root
+// agent as its own physical record, so a combined detail is split only when every segment
+// parses as a complete `<name> -> <bucket>[ <url>]` record.
+const LEGACY_CHECK_SUMMARY_PREFIX = "checks: ";
+const CHECK_RECORD_RE =
+  /^\S(?:[^\n\r]*\S)? -> (?:pending|pass|fail|skipping|cancel)(?: https?:\/\/\S+)?$/u;
 
 function permanent(message) {
   return new PermanentMonitorError(message);
@@ -1169,6 +1176,15 @@ function stripDetailHtmlComments(detail) {
   return { value: strippedPrefix.text + strippedBody.text, reconcile: false };
 }
 
+function expandLegacyCheckDetail(detail) {
+  if (!detail.startsWith(LEGACY_CHECK_SUMMARY_PREFIX)) return [detail];
+  const segments = detail.slice(LEGACY_CHECK_SUMMARY_PREFIX.length).split(", ");
+  if (segments.length < 2 || !segments.every((segment) => CHECK_RECORD_RE.test(segment))) {
+    return [detail];
+  }
+  return segments.map((segment) => `${LEGACY_CHECK_SUMMARY_PREFIX}${segment}`);
+}
+
 function removeDetailUrl(value) {
   for (const pattern of DETAIL_URL_RES) {
     if (pattern.test(value)) return value.replace(pattern, "$1");
@@ -1224,7 +1240,7 @@ export function formatMonitorEvent(event) {
   if (!Array.isArray(event.details) || event.details.some((detail) => typeof detail !== "string")) {
     throw permanent("received invalid monitor event details");
   }
-  const compactedDetails = event.details.map(compactDetail);
+  const compactedDetails = event.details.flatMap(expandLegacyCheckDetail).map(compactDetail);
   const seenDetails = new Set();
   const details = compactedDetails.filter((detail) => {
     if (!detail.value || seenDetails.has(detail.value)) return false;
