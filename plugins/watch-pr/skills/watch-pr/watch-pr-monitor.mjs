@@ -1334,6 +1334,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   let reconnectWarningEmitted = false;
+  const stableConnectionMs = INITIAL_RECONNECT_DELAY_MS;
 
   while (!effectiveSignal.aborted) {
     let response;
@@ -1359,6 +1360,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       continue;
     }
 
+    let connectedAt;
     let receivedEvent = false;
     let reconnectReason = `HTTP ${response.status}`;
     try {
@@ -1366,6 +1368,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
         await response.body?.cancel();
       } else {
         reconnectReason = "a dropped event stream";
+        connectedAt = performance.now();
         for await (const frame of parseEventStream(response.body)) {
           const parsed = parseMonitorEvent(frame);
           cursor = parsed.id;
@@ -1384,6 +1387,14 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       if (effectiveSignal.aborted) return;
       if (error instanceof PermanentMonitorError) throw error;
       // A dropped response is transient. Reconnect from the last complete event.
+    }
+    if (
+      !receivedEvent &&
+      connectedAt !== undefined &&
+      performance.now() - connectedAt >= stableConnectionMs
+    ) {
+      reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+      reconnectWarningEmitted = false;
     }
 
     if (effectiveSignal.aborted) return;

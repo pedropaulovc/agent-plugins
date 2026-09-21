@@ -831,6 +831,37 @@ test("backs off across valid SSE disconnects that deliver no events", async () =
     await closeServer(server);
   }
 });
+test("resets outage backoff after a stable idle SSE connection", async () => {
+  const requestTimes = [];
+  const { server, url } = await startServer((_request, response) => {
+    requestTimes.push(Date.now());
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    if (requestTimes.length < 3) {
+      response.end();
+      return;
+    }
+    if (requestTimes.length === 3) {
+      response.flushHeaders();
+      setTimeout(() => response.end(), 300);
+      return;
+    }
+    sendEvent(response, monitorEvent("event-after-stable-idle", "merged"));
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(requestTimes.length, 4);
+    assert.ok(requestTimes[3] - requestTimes[2] >= 450);
+    assert.ok(requestTimes[3] - requestTimes[2] < 900);
+    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
 
 
 
