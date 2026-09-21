@@ -101,18 +101,21 @@ async function stopWatcher(watcher) {
   assert.deepEqual(await watcher.exited, expected);
 }
 
-test("prints readiness for a successful idle feed and keeps the direct URL process alive", async () => {
+test("keeps a successful idle feed silent and the direct URL process alive", async () => {
+  let connected = false;
   const { server, url } = await startServer((_request, response) => {
+    connected = true;
     response.writeHead(200, { "Content-Type": "text/event-stream" });
     response.flushHeaders();
   });
   const watcher = startWatcher(url);
 
   try {
-    await waitFor(() => watcher.stdout().includes("\n"), "the readiness record");
+    await waitFor(() => connected, "the monitor connection");
     assert.equal(watcher.child.exitCode, null);
-    assert.equal(watcher.stdout(), "watch-pr: ready\n");
+    assert.equal(watcher.stdout(), "");
     await stopWatcher(watcher);
+    assert.equal(watcher.stdout(), "");
     assert.equal(watcher.stderr(), "");
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
@@ -153,7 +156,7 @@ test("prints full framed multiline comments without their GitHub URLs", async ()
 
   try {
     await waitFor(() => watcher.stdout().includes(longLine), "the complete comment event");
-    assert.equal(watcher.stdout(), `watch-pr: ready\n${expected}\n`);
+    assert.equal(watcher.stdout(), `${expected}\n`);
     assert.doesNotMatch(watcher.stdout(), /github\.com\/owner|hidden metadata/u);
     assert.equal(watcher.child.exitCode, null);
     await stopWatcher(watcher);
@@ -708,6 +711,16 @@ test("prints each actionable category on its own line", () => {
   );
 });
 
+test("prints every check status on its own physical line", () => {
+  assert.equal(
+    formatMonitorEvent(monitorEvent("event-per-check", "watching", {
+      details: ["checks: CI, Linux -> pending", "checks: Lint -> pending"],
+    })),
+    "checks: CI, Linux -> pending\nchecks: Lint -> pending",
+  );
+
+});
+
 test("sanitizes control characters and bounds actionable wake lines", () => {
   const line = formatSingleLineMonitorEvent(monitorEvent("event-checks", "watching", {
     details: Array.from(
@@ -755,7 +768,6 @@ test("suppresses non-actionable feed churn", async () => {
   try {
     await waitFor(() => watcher.stdout().includes("all terminal"), "the terminal check summary");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
-      "watch-pr: ready",
       "checks: all terminal (pass: 8, fail: 0, skipping: 0, cancel: 0)",
     ]);
     await stopWatcher(watcher);
@@ -765,6 +777,93 @@ test("suppresses non-actionable feed churn", async () => {
     await closeServer(server);
   }
 });
+test("retries transient HTTP failures without changing the resume cursor", async () => {
+  const requestHeaders = [];
+  let requestCount = 0;
+  const { server, url } = await startServer((request, response) => {
+    requestHeaders.push(request.headers);
+    requestCount += 1;
+    if (requestCount < 3) {
+      response.writeHead(503).end();
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    sendEvent(response, monitorEvent("event-after-outage", "merged"));
+  });
+  const watcher = startWatcher(`${url}?cursor=before-outage`);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(requestCount, 3);
+    assert.deepEqual(
+      requestHeaders.map((headers) => headers["last-event-id"]),
+      ["before-outage", "before-outage", "before-outage"],
+    );
+    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+test("backs off across valid SSE disconnects that deliver no events", async () => {
+  const requestTimes = [];
+  const { server, url } = await startServer((_request, response) => {
+    requestTimes.push(Date.now());
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    if (requestTimes.length < 3) {
+      response.end();
+      return;
+    }
+    sendEvent(response, monitorEvent("event-after-empty-disconnects", "merged"));
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(requestTimes.length, 3);
+    assert.ok(requestTimes[1] - requestTimes[0] >= 200);
+    assert.ok(requestTimes[2] - requestTimes[1] >= 400);
+    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+test("resets outage backoff after a stable idle SSE connection", async () => {
+  const requestTimes = [];
+  const { server, url } = await startServer((_request, response) => {
+    requestTimes.push(Date.now());
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    if (requestTimes.length < 3) {
+      response.end();
+      return;
+    }
+    if (requestTimes.length === 3) {
+      response.flushHeaders();
+      setTimeout(() => response.end(), 300);
+      return;
+    }
+    sendEvent(response, monitorEvent("event-after-stable-idle", "merged"));
+  });
+  const watcher = startWatcher(url);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(requestTimes.length, 4);
+    assert.ok(requestTimes[3] - requestTimes[2] >= 450);
+    assert.ok(requestTimes[3] - requestTimes[2] < 900);
+    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+
+
 
 test("reconnects with its cursor and does not print a replay twice", async () => {
   const requestHeaders = [];
@@ -800,7 +899,6 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
     assert.equal(requestHeaders[0]["last-event-id"], "initial-cursor");
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
-      "watch-pr: ready",
       "checks: rerun started (pending: CI, Lint)",
       "PR 42 finished: CLOSED",
     ]);
@@ -825,7 +923,6 @@ test("prints terminal state and exits without waiting for the feed to close", as
   try {
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
-      "watch-pr: ready",
       "PR 42 finished: MERGED",
     ]);
     assert.equal(watcher.stderr(), "");
@@ -846,8 +943,8 @@ for (const status of [401, 403, 404]) {
       assert.deepEqual(await watcher.exited, { code: 1, signal: null });
       assert.equal(watcher.stdout(), "");
       assert.match(watcher.stderr(), new RegExp(`HTTP ${status}`));
-      assert.match(watcher.stderr(), /before readiness/);
-      assert.match(watcher.stderr(), /unwatch_pr/);
+      assert.match(watcher.stderr(), /last event id ""/);
+      assert.match(watcher.stderr(), /refresh the capability, retry, or unwatch/);
     } finally {
       if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
       await closeServer(server);
@@ -855,7 +952,7 @@ for (const status of [401, 403, 404]) {
   });
 }
 
-test("reports the last event id when a ready capability expires", async () => {
+test("reports the last event id when a capability expires", async () => {
   let connection = 0;
   const { server, url } = await startServer((_request, response) => {
     connection += 1;
@@ -874,12 +971,10 @@ test("reports the last event id when a ready capability expires", async () => {
   try {
     assert.deepEqual(await watcher.exited, { code: 1, signal: null });
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
-      "watch-pr: ready",
       "checks: rerun started (pending: CI)",
     ]);
-    assert.match(watcher.stderr(), /after readiness/);
     assert.match(watcher.stderr(), /last event id "event-before-expiry"/);
-    assert.match(watcher.stderr(), /open_pr_monitor once/);
+    assert.match(watcher.stderr(), /refresh the capability, retry, or unwatch/);
   } finally {
     if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
     await closeServer(server);
