@@ -186,6 +186,7 @@ notifications, or repeated watcher launches.
 | `feedback [<thread>] #<comment-id> <file>:<start>[-<end>] @<author>: <body>` | Inspect the named code and all `│ ` continuation lines, then fix or reply using the IDs. `[-]` means GitHub did not return a thread ID. |
 | `thread <id>: reopened\|resolved` | Re-opened feedback requires action; record resolved feedback without another snapshot fetch. |
 | `comment\|review\|feedback ... deleted` | Record that the referenced feedback was removed; do not act on its stale text. |
+| `+<n> more checks` | The server bounded a large check wave; call `get_pr` once for the omitted check states. |
 | `+<n> more changes` | Non-body details exceeded the safety bound or a body required snapshot reconciliation; call `get_pr` once for the omitted details. |
 | `PR <n> finished: MERGED` | Call `get_pr`, call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. The watcher exits on its own. |
 | `PR <n> finished: CLOSED` | Call `get_pr`, call `unwatch_pr`, and report that the PR closed without merging. The watcher exits on its own. |

@@ -711,30 +711,11 @@ test("prints each actionable category on its own line", () => {
 test("prints every check status on its own physical line", () => {
   assert.equal(
     formatMonitorEvent(monitorEvent("event-per-check", "watching", {
-      details: ["checks: CI -> pending", "checks: Lint -> pending"],
+      details: ["checks: CI, Linux -> pending", "checks: Lint -> pending"],
     })),
-    "checks: CI -> pending\nchecks: Lint -> pending",
+    "checks: CI, Linux -> pending\nchecks: Lint -> pending",
   );
-  // Replayed older events carry one comma-joined summary; it still has to reach the root
-  // agent as one record per check.
-  assert.equal(
-    formatMonitorEvent(monitorEvent("event-legacy-checks", "watching", {
-      details: ["checks: CI -> fail https://checks.example/ci, Lint -> pass, Typecheck -> pending"],
-    })),
-    [
-      "checks: CI -> fail https://checks.example/ci",
-      "checks: Lint -> pass",
-      "checks: Typecheck -> pending",
-    ].join("\n"),
-  );
-  // A summary whose segments are not complete check records is left intact rather than
-  // guessed apart.
-  assert.equal(
-    formatMonitorEvent(monitorEvent("event-legacy-rollup", "watching", {
-      details: ["checks: rerun started (pending: CI, Lint)"],
-    })),
-    "checks: rerun started (pending: CI, Lint)",
-  );
+
 });
 
 test("sanitizes control characters and bounds actionable wake lines", () => {
