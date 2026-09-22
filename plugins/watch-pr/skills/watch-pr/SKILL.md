@@ -14,16 +14,15 @@ correctness path.
 ## Preflight the MCP tools
 
 Before resolving or watching a pull request, confirm that the root session's tool
-inventory exposes all four required watch-pr MCP tools:
+inventory exposes all three required watch-pr MCP tools:
 
 - `watch_pr`
-- `open_pr_monitor`
 - `get_pr`
 - `unwatch_pr`
 
 If any tool is unavailable, tell the user to authenticate the watch-pr MCP server with
 `/mcp reauth plugin:watch-pr:watch-pr`, then stop and wait. Do not continue until the
-root tool inventory exposes all four tools. Do not invoke Claude CLI, another client,
+root tool inventory exposes all three tools. Do not invoke Claude CLI, another client,
 another MCP transport, or any polling path as a workaround.
 
 ## Root-session boundary
@@ -39,7 +38,7 @@ and lifecycle monitoring is still needed. Before starting a replacement, confirm
 watcher is stopped and preserve its last event ID when one exists. Never run two watchers
 for the same PR or substitute recurring polling.
 
-Do not call `watch_pr`, `open_pr_monitor`, or `unwatch_pr` for this PR from a
+Do not call `watch_pr` or `unwatch_pr` for this PR from a
 second client that shares the same MCP credential. The backend watch scope is
 shared by that credential, so another client's `unwatch_pr` revokes the root
 watcher's capability. Report only that the watcher process started once the harness
@@ -64,17 +63,19 @@ Sustained transient failures emit a bounded stderr warning while retries continu
    - `repository`: `OWNER/REPOSITORY`
    - `number`: the pull-request number
 
-3. From the root session, call `open_pr_monitor` with the same arguments. Parse its JSON
-   result and retain `monitorUrl`. The URL is a read-only capability scoped to this OAuth
-   session and PR. It expires 12 hours after first creation; repeated calls reuse the
-   same URL and original deadline while it remains valid, then mint a new capability
+   The single call subscribes and opens the monitor capability. Parse its JSON result
+   and retain `monitor.monitorUrl`. The URL is a read-only capability scoped to this
+   OAuth session and PR. It expires 12 hours after first creation; repeated calls reuse
+   the same URL and original deadline while it remains valid, then mint a new capability
    after expiry. It carries no GitHub credential and is safe to include in harness calls,
    process arguments, transcripts, and logs.
 
-   If `terminalState` is already `merged` or `closed`, do not launch a watcher. Call
-   `get_pr`, perform the matching terminal action below, and clean up with `unwatch_pr`.
+   If the result has no `monitor` object, the server predates the merged tool; stop and
+   report instead of launching a watcher. If `monitor.terminalState` is already `merged`
+   or `closed`, do not launch a watcher. Call `get_pr`, perform the matching terminal
+   action below, and clean up with `unwatch_pr`.
 
-4. Resolve `watch-pr-monitor.mjs` from the absolute directory containing this `SKILL.md`;
+3. Resolve `watch-pr-monitor.mjs` from the absolute directory containing this `SKILL.md`;
    do not search the checkout or assume the current working directory. Start exactly one
    watcher through the harness-native flow below, passing the URL directly:
 
@@ -82,7 +83,7 @@ Sustained transient failures emit a bounded stderr warning while retries continu
    node "<absolute skill directory>/watch-pr-monitor.mjs" "<monitorUrl>"
    ```
 
-5. Classify each stdout record:
+4. Classify each stdout record:
    - The watcher emits nothing for startup or an idle feed. Silence is not a PR event.
    - Every nonterminal output begins with actionable event details. One watcher is scoped
      to one PR, so the output omits a redundant PR/update prefix. Comment, review, and
@@ -221,14 +222,14 @@ When a watcher fails, confirm that process has exited or stop it before deciding
 to rearm. Diagnose the concrete failure instead of retrying blindly:
 
 - For a local launch error, fix the cause and reuse the monitor URL if it remains valid.
-- For HTTP 401, 403, or 404, call `open_pr_monitor`, replace the returned URL's `cursor`
-  query parameter with the reported last event ID (remove `cursor` when that ID is
-  empty), then start one replacement watcher with the URL as its only argument.
-- If that replacement fails the same way, call `watch_pr` and `open_pr_monitor` once;
-  if the next replacement also fails, stop watching and report instead of retrying.
+- For HTTP 401, 403, or 404, call `watch_pr` again, replace the returned
+  `monitor.monitorUrl`'s `cursor` query parameter with the reported last event ID
+  (remove `cursor` when that ID is empty), then start one replacement watcher with the
+  URL as its only argument.
+- If that replacement fails the same way, call `watch_pr` once more and start one more
+  replacement rebuilt the same way; if it fails again, stop watching and report instead
+  of retrying.
 - For any other permanent HTTP error, do not rearm; report it and call `unwatch_pr`.
-- If the backend subscription no longer exists, call `watch_pr` before
-  `open_pr_monitor`.
 - After a gap with no cursor, call `get_pr` once to reconcile current state.
 - If monitoring is no longer useful or recovery is unsafe, call `unwatch_pr`.
 
