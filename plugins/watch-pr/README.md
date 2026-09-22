@@ -5,14 +5,14 @@ Provides the `/watch-pr` skill, an OAuth-authenticated connection to the hosted
 SSE watcher. The watcher keeps a pull request attached to the root agent session that
 authored it.
 
-The root tool inventory must expose `watch_pr`, `open_pr_monitor`, `get_pr`, and
+The root tool inventory must expose `watch_pr`, `get_pr`, and
 `unwatch_pr`. If any tool is missing, authenticate the server with
 `/mcp reauth plugin:watch-pr:watch-pr`. Claude CLI, another MCP client, and polling are
 not supported substitutes.
 
 The server owns GitHub webhooks, minute reconciliation, durable snapshots, and event
-cursors. After `watch_pr`, the root session calls `open_pr_monitor` and receives a
-read-only `monitorUrl` scoped to that OAuth session and PR. The URL expires after 12
+cursors. The single `watch_pr` call subscribes and returns a read-only
+`monitor.monitorUrl` scoped to that OAuth session and PR. The URL expires after 12
 hours and carries no GitHub credential. It may appear in process arguments,
 transcripts, and logs.
 
@@ -57,8 +57,9 @@ Run at most one active watcher per PR and root session:
 Prefer retaining the same watcher through intermediate events. If it exits or can no
 longer continue, the root agent may rearm after confirming the old process is stopped.
 Local launch errors can reuse a still-valid URL. HTTP 401, 403, or 404 failures include
-the last event ID. Call `open_pr_monitor`, replace its returned URL's `cursor` query
-parameter with that ID, and start the replacement with the URL as its only argument.
+the last event ID. Call `watch_pr` again, replace the returned `monitor.monitorUrl`'s
+`cursor` query parameter with that ID, and start the replacement with the URL as its
+only argument.
 Remove `cursor` when the ID is empty, then reconcile the gap once with `get_pr`. Never
 run duplicate watchers or substitute recurring polling.
 
