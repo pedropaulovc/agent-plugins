@@ -1,6 +1,6 @@
 {
   "name": "@pedropaulovc/watch-pr",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "description": "Hosted MCP pull request lifecycle monitoring with a same-session SSE watcher",
   "type": "module",
   "main": ".opencode/plugins/watch-pr.js"

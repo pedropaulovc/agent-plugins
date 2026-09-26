@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Pedro Microblog plugin</title>
+  <desc id="desc">Two overlapping speech bubbles with a bright writing mark.</desc>
+  <rect width="128" height="128" rx="28" fill="#211d36"/>
+  <path d="M24 31h55a13 13 0 0 1 13 13v24a13 13 0 0 1-13 13H50L35 94V81h-11a13 13 0 0 1-13-13V44a13 13 0 0 1 13-13Z" fill="#51437b" stroke="#c6b6ff" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M54 60h45a13 13 0 0 1 13 13v18a13 13 0 0 1-13 13H84l-14 11V104h-16a13 13 0 0 1-13-13v-3" fill="#de6b4d" stroke="#ffc09e" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m62 48 5 9 10 1-7 7 2 10-10-5-9 5 2-10-7-7 10-1Z" fill="#fff1b6"/>
+</svg>

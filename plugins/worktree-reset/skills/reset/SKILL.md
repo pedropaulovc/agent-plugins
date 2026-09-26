@@ -2,7 +2,7 @@
 name: reset
 description: Reset the current worktree to origin/main, remove stale worktree state, and reinstall project dependencies.
 disable-model-invocation: true
-allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate, TaskStop, TaskOutput, Monitor, Agent, SendMessage, CronList, CronDelete, mcp__watch-pr__unwatch_pr
+allowed-tools: Bash, Read, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate, TaskStop, TaskOutput, Monitor, Agent, SendMessage, CronList, CronDelete, mcp__watch-pr__unwatch_pr
 ---
 
 # Reset worktree to origin/main

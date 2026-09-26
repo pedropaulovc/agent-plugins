@@ -1,6 +1,8 @@
 {
   "name": "alt-text",
-  "version": "1.0.2",
+  "version": "1.0.3",
+  "homepage": "https://go.vza.net/agent-plugins/alt-text/docs",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
   "description": "Skill that writes accessibility-focused alt text for images about to be posted on social media (Twitter/X, Bluesky, Instagram, LinkedIn, Mastodon, Threads, Facebook).",
   "author": {
     "name": "Pedro Paulo Vezza Campos",

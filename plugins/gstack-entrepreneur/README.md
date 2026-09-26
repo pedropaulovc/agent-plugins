@@ -1,4 +1,8 @@
+![gstack-entrepreneur icon](icon.svg)
+
 # gstack-entrepreneur
+
+[Documentation](https://go.vza.net/agent-plugins/gstack-entrepreneur/docs) · [Support](https://go.vza.net/agent-plugins/gstack-entrepreneur/support) · [Privacy](https://go.vza.net/agent-plugins/gstack-entrepreneur/privacy) · [Local privacy details](PRIVACY.md)
 
 Entrepreneurship toolkit adapted from [gstack](https://github.com/garrytan/gstack), Garry Tan's AI engineering workflow framework. Stripped of all coding tooling. Keeps the pure methodology: YC-style questioning, CEO cognitive patterns, competitive research, and independent second opinions.
 
@@ -45,6 +49,22 @@ All engineering tooling boilerplate: telemetry, session tracking, update checks,
 ## Attribution
 
 Based on [gstack](https://github.com/garrytan/gstack) by [Garry Tan](https://x.com/garrytan). MIT License.
+
+## Operations and data
+
+These skills use the host model and tools to discuss ideas, review user-provided plans, and,
+when asked, read project documents. `/office-hours` can write a design document;
+`/ceo-review` can read or update a plan; `/market-research` writes a brief only after
+confirmation; `/autoplan` may create a restore copy and update a working document.
+
+The search-enabled skills use the configured `WebSearch` integration. Search terms go to
+the configured provider, and returned web results are processed by its tools and the
+model. The skills advise using general category terms rather than a confidential product
+name unless the user approves. Independent reviews send selected plan text to subagents
+through the host harness.
+
+The plugin has no standalone network client, telemetry, or background service. Model,
+search, and subagent processing follows the configured providers' policies.
 
 ## Codex and OpenCode support
 

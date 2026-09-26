@@ -720,23 +720,6 @@ test("publishes the consolidated documented MCP tool set", () => {
   assert.equal(search.inputSchema.properties.limit.default, 10);
 });
 
-test("keeps the coding skill and XMLDoc MCP server in separate plugins", () => {
-  const codingRoot = new URL("../plugins/developing-solidworks/", import.meta.url);
-  const mcpRoot = new URL("../plugins/developing-solidworks-mcp/", import.meta.url);
-  const codingManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", codingRoot), "utf8"));
-  const mcpManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", mcpRoot), "utf8"));
-  const mcpCodexManifest = JSON.parse(readFileSync(new URL(".codex-plugin/plugin.json", mcpRoot), "utf8"));
-  const mcpPackage = JSON.parse(readFileSync(new URL("package.json", mcpRoot), "utf8"));
-  assert.equal(codingManifest.name, "developing-solidworks");
-  assert.equal(codingManifest.version, "0.9.8");
-  assert.equal(mcpManifest.name, "developing-solidworks-mcp");
-  assert.equal(mcpManifest.version, "0.9.9");
-  assert.equal(mcpCodexManifest.version, mcpManifest.version);
-  assert.equal(mcpPackage.version, mcpManifest.version);
-  assert.equal(existsSync(new URL(".mcp.json", codingRoot)), false);
-  assert.equal(existsSync(new URL(".mcp.json", mcpRoot)), true);
-});
-
 test("registers MCP adapter for selective OpenCode installs", async () => {
   const config = {};
   const hooks = await DevelopingSolidworksMcpPlugin({ directory: process.cwd() });

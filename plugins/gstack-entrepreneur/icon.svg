@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Strategy path with branching options</title>
+  <rect width="128" height="128" rx="28" fill="#173F35"/>
+  <path d="M64 97V70M64 70 39 47M64 70l25-23" fill="none" stroke="#E7F0D9" stroke-linecap="round" stroke-width="7"/>
+  <circle cx="64" cy="98" r="10" fill="#F2A65A"/>
+  <circle cx="39" cy="44" r="10" fill="#E7F0D9"/>
+  <circle cx="89" cy="44" r="10" fill="#E7F0D9"/>
+  <path d="M64 22 73 39H55z" fill="#F2A65A"/>
+  <path d="M64 39v15" stroke="#F2A65A" stroke-linecap="round" stroke-width="6"/>
+</svg>

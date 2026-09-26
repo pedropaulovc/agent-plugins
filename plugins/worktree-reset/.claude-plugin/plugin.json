@@ -1,13 +1,13 @@
 {
   "name": "worktree-reset",
   "description": "Skill (/reset) that tears down harness agent state, protects normal worktrees, resets the current worktree to origin/main, and in --force mode removes linked worktrees before reclaiming main in the primary worktree.",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
   },
-  "homepage": "https://github.com/pedropaulovc/agents-plugins",
-  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "homepage": "https://go.vza.net/agent-plugins/worktree-reset/docs",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
   "license": "MIT",
   "keywords": [
     "skill",

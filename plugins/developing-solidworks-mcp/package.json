@@ -1,6 +1,6 @@
 {
   "name": "@pedropaulovc/developing-solidworks-mcp",
-  "version": "0.9.9",
+  "version": "0.9.10",
   "description": "SolidWorks XMLDoc MCP server",
   "type": "module",
   "main": ".opencode/plugins/developing-solidworks-mcp.js",

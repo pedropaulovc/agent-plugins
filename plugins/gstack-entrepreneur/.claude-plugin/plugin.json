@@ -1,7 +1,9 @@
 {
   "name": "gstack-entrepreneur",
   "description": "Entrepreneurship toolkit adapted from gstack: idea validation, market research, strategy review, and structured decision pipelines. No code, just thinking.",
-  "version": "0.3.0",
+  "homepage": "https://go.vza.net/agent-plugins/gstack-entrepreneur/docs",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
+  "version": "0.3.1",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"

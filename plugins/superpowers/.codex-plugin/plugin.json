@@ -1,14 +1,14 @@
 {
   "name": "superpowers",
-  "version": "6.1.1.1",
+  "version": "6.1.1.2",
   "description": "An agentic skills framework & software development methodology that works: planning, TDD, debugging, and collaboration workflows.",
   "author": {
     "name": "Jesse Vincent",
     "email": "jesse@fsck.com",
     "url": "https://github.com/obra"
   },
-  "homepage": "https://github.com/obra/superpowers",
-  "repository": "https://github.com/obra/superpowers",
+  "homepage": "https://go.vza.net/agent-plugins/superpowers/docs",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
   "license": "MIT",
   "keywords": [
     "brainstorming",

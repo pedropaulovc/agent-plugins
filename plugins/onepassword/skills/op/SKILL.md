@@ -13,30 +13,40 @@ Only fall back to the interactive sign-in below **after** an `op` command has fa
 
 ## Fallback: interactive sign-in (only on auth failure)
 
-Establish an `op` CLI session by running `op signin -f` in a separate tmux pane (so the user can type their password), then capturing the session token.
+Sign in within a persistent tmux pane. The pane's shell retains the session environment for later `op` commands; never transfer an `OP_SESSION*` value to another shell, file, command argument, or tool response. The 1Password CLI documents `eval "$(op signin)"` for manual sign-in; `-f` suppresses warnings. Do **not** use `--raw`, print the sign-in output, enable shell tracing, or capture the pane while signing in. App-integrated sign-in also works with `op signin`.
 
-### Steps
+1. Open a Bash pane and note the pane ID printed by tmux (not a credential):
 
-1. Run a single bash command that opens a tmux pane for interactive sign-in, evals the output to capture the session token, then writes only the `OP_SESSION_*` env var to a file:
    ```bash
-   rm -f /tmp/op-session.env && tmux split-window -h 'eval $(op signin -f); env | grep "^OP_SESSION_" > /tmp/op-session.env; echo "OP_DONE=$?" >> /tmp/op-session.env' && while [ ! -f /tmp/op-session.env ] || ! grep -q 'OP_DONE=' /tmp/op-session.env 2>/dev/null; do sleep 1; done && cat /tmp/op-session.env
+   tmux split-window -h -P -F '#{pane_id}' 'bash --noprofile --norc'
    ```
-   Set a long timeout (e.g. 120s) since the user needs time to type their password.
 
-2. If the file contains an `OP_SESSION_*` line: extract it and prefix all subsequent `op` commands with `export <that line> &&`. Verify with `export OP_SESSION_...=... && op whoami`.
+2. Substitute that pane ID for `%N` below. Send the sign-in command to the pane; the user enters any requested password there. Command substitution captures the CLI's shell assignment **inside the pane**, rather than displaying it. Check the exit status before evaluating it and discard the captured string afterward:
 
-3. If the file does not contain an `OP_SESSION_*` line: sign-in failed. Report the error to the user.
+   ```bash
+   tmux send-keys -t '%N' -l 'set +x; signin_output=$(op signin -f); signin_status=$?; if [ "$signin_status" -eq 0 ] && eval "$signin_output"; then unset signin_output; printf "\nOP_SIGNIN_OK\n"; else unset signin_output; printf "\nOP_SIGNIN_FAILED\n"; fi'
+   tmux send-keys -t '%N' Enter
+   ```
 
-## Using the session in subsequent commands
+   Allow time for the user's interactive sign-in. Check only for the success marker without printing the pane's contents to the tool transcript:
 
-The session token env var name includes the user ID (e.g. `OP_SESSION_D4FVRUPQ7VHULE3OOCDDHS64V4`), NOT the account shorthand. After capturing it, prefix every bash command that needs `op` with:
+   ```bash
+   tmux capture-pane -pt '%N' | grep -q '^OP_SIGNIN_OK$'
+   ```
 
-```bash
-export $(grep '^OP_SESSION_' /tmp/op-session.env) && op <command>
-```
+   If the marker does not appear after sign-in completes, ask the user to inspect the error in the pane (do not paste credentials or capture the pane's sign-in output). Retry sign-in in the same pane if needed.
 
-If your workflow uses a specific 1Password Environment, add `run --environment <env-id> --` after `op` (e.g. `op run --environment <env-id> -- <command>`).
+3. Send subsequent commands to **that same pane** so the exported session variable remains in its shell. For example:
+
+   ```bash
+   tmux send-keys -t '%N' -l 'op whoami'
+   tmux send-keys -t '%N' Enter
+   ```
+
+   Wait for the command to finish before reading its result. Capture only the output needed for the user's task, and remember that `op` results themselves can contain secrets. Never run `env`, `printenv`, `set`, or `export -p` in that pane or capture its sign-in output. Do not run a fresh `op` process in another shell expecting it to inherit this session.
+
+If your workflow uses a specific 1Password Environment, run `op run --environment <env-id> -- <command>` in the same pane. When finished, run `op signout` there and close the pane with `tmux kill-pane -t '%N'`. An expired session requires signing in again in the pane.
 
 ## Why tmux
 
-`op signin -f` requires interactive password input. The Bash tool cannot handle interactive prompts, so we split to a tmux pane where the user types directly. The `eval $(op signin -f)` pattern captures the session token into the shell environment, which we then write to a file for use in other shells.
+Manual sign-in needs interactive password input. The tmux pane accepts it directly from the user and keeps the resulting `OP_SESSION*` environment variable within its shell; subsequent `op` commands inherit it without revealing or storing the token outside the pane.

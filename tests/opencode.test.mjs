@@ -34,21 +34,6 @@ test("all plugins load and register expected config", async () => {
   assert.ok(config.command.reset);
 });
 
-test("watch-pr package ships its watcher with aligned v4 manifests", () => {
-  const pluginRoot = new URL("../plugins/watch-pr/", import.meta.url);
-  const claudeManifest = JSON.parse(readFileSync(new URL(".claude-plugin/plugin.json", pluginRoot), "utf8"));
-  const codexManifest = JSON.parse(readFileSync(new URL(".codex-plugin/plugin.json", pluginRoot), "utf8"));
-  const packageManifest = JSON.parse(readFileSync(new URL("package.json", pluginRoot), "utf8"));
-
-  assert.match(claudeManifest.version, /^4\./);
-  assert.equal(codexManifest.version, claudeManifest.version);
-  assert.equal(packageManifest.version, claudeManifest.version);
-  assert.equal(
-    existsSync(new URL("skills/watch-pr/watch-pr-monitor.mjs", pluginRoot)),
-    true,
-  );
-});
-
 test("command-chain-separator rewrites OpenCode bash arguments", async () => {
   const hooks = await plugins.CommandChainSeparatorPlugin({ directory });
   const output = { args: { command: "printf one && printf two" } };

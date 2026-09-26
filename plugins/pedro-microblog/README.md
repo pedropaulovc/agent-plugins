@@ -1,35 +1,26 @@
 # pedro-microblog plugin
 
-A single cooked writing skill for Pedro Paulo Vezza Campos's microblog voice.
-It is grounded in the observed English/Portuguese mix, cadence, punctuation,
-technical specificity, dry humor, and authentic rough edges.
+![Pedro Microblog plugin icon](icon.svg)
 
-## Included
+This plugin provides a writing-style skill for drafting or editing Pedro Paulo Vezza Campos's microblog posts for X, Threads, Mastodon, and Bluesky. Its static guide describes observed language, cadence, punctuation, technical specificity, and dry humor; it is not a social-media publishing integration.
 
-The installable payload is `skills/pedro-microblog-style/SKILL.md`. It gives
-the model enough instruction to draft or edit posts for X, Threads, Mastodon,
-and Bluesky without copying a corpus of private or deleted posts.
+## Included behavior
 
-The guide is not a generic social-media template. It says when to use short
-replies, fragments, links, Portuguese asides, blunt civic language, technical
-nouns, and deliberate roughness. It fixes accidental errors by default and
-only reproduces known typos when the user explicitly asks for archival
-fidelity.
+The installable payload is `skills/pedro-microblog-style/SKILL.md`. It tells the model to use the user's current facts and intent, avoid invented claims, and return ready-to-paste copy. It explicitly says not to fetch social accounts while drafting. The plugin has no posting actions, platform API credentials, or automatic account fetchers. Separate maintainer downloaders are outside this plugin and are not run when the skill is used.
+
+The style guide is distilled text, not a shipped corpus of posts. It preserves the possibility of rough phrasing but does not direct the model to force typos into new copy; archival imitation requires an explicit user request.
 
 ## Maintainer updates
 
-The occasional account downloaders used to refresh the cooked guide live
-outside the plugin under `tools/pedro-microblog/`. They are not registered as
-skills or commands and are not needed when drafting. They use:
+Account downloaders used to refresh the cooked guide live outside this plugin under `tools/pedro-microblog/`. They are not registered skills or commands, are not needed for drafting, and have separate data flows. Generated archives and browser state are also outside the installable plugin.
 
-- X/Twitter `@pedrovc` with the token in `/tmp/twitterapi.env`;
-- Threads `@pedropaulovc` through a headed persistent `playwright-cli` session;
-- Mastodon `@pedrovc@mastodon.social`;
-- Bluesky `pedro.vza.net`.
+## Privacy and support
 
-Generated archives and browser state stay outside the installable plugin.
-Downloader results are source-index snapshots, not a guarantee of every
-deleted, private, withheld, or historically unindexed post.
+When used in Claude, the user's prompt and any supplied draft or background are processed by Anthropic as part of the normal Claude request. The plugin itself contains no account fetch, publishing, or external-network behavior, and it does not send content to X, Threads, Mastodon, or Bluesky.
+
+- [Documentation](https://go.vza.net/agent-plugins/pedro-microblog/docs)
+- [Support](https://go.vza.net/agent-plugins/pedro-microblog/support)
+- [Privacy policy](PRIVACY.md) · [Online privacy policy](https://go.vza.net/agent-plugins/pedro-microblog/privacy)
 
 ## License
 

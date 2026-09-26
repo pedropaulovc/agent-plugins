@@ -1,6 +1,6 @@
 {
   "name": "@pedropaulovc/pedro-microblog",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pedro-style microblog writing skill for OpenCode",
   "type": "module",
   "main": ".opencode/plugins/pedro-microblog.js"

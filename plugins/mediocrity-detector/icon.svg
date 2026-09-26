@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Inspection lens highlighting a shortcut</title>
+  <rect width="128" height="128" rx="28" fill="#28243C"/>
+  <circle cx="53" cy="52" r="27" fill="none" stroke="#F5EFD9" stroke-width="9"/>
+  <path d="m73 73 25 25" fill="none" stroke="#F5EFD9" stroke-linecap="round" stroke-width="11"/>
+  <path d="M53 35v21m0 9v.5" fill="none" stroke="#EF775C" stroke-linecap="round" stroke-width="7"/>
+  <path d="M38 91h18" stroke="#79C6B0" stroke-linecap="round" stroke-width="5"/>
+</svg>
