@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 const INITIAL_RECONNECT_DELAY_MS = 250;
 const MAX_RECONNECT_DELAY_MS = 10_000;
+const STABLE_CONNECTION_MS = 60_000;
 const VALID_TERMINAL_STATES = new Set(["watching", "merged", "closed"]);
 const USAGE = "usage: node watch-pr-monitor.mjs <monitor-url>";
 
@@ -35,6 +36,8 @@ const DETAIL_URL_RES = [
 function permanent(message) {
   return new PermanentMonitorError(message);
 }
+
+const monotonicNow = () => performance.now();
 
 function abortableDelay(milliseconds, signal) {
   if (signal.aborted) return Promise.resolve();
@@ -1303,7 +1306,12 @@ function reportReconnectWarning(reason, cursor) {
   );
 }
 
-export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } = {}) {
+export async function watchPrMonitor(monitorUrl, {
+  signal,
+  fetchImpl = fetch,
+  nowImpl = monotonicNow,
+  delayImpl = abortableDelay,
+} = {}) {
   let parsedUrl;
   try {
     parsedUrl = new URL(monitorUrl);
@@ -1322,6 +1330,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
 
   const effectiveSignal = signal ?? new AbortController().signal;
   let cursor = parsedUrl.searchParams.get("cursor") || undefined;
+  let hasParsedEvent = false;
   if (cursor !== undefined) {
     if (cursor.length > 256) throw permanent("monitor URL cursor exceeds 256 characters");
     try {
@@ -1330,11 +1339,10 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       throw permanent("monitor URL cursor is not a valid Last-Event-ID");
     }
   }
-  parsedUrl.searchParams.delete("cursor");
+  if (cursor === undefined) parsedUrl.searchParams.delete("cursor");
   let lastPrintedId;
   let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   let reconnectWarningEmitted = false;
-  const stableConnectionMs = INITIAL_RECONNECT_DELAY_MS;
 
   while (!effectiveSignal.aborted) {
     let response;
@@ -1343,7 +1351,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
         headers: {
           Accept: "text/event-stream",
           "Cache-Control": "no-cache",
-          ...(cursor === undefined ? {} : { "Last-Event-ID": cursor }),
+          ...(hasParsedEvent ? { "Last-Event-ID": cursor } : {}),
         },
         redirect: "manual",
         signal: effectiveSignal,
@@ -1355,10 +1363,11 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
         reportReconnectWarning("a network failure", cursor);
         reconnectWarningEmitted = true;
       }
-      await abortableDelay(reconnectDelay, effectiveSignal);
+      await delayImpl(reconnectDelay, effectiveSignal);
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
       continue;
     }
+    if (response.status === 204) return;
 
     let connectedAt;
     let receivedEvent = false;
@@ -1368,10 +1377,12 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
         await response.body?.cancel();
       } else {
         reconnectReason = "a dropped event stream";
-        connectedAt = performance.now();
+        connectedAt = nowImpl();
         for await (const frame of parseEventStream(response.body)) {
           const parsed = parseMonitorEvent(frame);
           cursor = parsed.id;
+          hasParsedEvent = true;
+          parsedUrl.searchParams.delete("cursor");
           receivedEvent = true;
           reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
           reconnectWarningEmitted = false;
@@ -1391,7 +1402,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
     if (
       !receivedEvent &&
       connectedAt !== undefined &&
-      performance.now() - connectedAt >= stableConnectionMs
+      nowImpl() - connectedAt >= STABLE_CONNECTION_MS
     ) {
       reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
       reconnectWarningEmitted = false;
@@ -1402,7 +1413,7 @@ export async function watchPrMonitor(monitorUrl, { signal, fetchImpl = fetch } =
       reportReconnectWarning(reconnectReason, cursor);
       reconnectWarningEmitted = true;
     }
-    await abortableDelay(reconnectDelay, effectiveSignal);
+    await delayImpl(reconnectDelay, effectiveSignal);
     if (!receivedEvent) reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
   }
 }

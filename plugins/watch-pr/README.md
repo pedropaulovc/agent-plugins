@@ -38,6 +38,10 @@ The watcher prints:
 Startup and idle feeds are silent. Permanent connection failures go to stderr and
 terminate the process. Sustained transient failures emit one stderr warning per outage
 while retries continue, so silence alone does not prove that the feed is connected.
+Short-lived streams that end without an event back off exponentially from 250 ms
+to 10 s rather than reconnecting at a fixed rate; an idle stream must remain
+connected for a minute to reset that backoff. HTTP 204 ends monitoring without
+an error after a terminal event has been acknowledged.
 
 Routine check completions and no-op webhook deliveries stay silent. A CI rerun emits one
 `checks: <name> -> <status>` record per affected check, each on its own physical line:
