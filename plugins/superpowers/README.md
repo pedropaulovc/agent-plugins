@@ -1,6 +1,15 @@
 # Superpowers
+![Superpowers workflow icon](icon.svg)
 
-Superpowers is a complete software development methodology for your coding agents, built on top of a set of composable skills and some initial instructions that make sure your agent uses them.
+Superpowers is a software-development methodology for coding agents, built from
+composable skills and bootstrap instructions that ask the model to use them when relevant.
+
+For Claude Code, this plugin provides skills and local scripts that guide the agent
+through development workflows. When invoked, those instructions may direct Claude to
+inspect or edit project files, run local commands, or use subagents through the tools
+available to the session.
+
+[Documentation](https://go.vza.net/agent-plugins/superpowers/docs) · [Support](https://go.vza.net/agent-plugins/superpowers/support) · [Privacy](https://go.vza.net/agent-plugins/superpowers/privacy) · [Local privacy notice](PRIVACY.md)
 
 
 ## We're Hiring!
@@ -15,15 +24,15 @@ Give your agent Superpowers: [Claude Code](#claude-code), [Antigravity](#antigra
 
 ## How it works
 
-It starts from the moment you fire up your coding agent. As soon as it sees that you're building something, it *doesn't* just jump into trying to write code. Instead, it steps back and asks you what you're really trying to do. 
+In Claude Code, a `SessionStart` hook provides bootstrap instructions and the other
+skills are instruction files the model may invoke when relevant. The agent may ask
+clarifying questions, draft a design for your review, and prepare an implementation plan
+with TDD, YAGNI, and DRY guidance.
 
-Once it's teased a spec out of the conversation, it shows it to you in chunks short enough to actually read and digest. 
-
-After you've signed off on the design, your agent puts together an implementation plan that's clear enough for an enthusiastic junior engineer with poor taste, no judgement, no project context, and an aversion to testing to follow. It emphasizes true red/green TDD, YAGNI (You Aren't Gonna Need It), and DRY. 
-
-Next up, once you say "go", it launches a *subagent-driven-development* process, having agents work through each engineering task, inspecting and reviewing their work, and continuing forward. It's not uncommon for your agent to work autonomously for a couple hours at a time without deviating from the plan you put together.
-
-There's a bunch more to it, but that's the core of the system. And because the skills trigger automatically, you don't need to do anything special. Your coding agent just has Superpowers.
+For independent plan tasks, when subagent support is available and appropriate, the agent
+may use subagent-driven development with review steps. Otherwise, it can follow the
+executing-plans workflow with batches and human checkpoints. These are model-directed
+procedures, not guaranteed automation or a promise of autonomous duration.
 
 ## Commercial Services
 
@@ -187,21 +196,21 @@ The Pi package loads the Superpowers skills and a small extension that injects t
 
 ## The Basic Workflow
 
-1. **brainstorming** - Activates before writing code. Refines rough ideas through questions, explores alternatives, presents design in sections for validation. Saves design document.
+1. **brainstorming** - When a design discussion is useful, asks questions, explores alternatives, and presents a design for review. Implementation follows user approval; for visual comparisons, the local companion is offered and starts only after the user accepts.
 
-2. **using-git-worktrees** - Activates after design approval. Creates isolated workspace on new branch, runs project setup, verifies clean test baseline.
+2. **using-git-worktrees** - When isolation is useful, the skill asks for consent unless the user already stated a preference. It can use native worktree support or Git worktrees; working in place is also an option.
 
-3. **writing-plans** - Activates with approved design. Breaks work into bite-sized tasks (2-5 minutes each). Every task has exact file paths, complete code, verification steps.
+3. **writing-plans** - With an approved design, guides the agent to create bite-sized tasks (2-5 minutes) with file paths and verification steps.
 
-4. **subagent-driven-development** or **executing-plans** - Activates with plan. Dispatches fresh subagent per task with two-stage review (spec compliance, then code quality), or executes in batches with human checkpoints.
+4. **subagent-driven-development** or **executing-plans** - For independent tasks and supported harnesses, the agent may delegate work with review steps. Otherwise, it can execute the plan in batches with human checkpoints.
 
-5. **test-driven-development** - Activates during implementation. Enforces RED-GREEN-REFACTOR: write failing test, watch it fail, write minimal code, watch it pass, commit. Deletes code written before tests.
+5. **test-driven-development** - Guides the RED-GREEN-REFACTOR cycle: write a failing test, verify the failure, make the smallest change, and verify it passes. Commit choices are handled by the plan/branch workflow rather than required for each TDD cycle.
 
-6. **requesting-code-review** - Activates between tasks. Reviews against plan, reports issues by severity. Critical issues block progress.
+6. **requesting-code-review** - Guides review of changes against the plan and reports findings by severity; important or critical findings should be addressed before continuing.
 
-7. **finishing-a-development-branch** - Activates when tasks complete. Verifies tests, presents options (merge/PR/keep/discard), cleans up worktree.
+7. **finishing-a-development-branch** - Guides verification and presents merge/PR/keep/discard options. Worktree cleanup depends on that choice: merge/discard clean up; PR/keep preserve the worktree.
 
-**The agent checks for relevant skills before any task.** Mandatory workflows, not suggestions.
+**In Claude Code, the SessionStart bootstrap asks the agent to check for relevant skills.** Skill invocation and tool actions depend on the model, available harness features, and permissions; they are not enforced gates.
 
 ## What's Inside
 
@@ -260,9 +269,39 @@ Superpowers updates are somewhat coding-agent dependent, but are often automatic
 
 MIT License - see LICENSE file for details
 
-## Visual companion telemetry
+## Optional visual companion and data handling
 
-Because skills and plugins don't provide any feedback to creators, we have no idea how many of you are using Superpowers. By default, the Prime Radiant logo on brainstorming's optional visual companion feature is loaded from our website. It includes the version of Superpowers in use. It does not include any details about your project, prompt, or coding agent. We don't see your clicks or anything about what you're building. This helps us have a rough idea of how many folks are using Superpowers and which version of Superpowers they're using. It's 100% optional. To disable this, set the environment variable `SUPERPOWERS_DISABLE_TELEMETRY` to any true value. Superpowers also honors Claude Code's `DISABLE_TELEMETRY` and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` opt-outs.
+Claude Code handles prompts and project context under its own service settings and
+privacy terms. Superpowers skills can guide Claude to use local shell/Git tools, inspect
+or edit project files, and launch subagents; those actions use the harness and any
+services configured or approved for the session.
+
+The brainstorming visual companion is optional; the skill offers it only for a useful
+visual comparison and starts it after the user accepts. It runs a local HTTP/WebSocket
+server and serves screens written to a local session directory. With `--project-dir`,
+screens and state are kept under `<project>/.superpowers/brainstorm/<session>/`; without
+it, they are stored under `/tmp/brainstorm-<session>/` and the session directory is
+removed when the server is stopped. A new screen clears the local event file. The server
+binds to loopback by default; if configured for a network-reachable address, hosts that
+can reach it and obtain the session URL/key may access it.
+
+The companion URL contains a session key and may appear in process arguments, local
+startup output, and agent transcripts. Treat it as sensitive and avoid sharing it.
+
+The browser sends selected choice text and metadata to the local server, which logs
+events and stores choice events locally. The page may also request the Prime Radiant
+logo from
+`https://primeradiant.com/brand/superpowers-visual-brainstorming-logo.png?v=<version>`.
+This image URL includes the companion's resolved Superpowers version, not prompt or
+project text; the remote host may receive ordinary request metadata. Set
+`SUPERPOWERS_DISABLE_TELEMETRY=1`, `DISABLE_TELEMETRY=1`, or
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` to suppress the image request only; the
+local companion still works. The repository does not specify the image host's logging
+or retention practices.
+
+The skills also contain ordinary external links and a reference document with remote
+image markup. Opening a link or rendering that document may cause the client to request
+those resources; this is separate from the companion's versioned logo request.
 
 ## Community
 

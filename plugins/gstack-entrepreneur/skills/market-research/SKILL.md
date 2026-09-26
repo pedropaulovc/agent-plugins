@@ -1,7 +1,7 @@
 ---
 name: market-research
 description: Use when researching competitors, understanding a market, evaluating product positioning, or exploring what exists in a space. Uses web search and three-layer synthesis.
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebSearch, AskUserQuestion
+allowed-tools: Read, Write, Glob, Grep, WebSearch, AskUserQuestion
 ---
 
 # Market Research & Competitive Analysis

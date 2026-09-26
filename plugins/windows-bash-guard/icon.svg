@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Windows Bash guard icon</title>
+  <rect width="96" height="96" rx="22" fill="#edf2ff"/>
+  <path d="M48 14 75 24v19c0 18-11 30-27 39-16-9-27-21-27-39V24Z" fill="#315cb5"/>
+  <path d="m34 59 10-11-10-11m17 22 11-22" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
+  <circle cx="67" cy="30" r="4" fill="#f5c75e"/>
+</svg>

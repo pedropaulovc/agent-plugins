@@ -1,7 +1,7 @@
 ---
 name: ceo-review
 description: Use when reviewing strategy, challenging scope, thinking bigger about a plan, or evaluating business decisions. Four modes: scope expansion, selective expansion, hold scope, scope reduction.
-allowed-tools: Read, Grep, Glob, Bash, Write, Edit, WebSearch, AskUserQuestion, Task
+allowed-tools: Read, Grep, Glob, Write, Edit, WebSearch, AskUserQuestion, Task
 ---
 
 # CEO / Founder-Mode Plan Review

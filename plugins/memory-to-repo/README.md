@@ -1,4 +1,8 @@
+![memory-to-repo icon](icon.svg)
+
 # memory-to-repo plugin
+
+[Documentation](https://go.vza.net/agent-plugins/memory-to-repo/docs) · [Support](https://go.vza.net/agent-plugins/memory-to-repo/support) · [Privacy](https://go.vza.net/agent-plugins/memory-to-repo/privacy) · [Local privacy details](PRIVACY.md)
 
 Two hooks that move Claude Code and Codex memory off their **machine-local directories** (`~/.claude/projects/<slug>/memory/` and `~/.codex/memories/`) and onto the **repository's `./memory/` folder** — so accumulated memory is git-tracked and shared across every user, machine, and cloud session:
 
@@ -54,6 +58,12 @@ python plugins/memory-to-repo/hooks/build-hooks.py
 ```
 
 Run the source-level protocol tests with `cargo test -p memory-to-repo`.
+
+## Data and privacy
+
+The lifecycle hooks run locally. The `PreToolUse` hook checks tool paths and shell-command targets for machine-local memory locations; it does not inspect file contents for those matches. At session start it reads `memory/MEMORY.md` and, if present, `memory/usage.jsonl`, then adds a bounded index (titles and descriptions) to the host's model context. `/memory-audit` can read full memory files into the active model and read-only subagent contexts.
+
+`/record-memory-usage` locally scans Claude Code and Codex session JSONL files to find memory-file reads. It writes only distinct session IDs and memory filenames to `memory/usage.jsonl` (and adds a `.gitattributes` merge rule when that file is first created). That usage file is in the repository and may be shared if you commit or push it. The plugin's hooks and scanner make no independent network requests; the host model provider processes any context or memory text it receives under its own policy.
 
 ## Escape hatch
 

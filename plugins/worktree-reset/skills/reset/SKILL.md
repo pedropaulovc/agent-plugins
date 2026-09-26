@@ -2,7 +2,7 @@
 name: reset
 description: Reset the current worktree to origin/main, remove stale worktree state, and reinstall project dependencies.
 disable-model-invocation: true
-allowed-tools: Bash, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate, TaskStop, TaskOutput, Monitor, Agent, SendMessage, CronList, CronDelete, mcp__watch-pr__unwatch_pr
+allowed-tools: Bash, Read, AskUserQuestion, TaskCreate, TaskList, TaskGet, TaskUpdate, TaskStop, TaskOutput, Monitor, Agent, SendMessage, CronList, CronDelete, mcp__watch-pr__unwatch_pr
 ---
 
 # Reset worktree to origin/main
@@ -28,9 +28,11 @@ contain no repository commands; `reset.py` is the only reset implementation.
 
 Before running the reset script, stop every watch-pr watcher started by the current
 session and confirm its process or subagent has ended. Only then call the watch-pr MCP
-tool `unwatch_pr` for each corresponding pull request. Do not cancel durable watches
-owned by another session. The selected harness file defines which controls stop and
-verify its Monitor, subagent, or async job; it does not change this ordering or scope.
+tool `unwatch_pr` for each corresponding pull request. The service scopes watches by
+MCP credential and PR, not by client session: if another session uses the same credential
+to watch that PR, this call also cancels its watch. The selected harness file defines
+which controls stop and verify its Monitor, subagent, or async job; it does not change
+this ordering or service scope.
 
 ## Arguments
 

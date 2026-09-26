@@ -1,13 +1,13 @@
 {
   "name": "onepassword",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Skill that establishes a 1Password CLI (op) session interactively via tmux when service-account auth fails",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
   },
-  "homepage": "https://github.com/pedropaulovc/agents-plugins",
-  "repository": "https://github.com/pedropaulovc/agents-plugins",
+  "homepage": "https://go.vza.net/agent-plugins/onepassword/docs",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
   "license": "MIT",
   "keywords": [
     "skill",

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Issue card with attention marker</title>
+  <rect width="128" height="128" rx="28" fill="#172B4D"/>
+  <path d="M31 25h43l22 22v56H31z" fill="#F4F7FB"/>
+  <path d="M74 25v23h22" fill="#D5E2F2"/>
+  <path d="M43 61h23M43 72h17" fill="none" stroke="#49627F" stroke-linecap="round" stroke-width="6"/>
+  <circle cx="82" cy="83" r="19" fill="#F47755"/>
+  <path d="M82 72v14m0 7v.5" fill="none" stroke="#172B4D" stroke-linecap="round" stroke-width="5"/>
+</svg>

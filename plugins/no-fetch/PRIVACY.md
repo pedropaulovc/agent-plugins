@@ -1,0 +1,7 @@
+# Privacy policy: no-fetch
+
+The plugin installs a local pre-tool hook for Claude Code's `WebFetch` tool and an OpenCode callback for its `webfetch` tool. The hook receives the tool input, checks the target URL against its exclusions, and either permits the request or blocks it with routing guidance. For `[force-fetch]`, OpenCode strips the marker in its JavaScript callback; Claude Code emits a marker-stripped `updatedInput` only when `jq` is available on `PATH`. The hook itself does not fetch pages or call another service, and it does not persist the tool input.
+
+When a request is permitted, the host's WebFetch implementation handles the URL. If the agent follows the routing guidance for a blocked request, the selected Firecrawl, Browserbase, Playwright, or browser integration may receive the URL, search terms, page instructions, or interaction data needed for that task. The destination provider and websites visited may process those details under their own terms. The Claude Code escape hatch's marker removal depends on `jq` as described above; do not use it where `jq` is unavailable.
+
+The plugin has no telemetry sender, plugin-owned server, or persistent store. The host model and integrations still process the conversation and tool requests under their own service policies. Review those policies and avoid sending confidential URLs or page content to external integrations unless intended.

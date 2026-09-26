@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Solid modeling workflow</title>
+  <rect width="96" height="96" rx="20" fill="#18313a"/>
+  <path d="m48 17 24 14v28L48 73 24 59V31z" fill="#234a54" stroke="#8be0cf" stroke-linejoin="round" stroke-width="3"/>
+  <path d="M48 45 72 31M48 45 24 31M48 45v28" fill="none" stroke="#f1c66d" stroke-linejoin="round" stroke-width="3"/>
+  <path d="m65 68 12-12 7 7-12 12-9 2z" fill="#c2a8ff" stroke="#fff" stroke-linejoin="round" stroke-width="2"/>
+</svg>

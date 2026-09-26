@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Alt text: image and description</title>
+  <rect width="96" height="96" rx="20" fill="#26233f"/>
+  <rect x="20" y="20" width="56" height="42" rx="7" fill="#413d68" stroke="#c9c4ff" stroke-width="3"/>
+  <circle cx="36" cy="34" r="5" fill="#f5c970"/>
+  <path d="M25 56 40 42l9 9 8-7 14 12" fill="none" stroke="#8fe0d0" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <path d="M28 72h40M36 80h24" stroke="#fff" stroke-linecap="round" stroke-width="4"/>
+</svg>

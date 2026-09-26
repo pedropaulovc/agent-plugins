@@ -1,6 +1,6 @@
 {
   "name": "@pedropaulovc/alt-text",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Accessibility-focused alt text skill for OpenCode",
   "type": "module",
   "main": ".opencode/plugins/alt-text.js"

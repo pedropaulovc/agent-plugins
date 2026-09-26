@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Terminal command separators</title>
+  <rect width="96" height="96" rx="20" fill="#17212d"/>
+  <rect x="14" y="19" width="68" height="58" rx="8" fill="#243447" stroke="#75d6c5" stroke-width="3"/>
+  <path d="m25 34 9 8-9 8" fill="none" stroke="#f2c16b" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <path d="M41 50h24" stroke="#f2c16b" stroke-linecap="round" stroke-width="4"/>
+  <path d="M25 61h46M25 68h46" stroke="#d9e8f2" stroke-linecap="round" stroke-width="2"/>
+</svg>

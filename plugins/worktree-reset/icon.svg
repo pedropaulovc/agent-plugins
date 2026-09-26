@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Worktree reset icon</title>
+  <rect width="96" height="96" rx="22" fill="#f1edf9"/>
+  <path d="M33 30a26 26 0 0 1 43 16" fill="none" stroke="#6549a6" stroke-linecap="round" stroke-width="7"/>
+  <path d="m68 36 9 11 9-11" fill="none" stroke="#6549a6" stroke-linecap="round" stroke-linejoin="round" stroke-width="7"/>
+  <path d="M64 66a26 26 0 0 1-43-16" fill="none" stroke="#2e7b72" stroke-linecap="round" stroke-width="7"/>
+  <path d="m29 60-9-11-9 11" fill="none" stroke="#2e7b72" stroke-linecap="round" stroke-linejoin="round" stroke-width="7"/>
+  <circle cx="48" cy="48" r="7" fill="#e4a34b"/>
+</svg>

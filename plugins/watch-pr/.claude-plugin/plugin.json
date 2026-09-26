@@ -1,12 +1,12 @@
 {
   "name": "watch-pr",
   "description": "Hosted MCP skill with a same-session watcher for GitHub PR CI, reviews, feedback, and terminal state.",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "author": {
     "name": "Pedro Paulo Vezza Campos",
     "email": "pedro@vezza.com.br"
   },
-  "homepage": "https://github.com/pedropaulovc/agent-plugins",
+  "homepage": "https://go.vza.net/agent-plugins/watch-pr/docs",
   "repository": "https://github.com/pedropaulovc/agent-plugins",
   "license": "MIT",
   "keywords": [

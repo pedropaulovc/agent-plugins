@@ -1,31 +1,19 @@
 # playwright-cli-headed plugin
 
-A Rust PreToolUse hook for **Bash** and **PowerShell** tool calls that auto-injects `--headed` into any `playwright-cli open` invocation that is missing it, and reminds Claude to set a standard viewport size before screenshotting.
+![playwright-cli-headed plugin icon](icon.svg)
 
-**Why:** when Claude drives Playwright through `playwright-cli open`, the browser must be visible so the user can actually see what's happening. Headless invocations defeat the point and silently change behavior. This hook enforces `--headed` without a wasted round-trip and surfaces a screenshot-compatibility tip.
+This plugin registers a PreToolUse hook for Bash and PowerShell calls. A bundled native hook program reads the harness's JSON tool event from stdin and inspects the tool name, command, and (when present) description and permission mode. It does not launch the browser or run `playwright-cli` itself.
 
-**Behavior:**
-- Detects `playwright-cli ... open ...` invocations at word boundaries (handles full paths like `/usr/local/bin/playwright-cli`, env prefixes like `DEBUG=1 playwright-cli ...`, and chained statements like `echo hi && playwright-cli open ...`)
-- If `--headed` (or `--headed=...`) is missing, splices ` --headed` immediately after the `open` token, leaving the rest of the command byte-for-byte unchanged → returns `updatedInput` so Claude Code executes the corrected command transparently
-- Whenever `playwright-cli open` is detected (rewrite or not), injects an `additionalContext` system reminder recommending `playwright-cli resize 1600 900` for consistent screenshot dimensions
-- Bypass rewriting (but not the tip): add `[no-rewrite]` to the tool description
+## What it changes
 
-**Skipped cases (no rewrite):**
-- `--headed` already present (anywhere in the invocation, including `--headed=true`)
-- Subcommand is not `open` (e.g. `playwright-cli codegen ...`)
-- A different binary (`playwright`, `npx playwright`) — only the literal `playwright-cli` is matched
-- `open` appears only inside a quoted token (e.g. a URL path)
+For a literal `playwright-cli ... open ...` command without `--headed`, the hook inserts `--headed` after the `open` token and returns the changed tool input to the coding-agent host. It also adds a reminder recommending `playwright-cli resize 1600 900` for consistent screenshots. The `[no-rewrite]` marker in a tool description suppresses the insertion but not the reminder. Other executables such as `npx playwright` are not matched.
 
-## Build
+Claude Code and OpenCode apply the rewrite through their hook integrations. Codex only rewrites when its permission mode already skips approval (`bypassPermissions` or `dontAsk`); otherwise it stays inert rather than approving a changed command. The plugin bundles Linux x86_64 and Windows x86_64 hook binaries and includes Rust source.
 
-```
-python3 hooks/build-hooks.py
-```
+## Data handling
 
-Cross-compiles the Rust binary for Linux x86_64 and Windows x86_64 and copies the outputs to `hooks/bin/`. Run after any change to the Rust source or when bumping the plugin version.
+The hook only processes the current tool event and returns hook output to the host; it has no browser-storage access, does not retain the event, and makes no network requests. The rewritten command still runs through the host's normal tool flow, and any website navigation or network activity comes from that requested `playwright-cli` command, not from this hook. Tool commands can contain sensitive text; the host handles them under its ordinary model and tool policies.
 
-## Codex and OpenCode support
-
-Works in both. **Codex:** like the other rewrite hooks, injecting `--headed` requires `permissionDecision: "allow"` (which skips approval), so the hook only rewrites in `bypassPermissions`/`dontAsk` modes and stays inert in approval-requiring modes.
-
-**OpenCode:** mutates Bash/PowerShell arguments without changing its permission flow and appends the viewport recommendation to the tool result.
+- [Documentation](https://go.vza.net/agent-plugins/playwright-cli-headed/docs)
+- [Support](https://go.vza.net/agent-plugins/playwright-cli-headed/support)
+- [Privacy policy](PRIVACY.md) · [Online privacy policy](https://go.vza.net/agent-plugins/playwright-cli-headed/privacy)

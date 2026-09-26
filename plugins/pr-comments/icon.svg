@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">pr-comments plugin</title>
+  <desc id="desc">A review card with added and removed lines beside a comment bubble.</desc>
+  <rect width="128" height="128" rx="28" fill="#182d38"/>
+  <rect x="18" y="22" width="65" height="82" rx="10" fill="#243f4b" stroke="#8bd2c3" stroke-width="4"/>
+  <path d="M31 42h9m-9 13h36m-36 12h24m-24 13h36" stroke="#a9c2c7" stroke-width="5" stroke-linecap="round"/>
+  <path d="M33 55h7" stroke="#f29a70" stroke-width="5" stroke-linecap="round"/>
+  <path d="M33 67h7" stroke="#8bd2c3" stroke-width="5" stroke-linecap="round"/>
+  <path d="M68 68h38a11 11 0 0 1 11 11v13a11 11 0 0 1-11 11H91l-12 10v-10h-11a11 11 0 0 1-11-11V79a11 11 0 0 1 11-11Z" fill="#b74f55" stroke="#ffb19d" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="77" cy="86" r="3" fill="#fff0d8"/>
+  <circle cx="88" cy="86" r="3" fill="#fff0d8"/>
+  <circle cx="99" cy="86" r="3" fill="#fff0d8"/>
+</svg>

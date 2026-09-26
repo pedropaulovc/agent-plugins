@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Web globe blocked by a routing gate</title>
+  <rect width="128" height="128" rx="28" fill="#123E4A"/>
+  <circle cx="64" cy="64" r="37" fill="none" stroke="#D8F0E8" stroke-width="6"/>
+  <path d="M27 64h74M64 27c13 13 19 25 19 37s-6 24-19 37M64 27C51 40 45 52 45 64s6 24 19 37" fill="none" stroke="#D8F0E8" stroke-width="4"/>
+  <path d="M34 98 94 38" fill="none" stroke="#F0775B" stroke-linecap="round" stroke-width="10"/>
+</svg>
