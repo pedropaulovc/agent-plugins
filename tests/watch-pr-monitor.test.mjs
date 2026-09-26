@@ -852,6 +852,50 @@ test("prints a terminal event from the initial cursor query before header acknow
   }
 });
 
+test("rejects HTTP 204 before receiving any event", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(204).end();
+  });
+  const watcher = startWatcher(`${url}?cursor=terminal-id`);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+    assert.equal(watcher.stdout(), "");
+    assert.match(watcher.stderr(), /HTTP 204 before any event was received/);
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("accepts HTTP 204 only after resuming with a received event ID", async () => {
+  const requests = [];
+  const { server, url } = await startServer((request, response) => {
+    requests.push({ url: request.url, lastEventId: request.headers["last-event-id"] });
+    if (requests.length === 1) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      sendEvent(response, monitorEvent("event-1"));
+      response.end();
+      return;
+    }
+    response.writeHead(204).end();
+  });
+  const watcher = startWatcher(`${url}?cursor=initial-cursor`);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.deepEqual(requests, [
+      { url: "/monitor/transcript-safe-capability?cursor=initial-cursor", lastEventId: undefined },
+      { url: "/monitor/transcript-safe-capability", lastEventId: "event-1" },
+    ]);
+    assert.equal(watcher.stdout(), "checks: rerun started (pending: CI, Lint)\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
 test("retains the initial cursor query when a connection drops before any event", async () => {
   const requestHeaders = [];
   const requestUrls = [];
@@ -917,10 +961,10 @@ test("backs off repeated 300ms empty streams until a stable idle connection", as
   const requestTimes = [];
   const delays = [];
   let requestCount = 0;
+  const controller = new AbortController();
   const fetchImpl = async () => {
     requestTimes.push(elapsedMs);
     requestCount += 1;
-    if (requestCount === 10) return new Response(null, { status: 204 });
 
     const connectionDurationMs = requestCount === 9 ? 60_000 : 300;
     const body = new ReadableStream({
@@ -940,22 +984,24 @@ test("backs off repeated 300ms empty streams until a stable idle connection", as
   };
   try {
     await watchPrMonitor("http://127.0.0.1/monitor/test-capability", {
+      signal: controller.signal,
       fetchImpl,
       nowImpl: () => elapsedMs,
       delayImpl: async (milliseconds) => {
         delays.push(milliseconds);
         elapsedMs += milliseconds;
+        if (requestCount === 9) controller.abort();
       },
     });
   } finally {
     process.stderr.write = originalStderrWrite;
   }
 
-  assert.equal(requestCount, 10);
+  assert.equal(requestCount, 9);
   assert.deepEqual(delays, [250, 500, 1_000, 2_000, 4_000, 8_000, 10_000, 10_000, 250]);
   assert.deepEqual(
     requestTimes.slice(1).map((time, index) => time - requestTimes[index]),
-    [550, 800, 1_300, 2_300, 4_300, 8_300, 10_300, 10_300, 60_250],
+    [550, 800, 1_300, 2_300, 4_300, 8_300, 10_300, 10_300],
   );
   assert.equal(warnings.match(/still reconnecting after a dropped event stream/gu)?.length, 1);
 });

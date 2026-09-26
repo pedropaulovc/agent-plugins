@@ -1367,7 +1367,10 @@ export async function watchPrMonitor(monitorUrl, {
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
       continue;
     }
-    if (response.status === 204) return;
+    if (response.status === 204) {
+      if (lastPrintedId === undefined) throw permanent("monitor endpoint returned HTTP 204 before any event was received");
+      return;
+    }
 
     let connectedAt;
     let receivedEvent = false;
