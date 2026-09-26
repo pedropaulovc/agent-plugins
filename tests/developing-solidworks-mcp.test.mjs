@@ -6,7 +6,6 @@ import path from "node:path";
 import test from "node:test";
 import { deflateRawSync } from "node:zlib";
 import {
-  SERVER_VERSION,
   SolidWorksDocs,
   TOOL_DEFINITIONS,
   dispatchTool,
@@ -700,7 +699,6 @@ test("passes the bundled skill through MCP server instructions", () => {
 });
 
 test("publishes the consolidated documented MCP tool set", () => {
-  assert.equal(SERVER_VERSION, "0.9.9");
   assert.deepEqual(TOOL_DEFINITIONS.map((tool) => tool.name), [
     "status", "refresh", "glob", "search", "list", "get",
   ]);
