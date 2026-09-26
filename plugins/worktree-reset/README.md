@@ -26,7 +26,7 @@ Arguments:
 
 The script inspects local Git status, branches, stashes, and worktree metadata. In normal mode it preserves tracked changes and stashes, asks for approval before deleting listed untracked files, fetches/prunes the configured remote, and checks out `main` at `origin/main`. `--all` additionally rebases every linked worktree onto `origin/main`; `--force` is destructive and verifies the primary worktree and submodules after cleanup.
 
-When the checkout contains the relevant files, it runs `npm install`, `go mod download`, or `uv sync --locked`. Git, submodule, and package-manager commands may fetch from the remotes and registries configured by that checkout; this plugin does not hard-code those destinations. The skill also stops its own watch-pr monitors and calls the hosted watch-pr service's `unwatch_pr` tool for their PRs, without canceling other sessions' watches.
+When the checkout contains the relevant files, it runs `npm install`, `go mod download`, or `uv sync --locked`. Git, submodule, and package-manager commands may fetch from the remotes and registries configured by that checkout; this plugin does not hard-code those destinations. The skill also stops its own watch-pr monitors and calls the hosted watch-pr service's `unwatch_pr` tool for their PRs. Watches are scoped by MCP credential and PR, not by client session: another session using the same credential to watch that PR loses its watch too.
 
 ## Harness support
 

@@ -4,7 +4,7 @@ This notice describes the worktree-reset skill and its local reset script. It do
 
 ## Agent input and local operations
 
-The skill uses harness tools to stop and verify its own background work before resetting. For each `watch-pr` monitor started by the current session, it asks the hosted `watch-pr` MCP service at `https://watch-pr.vza.net/mcp` to remove that session's watch after the monitor has stopped. This cleanup sends the pull-request identifier through the existing authenticated connection; it does not cancel watches owned by other sessions.
+The skill uses harness tools to stop and verify its own background work before resetting. For each `watch-pr` monitor started by the current session, it asks the hosted `watch-pr` MCP service at `https://watch-pr.vza.net/mcp` to remove the watch after the monitor has stopped. This cleanup sends the pull-request identifier through the existing authenticated connection. Watches are scoped by MCP credential and pull request, not by client session: if another session watches the same PR with the same credential, `unwatch_pr` cancels its watch too.
 
 The local Python script inspects Git status, worktree metadata, branch and stash lists, and files needed for dependency setup. It runs Git commands to fetch/prune the configured remote, reset or rebase worktrees against `origin/main`, remove stale branches, and synchronize submodules when requested by its mode. With `--force`, it can discard tracked, untracked, ignored, and stashed changes, remove linked worktrees, and reset the primary `main` branch. Normal mode preserves tracked changes and requires explicit review and confirmation before deleting the listed untracked paths.
 
