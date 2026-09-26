@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { formatMonitorEvent } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
+import { formatMonitorEvent, watchPrMonitor } from "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs";
 
 const watcherPath = fileURLToPath(new URL(
   "../plugins/watch-pr/skills/watch-pr/watch-pr-monitor.mjs",
@@ -779,8 +779,10 @@ test("suppresses non-actionable feed churn", async () => {
 });
 test("retries transient HTTP failures without changing the resume cursor", async () => {
   const requestHeaders = [];
+  const requestUrls = [];
   let requestCount = 0;
   const { server, url } = await startServer((request, response) => {
+    requestUrls.push(request.url);
     requestHeaders.push(request.headers);
     requestCount += 1;
     if (requestCount < 3) {
@@ -797,7 +799,130 @@ test("retries transient HTTP failures without changing the resume cursor", async
     assert.equal(requestCount, 3);
     assert.deepEqual(
       requestHeaders.map((headers) => headers["last-event-id"]),
-      ["before-outage", "before-outage", "before-outage"],
+      [undefined, undefined, undefined],
+    );
+    assert.deepEqual(requestUrls, [
+      "/monitor/transcript-safe-capability?cursor=before-outage",
+      "/monitor/transcript-safe-capability?cursor=before-outage",
+      "/monitor/transcript-safe-capability?cursor=before-outage",
+    ]);
+    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+test("prints a terminal event from the initial cursor query before header acknowledgment", async () => {
+  const requestHeaders = [];
+  const requestUrls = [];
+  let requestCount = 0;
+  const { server, url } = await startServer((request, response) => {
+    requestHeaders.push(request.headers);
+    requestUrls.push(request.url);
+    requestCount += 1;
+    if (
+      request.url === "/monitor/transcript-safe-capability?cursor=latest-terminal-id" &&
+      request.headers["last-event-id"] === undefined
+    ) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      sendEvent(response, monitorEvent("latest-terminal-id", "merged"));
+      return;
+    }
+    if (request.headers["last-event-id"] === "latest-terminal-id") {
+      response.writeHead(204).end();
+      return;
+    }
+    response.writeHead(500).end();
+  });
+  const watcher = startWatcher(`${url}?cursor=latest-terminal-id`);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(requestCount, 1);
+    assert.deepEqual(requestUrls, [
+      "/monitor/transcript-safe-capability?cursor=latest-terminal-id",
+    ]);
+    assert.equal(requestHeaders[0]["last-event-id"], undefined);
+    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("rejects HTTP 204 before receiving any event", async () => {
+  const { server, url } = await startServer((_request, response) => {
+    response.writeHead(204).end();
+  });
+  const watcher = startWatcher(`${url}?cursor=terminal-id`);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 1, signal: null });
+    assert.equal(watcher.stdout(), "");
+    assert.match(watcher.stderr(), /HTTP 204 before any event was received/);
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("accepts HTTP 204 only after resuming with a received event ID", async () => {
+  const requests = [];
+  const { server, url } = await startServer((request, response) => {
+    requests.push({ url: request.url, lastEventId: request.headers["last-event-id"] });
+    if (requests.length === 1) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" });
+      sendEvent(response, monitorEvent("event-1"));
+      response.end();
+      return;
+    }
+    response.writeHead(204).end();
+  });
+  const watcher = startWatcher(`${url}?cursor=initial-cursor`);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.deepEqual(requests, [
+      { url: "/monitor/transcript-safe-capability?cursor=initial-cursor", lastEventId: undefined },
+      { url: "/monitor/transcript-safe-capability", lastEventId: "event-1" },
+    ]);
+    assert.equal(watcher.stdout(), "checks: rerun started (pending: CI, Lint)\n");
+    assert.equal(watcher.stderr(), "");
+  } finally {
+    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
+    await closeServer(server);
+  }
+});
+
+test("retains the initial cursor query when a connection drops before any event", async () => {
+  const requestHeaders = [];
+  const requestUrls = [];
+  let requestCount = 0;
+  const { server, url } = await startServer((request, response) => {
+    requestHeaders.push(request.headers);
+    requestUrls.push(request.url);
+    requestCount += 1;
+    if (requestCount === 1) {
+      response.writeHead(200, { "Content-Type": "text/event-stream" }).end();
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    sendEvent(response, monitorEvent("event-after-empty-cursor-stream", "merged"));
+  });
+  const watcher = startWatcher(`${url}?cursor=initial-cursor`);
+
+  try {
+    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
+    assert.equal(requestCount, 2);
+    assert.deepEqual(requestUrls, [
+      "/monitor/transcript-safe-capability?cursor=initial-cursor",
+      "/monitor/transcript-safe-capability?cursor=initial-cursor",
+    ]);
+    assert.deepEqual(
+      requestHeaders.map((headers) => headers["last-event-id"]),
+      [undefined, undefined],
     );
     assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
     assert.equal(watcher.stderr(), "");
@@ -831,35 +956,54 @@ test("backs off across valid SSE disconnects that deliver no events", async () =
     await closeServer(server);
   }
 });
-test("resets outage backoff after a stable idle SSE connection", async () => {
+test("backs off repeated 300ms empty streams until a stable idle connection", async () => {
+  let elapsedMs = 0;
   const requestTimes = [];
-  const { server, url } = await startServer((_request, response) => {
-    requestTimes.push(Date.now());
-    response.writeHead(200, { "Content-Type": "text/event-stream" });
-    if (requestTimes.length < 3) {
-      response.end();
-      return;
-    }
-    if (requestTimes.length === 3) {
-      response.flushHeaders();
-      setTimeout(() => response.end(), 300);
-      return;
-    }
-    sendEvent(response, monitorEvent("event-after-stable-idle", "merged"));
-  });
-  const watcher = startWatcher(url);
+  const delays = [];
+  let requestCount = 0;
+  const controller = new AbortController();
+  const fetchImpl = async () => {
+    requestTimes.push(elapsedMs);
+    requestCount += 1;
 
+    const connectionDurationMs = requestCount === 9 ? 60_000 : 300;
+    const body = new ReadableStream({
+      pull(controller) {
+        elapsedMs += connectionDurationMs;
+        controller.close();
+      },
+    }, { highWaterMark: 0 });
+    return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+  };
+
+  let warnings = "";
+  const originalStderrWrite = process.stderr.write;
+  process.stderr.write = (chunk) => {
+    warnings += String(chunk);
+    return true;
+  };
   try {
-    assert.deepEqual(await watcher.exited, { code: 0, signal: null });
-    assert.equal(requestTimes.length, 4);
-    assert.ok(requestTimes[3] - requestTimes[2] >= 450);
-    assert.ok(requestTimes[3] - requestTimes[2] < 900);
-    assert.equal(watcher.stdout(), "PR 42 finished: MERGED\n");
-    assert.equal(watcher.stderr(), "");
+    await watchPrMonitor("http://127.0.0.1/monitor/test-capability", {
+      signal: controller.signal,
+      fetchImpl,
+      nowImpl: () => elapsedMs,
+      delayImpl: async (milliseconds) => {
+        delays.push(milliseconds);
+        elapsedMs += milliseconds;
+        if (requestCount === 9) controller.abort();
+      },
+    });
   } finally {
-    if (watcher.child.exitCode === null) watcher.child.kill("SIGKILL");
-    await closeServer(server);
+    process.stderr.write = originalStderrWrite;
   }
+
+  assert.equal(requestCount, 9);
+  assert.deepEqual(delays, [250, 500, 1_000, 2_000, 4_000, 8_000, 10_000, 10_000, 250]);
+  assert.deepEqual(
+    requestTimes.slice(1).map((time, index) => time - requestTimes[index]),
+    [550, 800, 1_300, 2_300, 4_300, 8_300, 10_300, 10_300],
+  );
+  assert.equal(warnings.match(/still reconnecting after a dropped event stream/gu)?.length, 1);
 });
 
 
@@ -893,10 +1037,10 @@ test("reconnects with its cursor and does not print a replay twice", async () =>
     assert.deepEqual(await watcher.exited, { code: 0, signal: null });
     assert.equal(requestHeaders.length, 2);
     assert.deepEqual(requestUrls, [
-      "/monitor/transcript-safe-capability",
+      "/monitor/transcript-safe-capability?cursor=initial-cursor",
       "/monitor/transcript-safe-capability",
     ]);
-    assert.equal(requestHeaders[0]["last-event-id"], "initial-cursor");
+    assert.equal(requestHeaders[0]["last-event-id"], undefined);
     assert.equal(requestHeaders[1]["last-event-id"], "event-1");
     assert.deepEqual(watcher.stdout().trim().split("\n"), [
       "checks: rerun started (pending: CI, Lint)",
