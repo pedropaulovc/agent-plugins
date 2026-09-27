@@ -6,7 +6,7 @@ argument-hint: "[pr-url-or-ref]"
 
 # Watch a PR to green + merged
 
-Use the hosted `watch-pr` MCP server for durable GitHub webhook ingestion and minute
+Use the hosted `watch-pr` MCP server for durable GitHub webhook ingestion and periodic
 reconciliation. Use the bundled `watch-pr-monitor.mjs` only for its read-only SSE feed.
 MCP resource notifications may be useful hints, but they are never the wake-up or
 correctness path.
@@ -103,6 +103,12 @@ Sustained transient failures emit a bounded stderr warning while retries continu
    when an inline detail explicitly lacks information needed to act. Use
    `list_pr_events` only to explain a transition.
 
+   Judge `get_pr` freshness by its top-level `polledAt`, the last successful GitHub read.
+   The snapshot's `fetchedAt` is when the stored state last changed, so an old
+   `fetchedAt` on a quiet PR is not stale data. An empty `checks` array is accurate when
+   the head commit has no check runs or statuses; CI waiting on maintainer approval is
+   reported as an `action_required` check, not as missing checks.
+
 ## Start the harness watcher
 
 ### Claude Code
@@ -175,21 +181,26 @@ substituting polling or a detached shell.
 
 | Line | Action |
 |---|---|
-| `head: <ref>@<sha>` | Inspect the new commit and restarted checks before acting on earlier results. |
-| `base: <old> -> <new>` | Re-evaluate the branch and merge target before pushing or merging. |
-| `rebase: BEHIND` | Rebase the head branch onto the PR's base branch and push. |
-| `rebase: DIRTY` | Rebase, resolve every conflict, and force-push the feature branch with `--force-with-lease`. |
-| `rebase: <other-state>` | Record that the prior behind/conflict condition cleared; continue with checks and review. |
+| `mergeability: <part>[, <part>...]` | One line joins every mergeability change; act on each part below. |
+| part `head -> <ref>@<sha>` | Inspect the new commit and restarted checks before acting on earlier results. |
+| part `base <old> -> <new>` | Re-evaluate the branch and merge target before pushing or merging. |
+| part `state -> BEHIND` | Rebase the head branch onto the PR's base branch and push. |
+| part `state -> DIRTY` | Rebase, resolve every conflict, and force-push the feature branch with `--force-with-lease`. |
+| part `state -> <other-state>` | Record that the prior behind/conflict condition cleared; continue with checks and review. |
 | `PR state: <OPEN\|CLOSED> [DRAFT]` | Record the lifecycle or draft transition; a `DRAFT` suffix still blocks review. |
 | `checks: <name> -> pending` | Informational; wait for that check's result or an immediate failure. Every check arrives on its own line. |
 | `checks: <name> -> pass` \| `checks: <name> -> skipping` | Record the terminal result for that check; no action. |
 | `checks: <name> -> fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
 | `checks: <name> -> cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
+| `checks: <name> -> action_required <url>` | CI is waiting for approval, usually a fork PR's workflows awaiting a maintainer; the workflow run exists but has not started executing, so it has no check runs. Nothing to fix in the code: tell the user. Approving runs the PR branch's workflow code, so never approve on your own; approve at the URL only when the user explicitly asks and has confirmed the branch is trusted. |
 | `comment #<id> @<author>: <body>` | Read the full body inline, including any `│ ` continuation lines; decide whether it requires action, then use the comment ID to reply when needed. |
 | `review #<id> @<author> <state>: <body>` | Handle the verdict and full body directly, including any `│ ` continuation lines; use the review ID when a reply is needed. |
 | `feedback [<thread>] #<comment-id> <file>:<start>[-<end>] @<author>: <body>` | Inspect the named code and all `│ ` continuation lines, then fix or reply using the IDs. `[-]` means GitHub did not return a thread ID. |
 | `thread <id>: reopened\|resolved` | Re-opened feedback requires action; record resolved feedback without another snapshot fetch. |
 | `comment\|review\|feedback ... deleted` | Record that the referenced feedback was removed; do not act on its stale text. |
+| `active comments: <+n\|-n>, now <count>` | Informational count of unresolved review feedback; act on the accompanying `feedback` or `thread` lines. |
+| `reaction <created\|deleted>: @<user> <CONTENT> on <target>` | Informational; a reaction is not a request for changes. |
+| `deployment: <environment> [(<ref>)] -> <state> [<url>]` | Informational; investigate only a failed or errored deployment. |
 | `+<n> more checks` | The server bounded a large check wave; call `get_pr` once for the omitted check states. |
 | `+<n> more changes` | Non-body details exceeded the safety bound or a body required snapshot reconciliation; call `get_pr` once for the omitted details. |
 | `PR <n> finished: MERGED` | Call `get_pr`, call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. The watcher exits on its own. |
