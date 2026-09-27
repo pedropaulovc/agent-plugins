@@ -103,11 +103,15 @@ Sustained transient failures emit a bounded stderr warning while retries continu
    when an inline detail explicitly lacks information needed to act. Use
    `list_pr_events` only to explain a transition.
 
-   Judge `get_pr` freshness by its top-level `polledAt`, the last successful GitHub read.
-   The snapshot's `fetchedAt` is when the stored state last changed, so an old
-   `fetchedAt` on a quiet PR is not stale data. An empty `checks` array is accurate when
-   the head commit has no check runs or statuses; CI waiting on maintainer approval is
-   reported as an `action_required` check, not as missing checks.
+   Judge `get_pr` freshness by the newer of its top-level `polledAt`, the last successful
+   GitHub read, and the snapshot's `fetchedAt`, the last stored change. Webhook payloads
+   update the snapshot without reading GitHub, so `fetchedAt` newer than `polledAt` means
+   fresh webhook data, and an old `fetchedAt` on a quiet PR is not stale data. An empty
+   `checks` array is accurate when the head commit has no check runs or statuses; CI
+   waiting on maintainer approval is reported as an `action_required` check, not as
+   missing checks. Right after a push, empty `checks` and `mergeableState: "unknown"`
+   mean the new head has not reported yet: wait for the following `checks:` and
+   `mergeability:` lines instead of acting on them.
 
 ## Start the harness watcher
 
