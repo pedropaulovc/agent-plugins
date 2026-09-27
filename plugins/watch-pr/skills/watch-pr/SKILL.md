@@ -110,8 +110,8 @@ Sustained transient failures emit a bounded stderr warning while retries continu
    `checks` array is accurate when the head commit has no check runs or statuses; CI
    waiting on maintainer approval is reported as an `action_required` check, not as
    missing checks. Right after a push, empty `checks` and `mergeableState: "unknown"`
-   mean the new head has not reported yet: wait for the following `checks:` and
-   `mergeability:` lines instead of acting on them.
+   mean the new head has not reported yet: wait for the following `mergeability:`
+   line, and for `checks:` lines only when the repository runs CI on the head.
 
 ## Start the harness watcher
 
