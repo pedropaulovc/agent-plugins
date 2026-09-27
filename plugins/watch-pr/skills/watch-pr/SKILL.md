@@ -192,7 +192,7 @@ substituting polling or a detached shell.
 | `checks: <name> -> pass` \| `checks: <name> -> skipping` | Record the terminal result for that check; no action. |
 | `checks: <name> -> fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
 | `checks: <name> -> cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
-| `checks: <name> -> action_required <url>` | CI is waiting for approval, usually a fork PR's workflows awaiting a maintainer; the workflow run exists but has not started executing, so it has no check runs. Nothing to fix in the code: tell the user, or approve the runs at the URL if you are a maintainer. |
+| `checks: <name> -> action_required <url>` | CI is waiting for approval, usually a fork PR's workflows awaiting a maintainer; the workflow run exists but has not started executing, so it has no check runs. Nothing to fix in the code: tell the user. Approving runs the PR branch's workflow code, so never approve on your own; approve at the URL only when the user explicitly asks and has confirmed the branch is trusted. |
 | `comment #<id> @<author>: <body>` | Read the full body inline, including any `│ ` continuation lines; decide whether it requires action, then use the comment ID to reply when needed. |
 | `review #<id> @<author> <state>: <body>` | Handle the verdict and full body directly, including any `│ ` continuation lines; use the review ID when a reply is needed. |
 | `feedback [<thread>] #<comment-id> <file>:<start>[-<end>] @<author>: <body>` | Inspect the named code and all `│ ` continuation lines, then fix or reply using the IDs. `[-]` means GitHub did not return a thread ID. |
