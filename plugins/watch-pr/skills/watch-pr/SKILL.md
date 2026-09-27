@@ -181,11 +181,12 @@ substituting polling or a detached shell.
 
 | Line | Action |
 |---|---|
-| `head: <ref>@<sha>` | Inspect the new commit and restarted checks before acting on earlier results. |
-| `base: <old> -> <new>` | Re-evaluate the branch and merge target before pushing or merging. |
-| `rebase: BEHIND` | Rebase the head branch onto the PR's base branch and push. |
-| `rebase: DIRTY` | Rebase, resolve every conflict, and force-push the feature branch with `--force-with-lease`. |
-| `rebase: <other-state>` | Record that the prior behind/conflict condition cleared; continue with checks and review. |
+| `mergeability: <part>[, <part>...]` | One line joins every mergeability change; act on each part below. |
+| part `head -> <ref>@<sha>` | Inspect the new commit and restarted checks before acting on earlier results. |
+| part `base <old> -> <new>` | Re-evaluate the branch and merge target before pushing or merging. |
+| part `state -> BEHIND` | Rebase the head branch onto the PR's base branch and push. |
+| part `state -> DIRTY` | Rebase, resolve every conflict, and force-push the feature branch with `--force-with-lease`. |
+| part `state -> <other-state>` | Record that the prior behind/conflict condition cleared; continue with checks and review. |
 | `PR state: <OPEN\|CLOSED> [DRAFT]` | Record the lifecycle or draft transition; a `DRAFT` suffix still blocks review. |
 | `checks: <name> -> pending` | Informational; wait for that check's result or an immediate failure. Every check arrives on its own line. |
 | `checks: <name> -> pass` \| `checks: <name> -> skipping` | Record the terminal result for that check; no action. |
@@ -197,6 +198,9 @@ substituting polling or a detached shell.
 | `feedback [<thread>] #<comment-id> <file>:<start>[-<end>] @<author>: <body>` | Inspect the named code and all `│ ` continuation lines, then fix or reply using the IDs. `[-]` means GitHub did not return a thread ID. |
 | `thread <id>: reopened\|resolved` | Re-opened feedback requires action; record resolved feedback without another snapshot fetch. |
 | `comment\|review\|feedback ... deleted` | Record that the referenced feedback was removed; do not act on its stale text. |
+| `active comments: <+n\|-n>, now <count>` | Informational count of unresolved review feedback; act on the accompanying `feedback` or `thread` lines. |
+| `reaction <created\|deleted>: @<user> <CONTENT> on <target>` | Informational; a reaction is not a request for changes. |
+| `deployment: <environment> [(<ref>)] -> <state> [<url>]` | Informational; investigate only a failed or errored deployment. |
 | `+<n> more checks` | The server bounded a large check wave; call `get_pr` once for the omitted check states. |
 | `+<n> more changes` | Non-body details exceeded the safety bound or a body required snapshot reconciliation; call `get_pr` once for the omitted details. |
 | `PR <n> finished: MERGED` | Call `get_pr`, call `unwatch_pr`, fetch/prune the local repository when applicable, and report completion. The watcher exits on its own. |
