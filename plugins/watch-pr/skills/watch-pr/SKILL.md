@@ -6,7 +6,7 @@ argument-hint: "[pr-url-or-ref]"
 
 # Watch a PR to green + merged
 
-Use the hosted `watch-pr` MCP server for durable GitHub webhook ingestion and minute
+Use the hosted `watch-pr` MCP server for durable GitHub webhook ingestion and periodic
 reconciliation. Use the bundled `watch-pr-monitor.mjs` only for its read-only SSE feed.
 MCP resource notifications may be useful hints, but they are never the wake-up or
 correctness path.
@@ -103,6 +103,12 @@ Sustained transient failures emit a bounded stderr warning while retries continu
    when an inline detail explicitly lacks information needed to act. Use
    `list_pr_events` only to explain a transition.
 
+   Judge `get_pr` freshness by its top-level `polledAt`, the last successful GitHub read.
+   The snapshot's `fetchedAt` is when the stored state last changed, so an old
+   `fetchedAt` on a quiet PR is not stale data. An empty `checks` array is accurate when
+   the head commit has no check runs or statuses; CI waiting on maintainer approval is
+   reported as an `action_required` check, not as missing checks.
+
 ## Start the harness watcher
 
 ### Claude Code
@@ -185,6 +191,7 @@ substituting polling or a detached shell.
 | `checks: <name> -> pass` \| `checks: <name> -> skipping` | Record the terminal result for that check; no action. |
 | `checks: <name> -> fail <url>` | Open the URL, inspect logs, fix the cause, commit, and push. |
 | `checks: <name> -> cancel <url>` | Investigate whether the canceled check is required or should be rerun. |
+| `checks: <name> -> action_required <url>` | CI is waiting for approval, usually a fork PR's workflows awaiting a maintainer; no run exists yet. Nothing to fix in the code: tell the user, or approve the runs at the URL if you are a maintainer. |
 | `comment #<id> @<author>: <body>` | Read the full body inline, including any `│ ` continuation lines; decide whether it requires action, then use the comment ID to reply when needed. |
 | `review #<id> @<author> <state>: <body>` | Handle the verdict and full body directly, including any `│ ` continuation lines; use the review ID when a reply is needed. |
 | `feedback [<thread>] #<comment-id> <file>:<start>[-<end>] @<author>: <body>` | Inspect the named code and all `│ ` continuation lines, then fix or reply using the IDs. `[-]` means GitHub did not return a thread ID. |

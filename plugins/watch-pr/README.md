@@ -11,7 +11,7 @@ The root tool inventory must expose `watch_pr`, `get_pr`, and
 `/mcp reauth plugin:watch-pr:watch-pr`. Claude CLI, another MCP client, and polling are
 not supported substitutes.
 
-The hosted service is documented as handling GitHub webhooks, minute reconciliation,
+The hosted service is documented as handling GitHub webhooks, periodic reconciliation,
 durable snapshots, and event cursors. A `watch_pr` call returns a read-only
 `monitor.monitorUrl` scoped to the OAuth session and pull request. It expires 12 hours
 after first creation and contains no GitHub credential, but it is still an access-bearing
@@ -46,7 +46,8 @@ monitor without an error, but a 204 before any event is reported as a failure.
 Routine check completions and no-op webhook deliveries stay silent. A CI rerun emits one
 `checks: <name> -> <status>` record per affected check, each on its own physical line:
 start records, immediate named failures or cancellations, and terminal records
-after pending checks settle. Comment deltas carry the changed comment itself, so a root
+after pending checks settle. CI waiting for maintainer approval, such as a fork PR's
+workflows, arrives as `checks: <name> -> action_required <url>`. Comment deltas carry the changed comment itself, so a root
 agent does not have to fetch and search a PR snapshot containing older comments.
 
 The local watcher is a read-only messenger: it does not inspect or modify the checkout,
@@ -55,6 +56,8 @@ to use the user's GitHub CLI credentials and repository tools to inspect code, m
 changes, rebase or push, reply to reviews, and resolve threads when appropriate. Those
 agent actions send the corresponding requests and content to GitHub. `get_pr` is used
 for final reconciliation, after a cursorless gap, or when an event lacks required context.
+Its top-level `polledAt` is the last successful GitHub read; the snapshot's `fetchedAt`
+only moves when the stored state changes.
 
 Run at most one active watcher for each PR and shared MCP credential, not one per client;
 another client using that credential can cancel this watch by calling `unwatch_pr`:
