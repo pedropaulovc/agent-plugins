@@ -57,7 +57,8 @@ changes, rebase or push, reply to reviews, and resolve threads when appropriate.
 agent actions send the corresponding requests and content to GitHub. `get_pr` is used
 for final reconciliation, after a cursorless gap, or when an event lacks required context.
 Its top-level `polledAt` is the last successful GitHub read; the snapshot's `fetchedAt`
-only moves when the stored state changes.
+is the last stored change and also moves when a webhook payload is applied without a
+GitHub read, so it can be newer than `polledAt`.
 
 Run at most one active watcher for each PR and shared MCP credential, not one per client;
 another client using that credential can cancel this watch by calling `unwatch_pr`:
