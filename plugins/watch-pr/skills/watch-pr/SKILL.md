@@ -103,10 +103,14 @@ Sustained transient failures emit a bounded stderr warning while retries continu
    when an inline detail explicitly lacks information needed to act. Use
    `list_pr_events` only to explain a transition.
 
-   Judge `get_pr` freshness by the newer of its top-level `polledAt`, the last successful
-   GitHub read, and the snapshot's `fetchedAt`, the last stored change. Webhook payloads
-   update the snapshot without reading GitHub, so `fetchedAt` newer than `polledAt` means
-   fresh webhook data, and an old `fetchedAt` on a quiet PR is not stale data. An empty
+   Judge `get_pr` freshness with its top-level `coverage` and `polledAt`. `coverage:
+   "webhook"` means GitHub delivers this repository's events, so the snapshot updates from
+   payloads without reading GitHub and `polledAt` advances only at the hourly
+   reconciliation; an hour-old `polledAt` there is normal. Reactions and other changes no
+   webhook carries can lag by up to that hour. `coverage: "polling"` (for example an
+   upstream repository without the GitHub App) is read every minute, so a `polledAt` more
+   than a few minutes old there is stale. `fetchedAt` is the last stored change and can
+   be newer than `polledAt`; an old `fetchedAt` on a quiet PR is not stale data. An empty
    `checks` array is accurate when the head commit has no check runs or statuses; CI
    waiting on maintainer approval is reported as an `action_required` check, not as
    missing checks. Right after a push, empty `checks` and `mergeableState: "unknown"`
