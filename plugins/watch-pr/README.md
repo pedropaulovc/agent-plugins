@@ -58,7 +58,9 @@ agent actions send the corresponding requests and content to GitHub. `get_pr` is
 for final reconciliation, after a cursorless gap, or when an event lacks required context.
 Its top-level `polledAt` is the last successful GitHub read; the snapshot's `fetchedAt`
 is the last stored change and also moves when a webhook payload is applied without a
-GitHub read, so it can be newer than `polledAt`.
+GitHub read, so it can be newer than `polledAt`. Its `coverage` says how the PR is kept current: `webhook`
+repositories update from GitHub deliveries and are reconciled hourly, while `polling`
+repositories, such as upstream repositories without the GitHub App, are read every minute.
 
 Run at most one active watcher for each PR and shared MCP credential, not one per client;
 another client using that credential can cancel this watch by calling `unwatch_pr`:
