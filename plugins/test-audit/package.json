@@ -1,0 +1,7 @@
+{
+  "name": "@pedropaulovc/test-audit",
+  "version": "0.1.0-draft.1",
+  "description": "Draft report-only test audit skill for OpenCode",
+  "type": "module",
+  "main": ".opencode/plugins/test-audit.js"
+}

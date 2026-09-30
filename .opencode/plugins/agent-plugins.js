@@ -10,6 +10,7 @@ export { OnePasswordPlugin } from "../../plugins/onepassword/.opencode/plugins/o
 export { PlaywrightCliHeadedPlugin } from "../../plugins/playwright-cli-headed/.opencode/plugins/playwright-cli-headed.js";
 export { PrCommentsPlugin } from "../../plugins/pr-comments/.opencode/plugins/pr-comments.js";
 export { SuperpowersPlugin } from "../../plugins/superpowers/.opencode/plugins/superpowers.js";
+export { TestAuditPlugin } from "../../plugins/test-audit/.opencode/plugins/test-audit.js";
 export { UnrelatedIssueDetectorPlugin } from "../../plugins/unrelated-issue-detector/.opencode/plugins/unrelated-issue-detector.js";
 export { WatchPrPlugin } from "../../plugins/watch-pr/.opencode/plugins/watch-pr.js";
 export { WindowsBashGuardPlugin } from "../../plugins/windows-bash-guard/.opencode/plugins/windows-bash-guard.js";

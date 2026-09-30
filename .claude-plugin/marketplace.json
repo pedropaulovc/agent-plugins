@@ -43,6 +43,10 @@
       "source": "./plugins/gstack-entrepreneur"
     },
     {
+      "name": "test-audit",
+      "source": "./plugins/test-audit"
+    },
+    {
       "name": "developing-solidworks",
       "source": "./plugins/developing-solidworks"
     },

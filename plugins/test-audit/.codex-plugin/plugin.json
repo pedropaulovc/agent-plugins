@@ -1,0 +1,16 @@
+{
+  "name": "test-audit",
+  "version": "0.1.0-draft.1",
+  "description": "Draft, explicit-only test-value audits with report-only defaults and exhaustive completion accounting",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
+  "license": "MIT",
+  "keywords": ["skill", "tests", "audit", "draft"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Test Audit (Draft)"
+  }
+}
