@@ -71,6 +71,7 @@ These plugins are useful across projects.
 | [superpowers](plugins/superpowers) | Skills | Skills for TDD, debugging, and collaboration, vendored from [obra/superpowers](https://github.com/obra/superpowers) |
 | [windows-bash-guard](plugins/windows-bash-guard) | Hook | Fixes Windows and Bash path pitfalls such as backslash paths and `/dev/stdin` before execution |
 | [memory-to-repo](plugins/memory-to-repo) | Hook + Skills | Blocks auto-memory CRUD in the machine-local directory and redirects it to the repository's `./memory/` directory so memory is git-tracked and shareable |
+| [test-audit](plugins/test-audit) | Skill + Command | Draft test-value audits with explicit Claude/Codex invocation, report-only defaults, full-sweep accounting, and host-safe validation |
 
 ### Plugins for specific tools and workflows
 
