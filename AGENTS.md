@@ -2,7 +2,7 @@
 
 - Any changes to plugin code must also bump the plugin's version in its `plugin.json`, NOT the marketplace version. Plugins that also ship a `.codex-plugin/plugin.json` (all except `no-fetch`) must keep that manifest's `version` in sync with `.claude-plugin/plugin.json`.
 - When adding, renaming, or removing a plugin, update the "All plugins" table in `README.md` and both marketplace files: `.claude-plugin/marketplace.json` for Claude Code and `.agents/plugins/marketplace.json` for Codex. Omit `no-fetch` from the Codex marketplace because Codex routes web access through a hosted `web_search` tool that hooks cannot intercept. Skip these updates only if the user explicitly says so.
-- A skill marked `disable-model-invocation: true` in Claude Code must also ship `skills/<name>/agents/openai.yaml` with `policy.allow_implicit_invocation: false` when the plugin is exposed to Codex. Codex ignores the Claude frontmatter and enables implicit invocation by default. This rule currently applies to `worktree-reset/reset`, `gh-issue/issue`, and `pr-comments/comments`.
+- A skill marked `disable-model-invocation: true` in Claude Code must also ship `skills/<name>/agents/openai.yaml` with `policy.allow_implicit_invocation: false` when the plugin is exposed to Codex. Codex ignores the Claude frontmatter and enables implicit invocation by default. This rule currently applies to `worktree-reset/reset`, `gh-issue/issue`, `pr-comments/comments`, and `test-audit/test-audit`.
 - When bumping the `superpowers` plugin version, also run:
   ```
   python3 plugins/superpowers/hooks/build-hooks.py
