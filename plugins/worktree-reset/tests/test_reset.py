@@ -98,6 +98,10 @@ case "$*" in
   'submodule status --recursive')
     if [ -n "${{SUBMODULE_STATUS_OUTPUT:-}}" ]; then printf '%s\\n' "$SUBMODULE_STATUS_OUTPUT"; fi
     ;;
+  'ls-files --unmerged')
+    if [ -n "${{LS_FILES_FAIL:-}}" ]; then exit 1; fi
+    if [ -n "${{UNMERGED_OUTPUT:-}}" ]; then printf '%s\\n' "$UNMERGED_OUTPUT"; fi
+    ;;
   'branch -vv')
     printf '%s\\n' '  stale abc123 [origin/stale: gone] {COMMIT_SUBJECT}' '  +linked abc [origin/linked: gone]'
     ;;
@@ -333,6 +337,62 @@ fi
 
         self.assertEqual(result.returncode, 2)
         self.assertIn("while a Git operation is active", result.stderr)
+        self.assertNotIn("git worktree remove", self.log.read_text())
+
+    def test_force_removes_stale_auto_merge_marker(self) -> None:
+        gitdir = self.repo / ".git" / "worktrees" / "feature"
+        gitdir.mkdir(parents=True)
+        auto_merge = gitdir / "AUTO_MERGE"
+        auto_merge.write_text("tree")
+
+        result = self.run_script("--force")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Removing stale AUTO_MERGE marker", result.stdout)
+        self.assertFalse(auto_merge.exists())
+        self.assertIn(f"git worktree remove --force --force {self.linked}", self.log.read_text())
+
+    def test_force_refuses_auto_merge_when_index_state_cannot_be_read(self) -> None:
+        gitdir = self.repo / ".git" / "worktrees" / "feature"
+        gitdir.mkdir(parents=True)
+        auto_merge = gitdir / "AUTO_MERGE"
+        auto_merge.write_text("tree")
+
+        result = self.run_script("--force", extra_env={"LS_FILES_FAIL": "1"})
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("state cannot be verified", result.stderr)
+        self.assertTrue(auto_merge.exists())
+        self.assertNotIn("git worktree remove", self.log.read_text())
+
+    def test_force_refuses_auto_merge_when_index_has_unmerged_entries(self) -> None:
+        gitdir = self.repo / ".git" / "worktrees" / "feature"
+        gitdir.mkdir(parents=True)
+        auto_merge = gitdir / "AUTO_MERGE"
+        auto_merge.write_text("tree")
+
+        result = self.run_script(
+            "--force",
+            extra_env={"UNMERGED_OUTPUT": "100644 deadbeef 1\tconflicted.txt"},
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("while a Git operation is active", result.stderr)
+        self.assertTrue(auto_merge.exists())
+        self.assertNotIn("git worktree remove", self.log.read_text())
+
+    def test_force_keeps_auto_merge_marker_for_active_merge(self) -> None:
+        gitdir = self.repo / ".git" / "worktrees" / "feature"
+        gitdir.mkdir(parents=True)
+        auto_merge = gitdir / "AUTO_MERGE"
+        auto_merge.write_text("tree")
+        (gitdir / "MERGE_HEAD").write_text("commit")
+
+        result = self.run_script("--force")
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("while a Git operation is active", result.stderr)
+        self.assertTrue(auto_merge.exists())
         self.assertNotIn("git worktree remove", self.log.read_text())
 
     def test_force_warns_before_removing_detached_linked_worktree(self) -> None:

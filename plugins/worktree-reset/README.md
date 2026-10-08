@@ -17,9 +17,11 @@ Arguments:
   `main` there to `origin/main`. It refuses linked-worktree invocations because rerunning
   from the primary would delete every linked worktree, refuses bare repositories without a
   primary worktree, and refuses removal while a Git operation is active in a linked
-  worktree. In force mode it recursively synchronizes submodules with forced checkout and
-  reports failure instead of success when the root worktree or any submodule remains dirty
-  or out of sync.
+  worktree. A standalone `AUTO_MERGE` marker is cleared as stale; other operation markers,
+  active Git locks, and unmerged or unreadable index state still block removal.
+  In force mode it recursively synchronizes submodules with forced checkout and reports
+  failure instead of success when the root worktree or any submodule remains dirty or out
+  of sync.
 - `--all` also rebases each linked worktree onto `origin/main` and installs its dependencies in normal mode.
 
 ## Reset operations and data flow

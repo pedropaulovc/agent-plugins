@@ -44,8 +44,10 @@ this ordering or service scope.
   `--force` would delete every linked worktree; do not relocate and rerun it without
   confirming that destructive scope with the user. It also refuses bare repositories
   without a primary worktree or removal while a Git operation is active in a linked
-  worktree. In force mode it recursively synchronizes submodules with forced checkout and
-  fails if the root worktree or any submodule remains dirty or out of sync.
+  worktree. A standalone `AUTO_MERGE` marker is cleared as stale; other operation markers,
+  active Git locks, and unmerged or unreadable index state still block removal. In force
+  mode it recursively synchronizes submodules with forced checkout and fails if the root
+  worktree or any submodule remains dirty or out of sync.
 - `--confirm` removes the reviewed untracked files after the user approves the list
   reported by the normal safety phase.
 - `--all` updates every linked worktree in normal mode.
