@@ -414,7 +414,6 @@ def git_operation_running(worktree: Path) -> bool:
         "REVERT_HEAD",
         "BISECT_LOG",
         "sequencer",
-        "AUTO_MERGE",
     )
     if any((gitdir / marker).exists() for marker in operation_markers):
         return True
@@ -424,7 +423,9 @@ def git_operation_running(worktree: Path) -> bool:
     if not worktree.is_dir():
         return False
     unmerged = git("ls-files", "--unmerged", cwd=worktree, capture_output=True, check=False)
-    return unmerged.returncode == 0 and bool(unmerged.stdout.strip())
+    if unmerged.returncode != 0:
+        return True
+    return bool(unmerged.stdout.strip())
 
 
 def ensure_linked_worktrees_idle(linked_worktrees: list[WorktreeEntry]) -> None:
@@ -432,8 +433,13 @@ def ensure_linked_worktrees_idle(linked_worktrees: list[WorktreeEntry]) -> None:
         linked_worktree = entry.path.resolve()
         if git_operation_running(linked_worktree):
             raise ResetBlocked(
-                f"refusing to remove linked worktree while a Git operation is active: {linked_worktree}"
+                "refusing to remove linked worktree while a Git operation is active "
+                f"or its state cannot be verified: {linked_worktree}"
             )
+        auto_merge = git_directory(linked_worktree) / "AUTO_MERGE"
+        if auto_merge.exists():
+            auto_merge.unlink(missing_ok=True)
+            print(f"Removing stale AUTO_MERGE marker: {auto_merge}")
 
 
 def remove_linked_worktrees(primary_worktree: Path, linked_worktrees: list[WorktreeEntry]) -> list[Path]:
