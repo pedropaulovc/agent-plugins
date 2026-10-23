@@ -96,6 +96,16 @@ jobs:
           done
           exit $fail
 
+  test-dsh-context-details:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Test the DSH context-details projection
+        run: npm run test:dsh-context-details
+
   test-watch-pr-windows:
     runs-on: windows-latest
     steps:

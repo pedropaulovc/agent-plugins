@@ -1,0 +1,19 @@
+{
+  "name": "dsh-context-details",
+  "description": "DeepSeek Harness plugin that adds per-tool and per-skill token estimates to the composer context usage menu.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Pedro Paulo Vezza Campos",
+    "email": "pedro@vezza.com.br"
+  },
+  "homepage": "https://github.com/pedropaulovc/agent-plugins/tree/main/plugins/dsh-context-details",
+  "repository": "https://github.com/pedropaulovc/agent-plugins",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "context",
+    "tokens",
+    "plugin"
+  ]
+}

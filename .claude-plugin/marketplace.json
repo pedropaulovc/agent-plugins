@@ -85,6 +85,10 @@
     {
       "name": "pedro-microblog",
       "source": "./plugins/pedro-microblog"
+    },
+    {
+      "name": "dsh-context-details",
+      "source": "./plugins/dsh-context-details"
     }
   ]
 }
