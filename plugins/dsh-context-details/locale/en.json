@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Context Details",
+    "description": "Adds per-tool and per-skill token estimates to the composer context usage menu."
+  }
+}

@@ -8,6 +8,7 @@
     "opencode": ">=1.17.18"
   },
   "scripts": {
+    "test:dsh-context-details": "node --test plugins/dsh-context-details/tests/context-details.test.mjs",
     "test:opencode": "node --test tests/opencode.test.mjs",
     "test:usage": "node --test tests/record-memory-usage.test.mjs",
     "test:watch-pr": "node --test tests/watch-pr-monitor.test.mjs"

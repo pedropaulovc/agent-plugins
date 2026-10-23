@@ -1,6 +1,6 @@
 # agent-plugins
 
-A collection of Claude Code, OpenAI Codex, and OpenCode plugins for engineering work, GitHub workflows, Windows tooling, and SolidWorks development.
+A collection of Claude Code, OpenAI Codex, OpenCode, Oh My Pi (OMP), and DeepSeek Harness plugins for engineering work, GitHub workflows, Windows tooling, and SolidWorks development.
 
 ## Installation
 
@@ -37,6 +37,16 @@ Install the collection by adding its Git package to the `plugin` array in `openc
 ```
 
 Restart OpenCode after changing the config. The package registers the bundled skills, commands, lifecycle hooks, and tool hooks. The [OpenCode guide](docs/opencode.md) covers selective local installs, platform support, and hook mappings.
+
+### DeepSeek Harness
+
+DSH loads plugins as profile bundles from a local directory:
+
+1. Clone this repository.
+2. In DSH, open **Settings → Plugins → Add plugin** and enter the absolute path to `plugins/dsh-context-details`.
+3. Remove it from the same page to restore the shipped context menu.
+
+Only plugins that ship a DSH bundle (the `dsh` field in `package.json`) install this way; the Claude and Codex manifests do not execute in DSH.
 
 ## Selected plugins
 
@@ -84,6 +94,7 @@ These plugins target specific tools, workflows, or the author's setup. Some requ
 | [pr-comments](plugins/pr-comments) | Skill | Fetches unresolved PR comments for review and reply |
 | [watch-pr](plugins/watch-pr) | MCP Server + Skill + Watcher | `/watch-pr` keeps one long-lived, same-session watcher on durable GitHub PR events and acts on CI, rebases, reviews, feedback, and merge or closure |
 | [omp-persist-system-prompt](plugins/omp-persist-system-prompt) | OMP Extension | Makes effective system prompts and provider tool context available for transcript indexing |
+| [dsh-context-details](plugins/dsh-context-details) | DSH Plugin | Adds per-tool and per-skill token estimates to the composer context usage menu |
 | [command-chain-separator](plugins/command-chain-separator) | Hook | Adds a visible separator between Bash commands joined by `&&` or `;` so each command's output is easy to read |
 | [developing-solidworks](plugins/developing-solidworks) | Skill + Command | Guides C# development against the SolidWorks .NET COM API |
 | [developing-solidworks-mcp](plugins/developing-solidworks-mcp) | MCP Server + Skill | Searches SolidWorks XMLDoc and retrieves type, enum, example, and guide records |
